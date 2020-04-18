@@ -1,0 +1,5 @@
+%0\ 
+cd %0\.. 
+cd /d %0\.. 
+logman create counter HealthCheck -cf W:\perflogs\HealthCheck\counters.txt -f bin -b 01:00 -r -v MMddHHmm -o HealthCheck -max 10 -si 30
+logman start HealthCheck

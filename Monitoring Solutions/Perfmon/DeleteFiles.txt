@@ -1,0 +1,1 @@
+forfiles -p "W:\perflogs\HealthCheck" -s -m *.blg -d -60 -c "cmd /c del @path"

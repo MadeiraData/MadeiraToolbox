@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<CodeSnippets  xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet">
+<_locDefinition xmlns="urn:locstudio">
+    <_locDefault _loc="locNone" />
+    <_locTag _loc="locData">Title</_locTag>
+    <_locTag _loc="locData">Description</_locTag>
+    <_locTag _loc="locData">Author</_locTag>
+    <_locTag _loc="locData">ToolTip</_locTag>
+</_locDefinition>
+	<CodeSnippet Format="1.0.0">
+		<Header>
+			<Title>IO Latency</Title>
+                        <Shortcut></Shortcut>
+			<Description>Shows IO latency per database per file.</Description>
+			<Author>Matan yungman</Author>
+			<SnippetTypes>
+				<SnippetType>Expansion</SnippetType>
+			</SnippetTypes>
+		</Header>
+		<Snippet>
+			
+			<Code Language="SQL">
+		<![CDATA[
+
+if object_id('tempdb..#io') is not null
+	drop table #io
+GO
+select * into #io from sys.dm_io_virtual_file_stats(null,null)
+waitfor delay '00:01:00'
+select db_name(a.database_id),a.file_id,a.num_of_reads-b.num_of_reads as num_of_reads,
+a.num_of_writes-b.num_of_writes as num_of_writes,
+(a.io_stall_read_ms-b.io_stall_read_ms)/(a.num_of_reads-b.num_of_reads) as read_latency,
+(a.io_stall_write_ms-b.io_stall_write_ms)/(a.num_of_writes-b.num_of_writes) as write_latency
+from #io b inner join sys.dm_io_virtual_file_stats(null,null) a
+on a.database_id = b.database_id and a.file_id = b.file_id
+where a.database_id > 4
+and (a.num_of_writes-b.num_of_writes) > 0
+and (a.num_of_reads-b.num_of_reads) > 0
+GO
+]]>
+			</Code>
+		</Snippet>
+	</CodeSnippet>
+</CodeSnippets>

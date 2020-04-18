@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<CodeSnippets  xmlns="http://schemas.microsoft.com/VisualStudio/2005/CodeSnippet">
+<_locDefinition xmlns="urn:locstudio">
+    <_locDefault _loc="locNone" />
+    <_locTag _loc="locData">Title</_locTag>
+    <_locTag _loc="locData">Description</_locTag>
+    <_locTag _loc="locData">Author</_locTag>
+    <_locTag _loc="locData">ToolTip</_locTag>
+</_locDefinition>
+	<CodeSnippet Format="1.0.0">
+		<Header>
+			<Title>Show Wait Stats</Title>
+                        <Shortcut></Shortcut>
+			<Description>Shows wait stats change over one minute.</Description>
+			<Author>Matan yungman</Author>
+			<SnippetTypes>
+				<SnippetType>Expansion</SnippetType>
+			</SnippetTypes>
+		</Header>
+		<Snippet>
+			
+			<Code Language="SQL">
+		<![CDATA[
+select * into #t from sys.dm_os_wait_stats
+
+--sleep for one minute
+waitfor delay '00:01:00'
+
+select	w.wait_type,
+		w.waiting_tasks_count-t.waiting_tasks_count as waiting_tasks_count,
+		w.wait_time_ms-t.wait_time_ms as wait_time_ms,
+		w.max_wait_time_ms-t.max_wait_time_ms as max_wait_time_ms,
+		w.signal_wait_time_ms-t.signal_wait_time_ms as signal_wait_time_ms
+from sys.dm_os_wait_stats w inner join #t t on w.wait_Type=t.wait_type
+order by 3 desc
+]]>
+			</Code>
+		</Snippet>
+	</CodeSnippet>
+</CodeSnippets>

@@ -1,0 +1,23 @@
+-- relog to one file
+relog C:\Madeira\Final-Feb\*.blg /o C:\Madeira\Final-Feb\Perfmon.blg /f bin
+
+-- relog to csv
+relog C:\Madeira\Final-Feb\Perfmon.blg /o C:\Madeira\Final-Feb\Perfmon.txt /f csv
+
+-- log perfmon to sql server -- create new db and might need to create ODBC as well (link below)
+
+relog C:\Madeira\Perfmon-Feb\Final-Feb\Perfmon.blg /cf C:\Madeira\Perfmon-Feb\Final-Feb\counters.txt /f SQL /o SQL:SQLDB!CounterIdentifier
+
+-- get counter list
+ relog C:\Madeira\Perfmon-Feb\Final-Feb\Perfmon.blg /q /o C:\Madeira\Perfmon-Feb\Final-Feb\counters.txt
+
+
+Create ODBC:
+http://choirulamri.org/2013/11/analyzing-perfmon-with-sql-query-part-1-2/
+
+https://blogs.msdn.microsoft.com/granth/2008/09/23/relogging-perfmon-binary-log-files-to-sql/
+
+
+#in some operating system versions commands might not work with '/' sign . use '-' sign instead
+#like this: 
+#relog C:\Madeira\PerfLogs\HealthCheck_new\Perfmon.blg -cf C:\Madeira\PerfLogs\HealthCheck_new\counters_20180528.txt -f SQL -o SQL:db_Perfmon!CounterIdentifier

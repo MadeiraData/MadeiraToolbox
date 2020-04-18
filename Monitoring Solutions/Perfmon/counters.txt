@@ -1,0 +1,30 @@
+\Memory\Available MBytes	
+\Memory\Pages Input/sec	
+\Paging File(_Total)\% Usage
+\Paging File(_Total)\% Usage Peak
+\Network Interface(*)\Output Queue Length
+\PhysicalDisk(*)\Avg. Disk sec/Transfer
+\PhysicalDisk(*)\Disk Bytes/sec
+\PhysicalDisk(*)\Disk Read Bytes/sec
+\PhysicalDisk(*)\Disk Write Bytes/sec
+\PhysicalDisk(*)\Disk Reads/sec
+\PhysicalDisk(*)\Disk Writes/sec
+\PhysicalDisk(*)\Disk Transfers/sec
+\PhysicalDisk(*)\Avg. Disk Queue Length	
+\Processor(_Total)\% Processor Time	
+\Processor(_Total)\% Privileged Time	
+\MSSQL$ServerName:Access Methods\Page Splits/sec	
+\MSSQL$ServerName:Access Methods\Full Scans/sec
+\MSSQL$ServerName:Buffer Manager\Buffer cache hit ratio	 
+\MSSQL$ServerName:Buffer Manager\Page life expectancy
+\MSSQL$ServerName:Buffer Manager\Checkpoint pages/sec
+\MSSQL$ServerName:Databases(_Total)\Transactions/sec	
+\MSSQL$ServerName:General Statistics\User Connections	
+\MSSQL$ServerName:Locks(_Total)\Lock Requests/sec
+\MSSQL$ServerName:Locks(_Total)\Average Wait Time (ms)	
+\MSSQL$ServerName:Locks(_Total)\Number of Deadlocks/sec
+\MSSQL$ServerName:Wait Statistics(Waits in progress)\Page IO latch waits
+\MSSQL$ServerName:Memory Manager\Memory Grants Pending	
+\MSSQL$ServerName:SQL Statistics\Batch Requests/sec	
+\MSSQL$ServerName:SQL Statistics\SQL Compilations/sec	
+\MSSQL$ServerName:SQL Statistics\SQL Re-Compilations/sec
