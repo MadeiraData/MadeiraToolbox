@@ -63,6 +63,7 @@ To-do:
     - Return HTML report as output
     - Return a Complex Object as output (containing the comparison result object, the HTML report, and the change-scripts)
 - If Sending an E-Mail report is not specified, then make the e-mail related parameters optional.
+- Add comment-based documentation for all parameters
 
 .LINK
 https://madeiradata.github.io/mssql-jobs-hadr
@@ -207,19 +208,23 @@ Begin
 }
 Process
 {
-    cls
     $comparisonResults = @()
+
+    # For each Availability Group
     foreach ($ag in $ServerObject.AvailabilityGroups | Where-Object { $_.State -eq "Existing" })
     {
+        # Find which databases are involved in the AG
         $AGDatabases = @()
         $ag.AvailabilityDatabases | ForEach-Object { $AGDatabases += $_.Name }
         
         Write-Verbose "========= Availability Group: [$($ag.Name)] Primary Replica: [$($ag.PrimaryReplicaServerName)] ========="
 
+        # Connect to PRIMARY replica to get the "master" list of jobs
         $AGPrimaryServer = $ag.AvailabilityReplicas | Where-Object { $_.Name -eq $ag.PrimaryReplicaServerName }
         $PrimarySMO = New-Object Microsoft.SqlServer.Management.SMO.Server($AGPrimaryServer.Name)
         $PrimaryReplicaJobs = @()
 
+        # Get only relevant jobs based on their TSQL step database context
         $PrimarySMO.JobServer.Jobs | Where-Object { ($JobCategories -contains $_.Category -or $JobCategories.Count -eq 0) -and $_.JobType -eq "Local" } | ForEach-Object {
                             $currJob = Get-CompareableJob $_
                             $_.JobSteps | Where-Object {
@@ -229,13 +234,17 @@ Process
                                             }
                         }
         Write-Verbose "=== Found: $($PrimaryReplicaJobs.Count) Job(s) for $($AGDatabases.Count) Database(s) in Primary Replica ==="
-    
+        
+        # For each AG replica
         foreach ($replica in $ag.AvailabilityReplicas | Where-Object { $_.Name -ne $AGPrimaryServer.Name })
         {
             Write-Verbose "========================= Replica Server: [$($replica.Name)] ================"
+
+            # Connect to SECONDARY replica to get its list of jobs
             $SecondarySMO = New-Object Microsoft.SqlServer.Management.SMO.Server($replica.Name)
             $SecondaryReplicaJobs = @()
         
+            # Get only relevant jobs based on their TSQL step database context
             $SecondarySMO.JobServer.Jobs | Where-Object { ($JobCategories -contains $_.Category -or $JobCategories.Count -eq 0) -and $_.JobType -eq "Local" } | ForEach-Object {
                 $currJob = Get-CompareableJob $_
                 $_.JobSteps | Where-Object {
@@ -244,6 +253,8 @@ Process
                                     $SecondaryReplicaJobs += $currJob
                                 }
             }
+
+            # Create new comparison result
             $comparisonResults += [pscustomobject]@{
                     AGname=$ag.Name;
                     Primary=$ag.PrimaryReplicaServerName;
@@ -307,6 +318,7 @@ Process
         }
     }
 
+    # Prepare array of change-scripts
     $filesToAttach = @()
 
     if ($outputFolder -eq "" -or -not (Test-Path $outputFolder)) {
@@ -321,25 +333,50 @@ Process
         
         $filesToAttach += $sqlFilePath
 
-        Write-Host $sqlFilePath
+        Write-Host "Output Script: $sqlFilePath"
         $outputsList[$name] | Out-File $sqlFilePath
 
         $htmlBody = $htmlBody.Replace("{changescript_$name}",$sqlFileName)
     }
     
-    
+    # If discrepancies found, generate report
     if ($filesToAttach.Length -gt 0) {
         $reportBody = ConvertTo-Html -Body $htmlBody -PostContent "<p>Generated on $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")</p>"
         $reportBody | Out-File $htmlFilePath
 
-        Write-Host "Discrepencies found. Report saved to $($htmlFilePath). Sending E-mail..."
+        Write-Host "Discrepencies found. Report saved to: $($htmlFilePath)"
         
-        if ($ComputerName -eq "." -or $ComputerName -eq "") {
-            $ComputerName = (Get-ComputerInfo -Property CsName).CsName
+        # Send Email
+        if ($emailTo.Length -gt 0 -and $emailFrom -ne "" -and $emailServerAddress -ne "") {
+
+            Write-Verbose "Sending E-Mail..."
+            
+            if ($ComputerName -eq "." -or $ComputerName -eq "") {
+                $ComputerName = (Get-ComputerInfo -Property CsName).CsName
+            }
+        
+            # Use parameter splatting
+            $mailParams = @{
+                From = $emailFrom
+                To = $emailTo
+                Subject = "Job Discrepancies found - $ComputerName"
+                Body = $($reportBody -join [Environment]::NewLine)
+                BodyAsHtml = $true
+                Attachments = $filesToAttach
+                SmtpServer = $emailServerAddress
+                Port = $emailServerPort
+            }
+
+            if ($emailUseSSL) {
+                $mailParams["UseSsl"] = $true
+            }
+
+            if ($emailCredential -ne $null) {
+                $mailParams["Credential"] = $emailCredential
+            }
+
+            Send-MailMessage @mailParams
         }
-        
-        Send-MailMessage -From $emailFrom -To $emailTo -Subject "Job Discrepancies found - $ComputerName" -Body $($reportBody -join [Environment]::NewLine) -BodyAsHtml -Attachments $filesToAttach `
-                    -SmtpServer $emailServerAddress
 
     } else {
         Write-Host "OK"
