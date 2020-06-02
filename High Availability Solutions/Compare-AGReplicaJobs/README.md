@@ -28,16 +28,16 @@ The cmdlet performs the following operations:
 
 ```
 Compare-AGReplicaJobs
- [-emailFrom] <String>
- [-emailTo] <String[]>
- [-emailServerAddress <String>]
- [-ComputerName <String>]
- [-emailServerPort <Int32>]
- [-emailCredential <PSCredential>]
- [-outputFolder <String>]
- [-JobCategories <String[]>]
- [-emailUseSSL]
- [<CommonParameters>]
+ [ -emailFrom ] <String>
+ [ -emailTo ] <String[]>
+ [ [ -emailServerAddress ] <String> ]
+ [ [ -ComputerName ] <String> ]
+ [ [ -emailServerPort ] <Int32> ]
+ [ [ -emailCredential ] <PSCredential> ]
+ [ [ -outputFolder ] <String> ]
+ [ [ -JobCategories ] <String[]> ]
+ [ -emailUseSSL ]
+ [ <CommonParameters> ]
 ``` 
     
 
