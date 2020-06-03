@@ -6,7 +6,7 @@ Function: `Compare-AGReplicaJobs`
 
 Author: [Eitan Blumin (@EitanBlumin)](https://www.eitanblumin.com)
 
-© [Madeira Data Solutions (@Madeira_Data)](https://www.madeiradata.com)
+Â© [Madeira Data Solutions (@Madeira_Data)](https://www.madeiradata.com)
 
 License: [MIT License](LICENSE)
     
@@ -28,16 +28,16 @@ The cmdlet performs the following operations:
 
 ```
 Compare-AGReplicaJobs
- [-emailFrom] <String>
- [-emailTo] <String[]>
- [[-emailServerAddress] <String>]
- [[-ComputerName] <String>]
- [-emailServerPort <Int32>]
- [-emailCredential <PSCredential>]
- [-outputFolder <String>]
- [-JobCategories <String[]>]
- [-emailUseSSL]
- [<CommonParameters>]
+ [ -emailFrom ] <String>
+ [ -emailTo ] <String[]>
+ [ [ -emailServerAddress ] <String> ]
+ [ [ -ComputerName ] <String> ]
+ [ [ -emailServerPort ] <Int32> ]
+ [ [ -emailCredential ] <PSCredential> ]
+ [ [ -outputFolder ] <String> ]
+ [ [ -JobCategories ] <String[]> ]
+ [ -emailUseSSL ]
+ [ <CommonParameters> ]
 ``` 
     
 
