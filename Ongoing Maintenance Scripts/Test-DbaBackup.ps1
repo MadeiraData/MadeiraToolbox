@@ -9,7 +9,7 @@
         3. The database is restored as "dbatools-testrestore-$databaseName" by default, but you can change dbatools-testrestore to whatever you would like using -Prefix
         4. The internal file names are also renamed to prevent conflicts with original database
         5. A DBCC CHECKDB is then performed
-    .PARAMTER Path
+    .PARAMETER Path
         Path to SQL Server backup files.
         Paths passed in as strings will be scanned using the desired method, default is a non recursive folder scan
         Accepts multiple paths separated by ','
@@ -40,6 +40,8 @@
         Copyright: (c) 2020 by Eitan Blumin, licensed under MIT
         License: MIT https://opensource.org/licenses/MIT
     .LINK
+        https://github.com/sqlcollaborative/dbatools/issues/6594
+    .LINK
         https://docs.dbatools.io/#Test-DbaLastBackup
     .LINK
         https://docs.dbatools.io/#Restore-DbaDatabase
@@ -54,7 +56,9 @@
         Once the test is complete, the test restore will be dropped.
         The test results will be displayed in a Powershell grid view for easy sorting and filtering.
     .EXAMPLE
-        PS C:\> Test-DbaBackup -Path "C:\dbsmart\Temp" -DirectoryRecurse -Destination localhost -Verbose | ConvertTo-DbaDataTable | Write-DbaDataTable -SqlInstance localhost -Table msdb.dbo.dbatools_lastbackuptests -AutoCreateTable
+        PS C:\> Test-DbaBackup -Path "C:\dbsmart\Temp" -DirectoryRecurse -Destination localhost -Verbose | Out-GridView
+        This is what I used for my own internal debugging.
+        Remove this example before submitting to dbatools pull request.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingPlainTextForPassword", "", Justification = "For Parameters DestinationCredential and AzureCredential")]
