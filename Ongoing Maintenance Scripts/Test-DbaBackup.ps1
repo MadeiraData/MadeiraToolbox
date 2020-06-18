@@ -95,7 +95,7 @@
                         $null = $server.databases[$dbname].CheckTables('None')
                         Write-Verbose "Dbcc CheckTables finished successfully for $dbname on $servername"
                     } else {
-                        $null = $server.Query("DBCC CHECKDB ([$dbname]) WITH NO_INFOMSGS, ALL_ERRORMSGS")
+                        $null = $server.Query("DBCC CHECKDB ([$dbname]) WITH DATA_PURITY, NO_INFOMSGS, ALL_ERRORMSGS")
                         Write-Verbose "Dbcc CHECKDB finished successfully for $dbname on $servername"
                     }
                     return "Success"
