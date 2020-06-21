@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------------
 Author: Eitan Blumin (t: @EitanBlumin | b: eitanblumin.com)
 Creation Date: 2020-01-05
-Last Update: 2020-03-18
+Last Update: 2020-06-21
 ----------------------------------------------------------------------------
 Description:
 	This script uses small intervals to shrink a file (in the current database)
@@ -20,6 +20,7 @@ Description:
 ----------------------------------------------------------------------------
 
 Change log:
+	2020-06-21 - Added @DelayBetweenShrinks and @IterationMaxRetries parameters
 	2020-03-18 - Added @DatabaseName parameter
 	2020-01-30 - Added @MinPercentFree, and made all parameters optional
 	2020-01-05 - First version
@@ -36,6 +37,8 @@ DECLARE
 								-- Either @TargetSizeMB or @MinPercentFree must be specified.
 								-- If both @TargetSizeMB and @MinPercentFree are provided, the largest of them will be used.
 	,@IntervalMB		INT	= 1		-- Leave NULL to shrink the file in a single interval
+	,@DelayBetweenShrinks	VARCHAR(12) = '00:00:01' -- Delay to wait between shrink iterations (in 'hh:mm[[:ss].mss]' format). Leave NULL to disable delay. For more info, see the 'time_to_execute' argument of WAITFOR DELAY: https://docs.microsoft.com/en-us/sql/t-sql/language-elements/waitfor-transact-sql?view=sql-server-ver15#arguments
+	,@IterationMaxRetries	INT	= 3		-- Maximum number of attempts per iteration to shrink a file, when cannot successfuly shrink to desired target size
 
 ----------------------------------------------------------------------------
 		-- DON'T CHANGE ANYTHING BELOW THIS LINE --
@@ -44,8 +47,9 @@ DECLARE
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET ANSI_WARNINGS OFF;
 DECLARE @CurrSizeMB INT, @StartTime DATETIME, @sp_executesql NVARCHAR(1000), @CMD NVARCHAR(MAX), @SpaceUsedMB INT, @SpaceUsedPct VARCHAR(10), @TargetPct VARCHAR(10);
-
+DECLARE @NewSizeMB INT, @RetryNum INT
 SET @DatabaseName = ISNULL(@DatabaseName, DB_NAME());
+SET @RetryNum = 0;
 
 IF @DatabaseName IS NULL
 BEGIN
@@ -115,6 +119,32 @@ BEGIN
 	SET @CMD = N'DBCC SHRINKFILE (N' + QUOTENAME(@FileName, N'''') + N' , ' + CONVERT(nvarchar, @CurrSizeMB) + N') WITH NO_INFOMSGS; -- ' + CONVERT(nvarchar(25),GETDATE(),121)
 	RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
 	EXEC @sp_executesql @CMD
+	
+	-- Re-check new file size
+	EXEC @sp_executesql N'SELECT @NewSizeInMB = [size]/128 FROM sys.database_files WHERE [name] = @FileName;'
+				, N'@FileName SYSNAME, @NewSizeInMB FLOAT OUTPUT', @FileName, @NewSizeMB OUTPUT
+	
+	-- See if target size was successfully reached
+	IF @NewSizeMB > @CurrSizeMB
+	BEGIN
+		IF @RetryNum >= @IterationMaxRetries
+		BEGIN
+			RAISERROR(N'Unable to shrink below %d MB. Stopping operation after %d retries.', 12, 1, @NewSizeMB, @RetryNum) WITH NOWAIT;
+			BREAK;
+		END
+		ELSE
+		BEGIN
+			SET @RetryNum = @RetryNum + 1;
+			SET @CurrSizeMB = @NewSizeMB;
+			RAISERROR(N'-- Unable to shrink below %d MB. Retry attempt %d...', 0, 1, @NewSizeMB, @RetryNum) WITH NOWAIT;
+		END
+	END
+	ELSE
+		SET @RetryNum = 0;
+	
+	-- Sleep between iterations
+	IF @DelayBetweenShrinks IS NOT NULL
+		WAITFOR DELAY @DelayBetweenShrinks;
 END
 
 PRINT N'-- Done - ' + CONVERT(nvarchar(25),GETDATE(),121)
