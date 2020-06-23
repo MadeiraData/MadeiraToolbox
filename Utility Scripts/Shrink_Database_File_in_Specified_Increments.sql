@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------------
 Author: Eitan Blumin (t: @EitanBlumin | b: eitanblumin.com)
 Creation Date: 2020-01-05
-Last Update: 2020-06-21
+Last Update: 2020-06-22
 ----------------------------------------------------------------------------
 Description:
 	This script uses small intervals to shrink a file (in the current database)
@@ -20,6 +20,7 @@ Description:
 ----------------------------------------------------------------------------
 
 Change log:
+	2020-06-22 - Added @RegrowOnError5240 parameter
 	2020-06-21 - Added @DelayBetweenShrinks and @IterationMaxRetries parameters
 	2020-03-18 - Added @DatabaseName parameter
 	2020-01-30 - Added @MinPercentFree, and made all parameters optional
@@ -39,6 +40,7 @@ DECLARE
 	,@IntervalMB		INT	= 1		-- Leave NULL to shrink the file in a single interval
 	,@DelayBetweenShrinks	VARCHAR(12) = '00:00:01' -- Delay to wait between shrink iterations (in 'hh:mm[[:ss].mss]' format). Leave NULL to disable delay. For more info, see the 'time_to_execute' argument of WAITFOR DELAY: https://docs.microsoft.com/en-us/sql/t-sql/language-elements/waitfor-transact-sql?view=sql-server-ver15#arguments
 	,@IterationMaxRetries	INT	= 3		-- Maximum number of attempts per iteration to shrink a file, when cannot successfuly shrink to desired target size
+	,@RegrowOnError5240	BIT	= 1		-- Error 5240 may be resolved by temporarily increasing the file size before shrinking it again.
 
 ----------------------------------------------------------------------------
 		-- DON'T CHANGE ANYTHING BELOW THIS LINE --
@@ -118,8 +120,26 @@ BEGIN
 	
 	SET @CMD = N'DBCC SHRINKFILE (N' + QUOTENAME(@FileName, N'''') + N' , ' + CONVERT(nvarchar, @CurrSizeMB) + N') WITH NO_INFOMSGS; -- ' + CONVERT(nvarchar(25),GETDATE(),121)
 	RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
-	EXEC @sp_executesql @CMD
-	
+
+	BEGIN TRY
+		EXEC @sp_executesql @CMD
+	END TRY
+	BEGIN CATCH
+		-- File ID %d of database ID %d cannot be shrunk as it is either being shrunk by another process or is empty.
+		IF @RegrowOnError5240 = 1 AND ERROR_NUMBER() = 5240
+		BEGIN
+			-- This error can be solved by increasing the file size a bit before shrinking again
+			SET @CMD = N'ALTER DATABASE ' + QUOTENAME(@DatabaseName) + N' MODIFY FILE (NAME = ' + QUOTENAME(@FileName, N'''') + N', SIZE = ' + CONVERT(nvarchar, @CurrSizeMB + @IntervalMB) + N'MB); -- ' + CONVERT(nvarchar(25),GETDATE(),121)
+			
+			PRINT N'-- Error 5240 encountered. Regrowing:'
+			RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
+			
+			EXEC @sp_executesql @CMD
+		END
+		ELSE
+			THROW;
+	END CATCH
+
 	-- Re-check new file size
 	EXEC @sp_executesql N'SELECT @NewSizeInMB = [size]/128 FROM sys.database_files WHERE [name] = @FileName;'
 				, N'@FileName SYSNAME, @NewSizeInMB FLOAT OUTPUT', @FileName, @NewSizeMB OUTPUT
