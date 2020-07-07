@@ -23,6 +23,7 @@ The cmdlet performs the following operations:
 - Generate **DROP/CREATE change-scripts** to be applied to each secondary replica in order to "align" them to their primary counterpart.
 - **Send an e-mail** message containing the HTML report, with the relevant change-scripts as attachments.
     
+![Example HTML Report sent via e-mail](CompareJobs_screenshot_1.png)
     
 ## Syntax
 
