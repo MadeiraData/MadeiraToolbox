@@ -9,6 +9,7 @@ the disk volume where the TempDB files are located.
 This check only works when TempDB files are isolated from other databases and exist on their own dedicated volume.
 
 Change log:
+2020-08-04 - Added @ClearServerCache parameter
 2020-03-08 - Bug fixes, added parameters for more control
 2020-01-19 - Removed max size setting, replaced with UNLIMITED. Added @FileGrowthMB as parameter.
 2019-11-19 - First version
@@ -16,12 +17,25 @@ Change log:
 */
 
 SET NOCOUNT, XACT_ABORT, ARITHABORT ON;
+DECLARE @ClearServerCache BIT = 0 -- if shrinking tempdb files doesn't work, you may have to set this to 1 to clear objects from server cache
 DECLARE @MaxSizeDiskUtilizationPercent FLOAT = 95 -- use NULL for UNLIMITED
 DECLARE @InitSizeDiskUtilizationPercent FLOAT = 70
 DECLARE @InitialSizeMBOverride INT = NULL -- 2048 -- hard-coded number override for edge cases
 DECLARE @FileGrowthMB INT = 1024
 DECLARE @IncludeTransactionLog BIT = 0
 DECLARE @CMDs AS TABLE (CMD nvarchar(max));
+
+IF @ClearServerCache = 1
+BEGIN
+INSERT INTO @CMDs
+VALUES
+(N'CHECKPOINT;'),
+(N'GO'),
+(N'DBCC FREEPROCCACHE'),
+(N'GO'),
+(N'DBCC FREESYSTEMCACHE (''ALL'')'),
+(N'GO')
+END
 
 INSERT INTO @CMDs
 SELECT
