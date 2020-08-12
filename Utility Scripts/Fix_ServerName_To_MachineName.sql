@@ -27,12 +27,23 @@ BEGIN
 	GOTO Quit;
 END
 
-PRINT 'Dropping local server name ' + @CurrSrv
-EXEC sp_dropserver @CurrSrv
+IF @CurrSrv IS NOT NULL
+BEGIN
+	PRINT 'Dropping local server name ' + @CurrSrv
+	EXEC sp_dropserver @CurrSrv
+END
+
+IF EXISTS (SELECT 1 FROM sys.servers WHERE server_id <> 0 AND [name] = @MachineName)
+BEGIN
+	PRINT 'The local server is incorrectly configured as a remote server. Dropping server name ' + @MachineName
+	EXEC sp_dropserver @MachineName
+END
+
 PRINT 'Creating local server name ' + @MachineName
 EXEC sp_addserver @MachineName, local
 
 Quit:
 
-IF EXISTS (SELECT name FROM sys.servers WHERE server_id = 0 AND name <> @@SERVERNAME)
+IF EXISTS (SELECT [name] FROM sys.servers WHERE server_id = 0 AND [name] <> @@SERVERNAME)
+	OR (@MachineName IS NOT NULL AND (@@SERVERNAME <> CONVERT(NVARCHAR,SERVERPROPERTY('ServerName'))))
 	PRINT 'Your server name was changed. Please restart the SQL Server service to apply changes.';
