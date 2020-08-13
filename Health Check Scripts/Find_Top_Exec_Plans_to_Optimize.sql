@@ -13,6 +13,10 @@ Filter based on execution count, CPU time and duration.
 You can use the parameters at the top to control behavior.
 Change the sorting column at the end to control which queries
 would show up first.
+=======================================================
+Change Log:
+	2020-08-13 Added statement-level details, and aggregation on query stats
+=======================================================
 */
 
 DECLARE
@@ -29,32 +33,45 @@ IF OBJECT_ID('tempdb..#topqueries') IS NOT NULL DROP TABLE #topqueries;
 
 SELECT TOP (@MaxQueriesToCheckFromQueryStats)
 	 qs.sql_handle
+	,qs.statement_start_offset
+	,qs.statement_end_offset
 	,qs.plan_handle
-	,qs.creation_time
-	,qs.last_execution_time
-	,qs.execution_count
-	,qs.total_elapsed_time
-	,qs.min_elapsed_time
-	,qs.max_elapsed_time
-	,qs.total_worker_time
-	,qs.min_worker_time
-	,qs.max_worker_time
-	,qs.total_physical_reads
-	,qs.min_physical_reads
-	,qs.max_physical_reads
-	,qs.total_logical_reads
-	,qs.min_logical_reads
-	,qs.max_logical_reads
-	,qs.total_used_grant_kb
-	,qs.min_used_grant_kb
-	,qs.max_used_grant_kb
+	,creation_time			= MIN(qs.creation_time)
+	,last_execution_time	= MAX(qs.last_execution_time)
+	,execution_count		= SUM(qs.execution_count)
+	,total_elapsed_time		= SUM(qs.total_elapsed_time)
+	,min_elapsed_time		= MIN(qs.min_elapsed_time)
+	,max_elapsed_time		= MAX(qs.max_elapsed_time)
+	,total_worker_time		= SUM(qs.total_worker_time)
+	,min_worker_time		= MIN(qs.min_worker_time)
+	,max_worker_time		= MAX(qs.max_worker_time)
+	,total_physical_reads	= SUM(qs.total_physical_reads)
+	,min_physical_reads		= MIN(qs.min_physical_reads)
+	,max_physical_reads		= MAX(qs.max_physical_reads)
+	,total_logical_reads	= SUM(qs.total_logical_reads)
+	,min_logical_reads		= MIN(qs.min_logical_reads)
+	,max_logical_reads		= MAX(qs.max_logical_reads)
+	,total_used_grant_kb	= SUM(qs.total_used_grant_kb)
+	,min_used_grant_kb		= MIN(qs.min_used_grant_kb)
+	,max_used_grant_kb		= MAX(qs.max_used_grant_kb)
 INTO #topqueries
 FROM sys.dm_exec_query_stats AS qs
 WHERE qs.last_execution_time > DATEADD(day, -@DaysBackToCheck, GETDATE())
 AND qs.execution_count > @MinimumExecCount
 AND qs.max_worker_time > @MinimumCPUTime
 AND qs.max_elapsed_time > @MinimumDuration
-ORDER BY qs.total_elapsed_time DESC
+GROUP BY
+	 qs.sql_handle
+	,qs.statement_start_offset
+	,qs.statement_end_offset
+	,qs.plan_handle
+ORDER BY
+	total_elapsed_time
+	--total_worker_time	-- CPU
+	--total_physical_reads	-- Disk I/O
+	--total_logical_reads	-- Memory/Disk Activity
+	--total_used_grant_kb	-- Memory Utilization
+	DESC
 OPTION (RECOMPILE);
 
 ;WITH XMLNAMESPACES (DEFAULT N'http://schemas.microsoft.com/sqlserver/2004/07/showplan', N'http://schemas.microsoft.com/sqlserver/2004/07/showplan' AS p)  
@@ -63,6 +80,14 @@ FROM
 (
 SELECT 
 	 SQLBatchText = t.text
+	,SQLStmtText = SUBSTRING(t.text,
+						CASE WHEN NULLIF(qs.statement_start_offset,-1) IS NULL THEN 0
+						ELSE qs.statement_start_offset / 2 + 1
+						END
+						,
+						CASE WHEN NULLIF(qs.statement_end_offset,-1) IS NULL THEN LEN(t.text)
+						ELSE (statement_end_offset - qs.statement_start_offset) / 2 + 1
+						END)
 	,QueryPlan = QP.query_plan
 	,HasParallelism = QP.query_plan.query('.').exist('data(//RelOp[@PhysicalOp="Parallelism"][1])')
 	,HasMissingIndexes = CASE WHEN QP.query_plan.query('.').exist('data(//MissingIndexes[1])') = 1 THEN 1 ELSE 0 END
@@ -125,10 +150,17 @@ CROSS APPLY sys.dm_exec_query_plan (qs.plan_handle) AS QP
 CROSS APPLY sys.dm_exec_sql_text (qs.sql_handle) AS t
 WHERE QP.query_plan IS NOT NULL
 ) AS q
+CROSS APPLY (
+			SELECT
+				  HighestStatementCost = MAX(S.node_xml.value('(@StatementSubTreeCost)[1]','float'))
+				, TotalBatchCost = SUM(S.node_xml.value('(@StatementSubTreeCost)[1]','float'))
+			FROM q.QueryPlan.nodes('//StmtSimple') AS S(node_xml)
+			WHERE S.node_xml.query('.').exist('data(//StmtSimple[@StatementSubTreeCost>0][1])') = 1
+			) AS StmtSummary
 WHERE WarningTypes IS NOT NULL
 ORDER BY 
-	total_elapsed_time		-- Duration
-	--total_worker_time		-- CPU
+	total_elapsed_time	-- Duration
+	--total_worker_time	-- CPU
 	--total_physical_reads	-- Disk I/O
 	--total_logical_reads	-- Memory/Disk Activity
 	--total_used_grant_kb	-- Memory Utilization
