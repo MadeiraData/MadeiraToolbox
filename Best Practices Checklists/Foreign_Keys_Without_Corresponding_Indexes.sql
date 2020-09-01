@@ -4,7 +4,7 @@
 -- Author:	Guy Glantser | https://www.madeiradata.com
 -- Create Date: 08/04/2012
 -- Type: Query Plug&play
--- Last Updated On:	08/04/2012
+-- Last Updated On:	01/09/2020
 -- Notes: 
 =========================================================================================================================*/
 
@@ -14,6 +14,11 @@ SELECT
 	TableName			= OBJECT_NAME (ForeignKeysWithColumns.ObjectId) ,
 	ForeignKeyName		= ForeignKeysWithColumns.ForeignKeyName ,
 	ForeignKeyColumns	= ForeignKeysWithColumns.ForeignKeyColumnList,
+	UserUpdates		= ISNULL(UsageStats.user_updates, 0) ,
+	UserScans		= ISNULL(UsageStats.user_scans, 0) ,
+	LastUpdate		= UsageStats.last_user_update ,
+	LastScan		= UsageStats.last_user_scan ,
+	TotalRows		= ISNULL(PartitionStats.TotalRows, 0),
 	RemediationScript		= 'CREATE NONCLUSTERED INDEX ' + QUOTENAME('IX_'+ForeignKeysWithColumns.ForeignKeyName) + ' ON '+ QUOTENAME( OBJECT_SCHEMA_NAME (ForeignKeysWithColumns.ObjectId))+'.'+QUOTENAME( OBJECT_NAME (ForeignKeysWithColumns.ObjectId))+' ('+ForeignKeysWithColumns.ForeignKeyColumnList+')'
 FROM
 	(
@@ -119,6 +124,30 @@ AND (
 	OR
 	ForeignKeysWithColumns.ForeignKeyColumnList LIKE REPLACE(REPLACE(IndexesWithColumns.IndexKeysList,'[','_'),']','_') + N'%'
 	)
+OUTER APPLY
+(
+	SELECT
+		us.user_updates ,
+		us.user_scans ,
+		us.last_user_update ,
+		us.last_user_scan
+	FROM
+		sys.dm_db_index_usage_stats AS us
+	WHERE
+		us.database_id = DB_ID()
+	AND	us.object_id = ForeignKeysWithColumns.ObjectId
+	AND	us.index_id <= 1
+) AS UsageStats
+OUTER APPLY
+(
+	SELECT
+		TotalRows = SUM(p.rows)
+	FROM
+		sys.partitions AS p
+	WHERE
+		p.object_id = ForeignKeysWithColumns.ObjectId
+	AND	p.index_id <= 1
+) AS PartitionStats
 WHERE
 	IndexesWithColumns.ObjectId IS NULL
 ORDER BY
