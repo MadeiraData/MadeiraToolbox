@@ -3,7 +3,7 @@
 ----------------------------------------------------------------
 -- Author: Eitan Blumin | https://www.eitanblumin.com
 -- Create Date: 2019-12-08
--- Last Update: 2020-03-30
+-- Last Update: 2020-09-06
 -- Source: http://bit.ly/SQLCompressionEstimation
 -- Full Link: https://gist.github.com/EitanBlumin/85cf620f7267b234d677f9c3027fb7ce
 ----------------------------------------------------------------
@@ -23,6 +23,7 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2020-09-06 - added support for readable secondaries, added MAXDOP 1 for the query from operational stats to avoid access violation bug
 -- 2020-03-30 - added filter to ignore indexes and tables with unsupported LOB/FILESTREAM columns
 -- 2020-03-16 - added informational and status messages in output script
 -- 2020-03-15 - tweaked default parameter values a bit, and added server uptime message
@@ -259,8 +260,13 @@ END
 -- Make sure specified database is accessible
 IF DB_ID(@CurrDB) IS NULL OR DATABASEPROPERTYEX(@CurrDB, 'Updateability') <> 'READ_WRITE' OR DATABASEPROPERTYEX(@CurrDB, 'Status') <> 'ONLINE'
 BEGIN
-	RAISERROR(N'Database "%s" is not valid for compression estimation check. Please make sure it is accessible and writeable.',16,1,@CurrDB);
-	GOTO Quit;
+	IF @FeasibilityCheckOnly = 0 OR DB_ID(@CurrDB) IS NULL OR DATABASEPROPERTYEX(@CurrDB, 'Status') <> 'ONLINE'
+	BEGIN
+		RAISERROR(N'Database "%s" is not valid for compression estimation check. Please make sure it is accessible and writeable.',16,1,@CurrDB);
+		GOTO Quit;
+	END
+	ELSE
+		RAISERROR(N'-- NOTE: Database "%s" is not writeable. You will not be able to rebuild its indexes here until it is writeable.',10,1,@CurrDB);
 END
 
 -- Get list of all un-compressed tables/partitions in the specified database
@@ -370,7 +376,7 @@ GROUP BY
 	, p.partition_number
 	, p.size_MB
 	, p.in_row_percent
-OPTION (RECOMPILE);'
+OPTION (RECOMPILE, MAXDOP 1);'
 
 INSERT INTO @ObjectsToCheck
 EXEC sp_executesql @CMD;
