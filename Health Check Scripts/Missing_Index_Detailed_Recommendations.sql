@@ -8,6 +8,7 @@ COUNT(1) OVER(PARTITION BY mid.[statement], equality_columns) AS [similar_missin
 mid.equality_columns, mid.inequality_columns, mid.included_columns,
 migs.unique_compiles, migs.user_seeks, 
 CONVERT(decimal(18,2), migs.avg_total_user_cost) AS [avg_total_user_cost], migs.avg_user_impact 
+, NonclusteredIndexesOnTable		= ISNULL(OtherIndexes.NonclusteredIndexes, 0) 
 , UserUpdates		= ISNULL(UsageStats.user_updates, 0) 
 , UserScans		= ISNULL(UsageStats.user_scans, 0) 
 , LastUpdate		= UsageStats.last_user_update 
@@ -65,5 +66,18 @@ OUTER APPLY
 		p.object_id = mid.object_id
 	AND	p.index_id <= 1
 ) AS PartitionStats
+OUTER APPLY
+(
+	SELECT
+		NonclusteredIndexes = COUNT(*)
+	FROM
+		sys.indexes AS p
+	WHERE
+		p.object_id = mid.object_id
+	AND	p.index_id > 1
+) AS OtherIndexes
+WHERE user_seeks > 10
+AND avg_user_impact > 15
+AND database_id = DB_ID()
 ORDER BY index_advantage DESC, migs.avg_user_impact DESC
 OPTION (RECOMPILE);
