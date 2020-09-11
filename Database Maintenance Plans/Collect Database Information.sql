@@ -1,11 +1,11 @@
 /*========================================================================================================================
 
-Description:	Display information about user databases to be used for establishing a database maintenance plan
+Description:	Display information about all the databases in the instance to be used for establishing a database maintenance plan
 Scope:			Instance
 Author:			Guy Glantser
 Created:		09/09/2020
-Last Updated:	09/09/2020
-Notes:			Use this information to plan a maintenance plan for the user databases in the instance
+Last Updated:	11/09/2020
+Notes:			Use this information to plan a maintenance plan for the databases in the instance
 
 =========================================================================================================================*/
 
@@ -34,8 +34,6 @@ SELECT
 FROM
 	sys.databases
 WHERE
-	database_id > 4
-AND
 	source_database_id IS NULL
 AND
 	is_read_only = 0
