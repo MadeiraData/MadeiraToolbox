@@ -4,7 +4,7 @@ Description:	Display information about ad-hoc queries with high number of instan
 Scope:			Instance
 Author:			Guy Glantser
 Created:		09/09/2020
-Last Updated:	09/09/2020
+Last Updated:	15/09/2020
 Notes:			Ad-hoc queries with a high number of instances waste CPU and memory resources by generating the same plan many times.
 				Such queries should be parameterized in most cases. But pay attention to parameter sniffing issues.
 				If there are many ad-hoc queries with high number of instances,
@@ -34,7 +34,7 @@ AS
 		BatchPlan			= BatchPlans.query_plan ,
 		FirsCompilationTime	= MIN (QueryStats.creation_time) OVER (PARTITION BY BatchPlans.[dbid] , QueryStats.query_hash) ,
 		LastCompilationTime	= QueryStats.creation_time ,
-		TotalSizeInCache_MB	= CAST (SUM (CachedPlans.size_in_bytes) OVER (PARTITION BY BatchPlans.[dbid] , QueryStats.query_hash) / 1024.0 / 1024.0 AS DECIMAL(19,2)) ,
+		TotalSizeInCache_MB	= CAST (SUM (CONVERT(bigint, CachedPlans.size_in_bytes)) OVER (PARTITION BY BatchPlans.[dbid] , QueryStats.query_hash) / 1024.0 / 1024.0 AS DECIMAL(19,2)) ,
 		QueryHashRowNumber	= ROW_NUMBER () OVER (PARTITION BY BatchPlans.[dbid] , QueryStats.query_hash ORDER BY QueryStats.creation_time DESC) ,
 		QueryHashCount		= COUNT (*) OVER (PARTITION BY BatchPlans.[dbid] , QueryStats.query_hash)
 	FROM
