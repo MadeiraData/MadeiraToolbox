@@ -1,10 +1,20 @@
+/*
+Analyze SQLDiag extended event files
+=====================================
+Author: Eitan Blumin , Madeira Data Solutions (https://www.madeiradata.com | https://www.eitanblumin.com)
+Create Date: 2020-09-15
+Description:
+	This T-SQL script focuses on analyzing the "query_processing" components of SQLDiag files.
+	This can be useful for investigating Deadlocked Scheduler incidents.
+*/
 DECLARE
 	@FileTargetPath NVARCHAR(256) = '*_SQLDIAG_*.xel',
+	@LocalTimeZone VARCHAR(50) = 'Israel Standard Time',
 	@Top INT = 1000
 
 SELECT TOP (@Top)
   event_data_xml
-, timestamp_local	= timestamp_utc AT TIME ZONE 'UTC' AT TIME ZONE 'Israel Standard Time'
+, timestamp_local	= timestamp_utc AT TIME ZONE 'UTC' AT TIME ZONE @LocalTimeZone
 , [object_name]
 , component		= event_data_xml.value('(event/data[@name="component"])[1]', 'varchar(256)')
 , maxWorkers		= event_data_xml.value('(event/data[@name="data"]/value/queryProcessing/@maxWorkers)[1]', 'int')
