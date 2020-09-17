@@ -11,6 +11,7 @@ DECLARE
 	 @SampleMode		VARCHAR(25) = NULL -- Valid inputs are DEFAULT, NULL, LIMITED, SAMPLED, or DETAILED. The default (NULL) is LIMITED.
 	,@MinFragmentation	INT = 20
 	,@MinPageCount		INT = 1000
+	,@IncludeHeaps		BIT = 0 -- Set to 1 to also check heap tables
 
 SET ARITHABORT, XACT_ABORT, NOCOUNT ON;
 
@@ -60,7 +61,9 @@ BEGIN
 	WHERE
 		avg_fragmentation_in_percent > ', @MinFragmentation, N'
 	AND page_count > ', @MinPageCount, N'
-	AND t.is_ms_shipped = 0
+	AND t.is_ms_shipped = 0'
+	+ CASE WHEN @IncludeHeaps = 1 THEN N'' ELSE N'
+	AND i.index_id >= 1' END + N'
 
 	SET @RCount = @@ROWCOUNT;
 	SET @TimeString = CONVERT(VARCHAR, GETDATE(), 121);
