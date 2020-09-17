@@ -7,26 +7,30 @@ Date: 2020-09-14
 https://www.madeiradata.com
 https://www.eitanblumin.com
 */
+DECLARE
+	 @SampleMode		VARCHAR(25) = NULL -- Valid inputs are DEFAULT, NULL, LIMITED, SAMPLED, or DETAILED. The default (NULL) is LIMITED.
+	,@MinFragmentation	INT = 20
+	,@MinPageCount		INT = 1000
 
 SET ARITHABORT, XACT_ABORT, NOCOUNT ON;
 
 IF OBJECT_ID('tempdb..#results') IS NOT NULL DROP TABLE #results;
 CREATE TABLE #results
 (
-	databaseName SYSNAME,
-	schemaName SYSNAME,
-	tableName SYSNAME,
-	indexName SYSNAME,
-	indexType SYSNAME,
-	lastStatsUpdate DATETIME,
-	avg_fragmentation_in_percent FLOAT,
-	record_count INT,
-	page_count INT,
-	compressed_page_count INT
+	databaseName SYSNAME NULL,
+	schemaName SYSNAME NULL,
+	tableName SYSNAME NULL,
+	indexName SYSNAME NULL,
+	indexType SYSNAME NULL,
+	lastStatsUpdate DATETIME NULL,
+	avg_fragmentation_in_percent FLOAT NULL,
+	record_count INT NULL,
+	page_count INT NULL,
+	compressed_page_count INT NULL
 );
 
-
-EXEC sp_MSforeachdb N'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+DECLARE @cmd NVARCHAR(MAX)
+SET @cmd = CONCAT(N'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 IF DATABASEPROPERTYEX(''?'', ''Updateability'') = ''READ_WRITE'' AND DATABASEPROPERTYEX(''?'', ''Status'') = ''ONLINE''
 BEGIN
 	USE [?];
@@ -47,19 +51,22 @@ BEGIN
 	 ,record_count
 	 ,page_count
 	 ,compressed_page_count
-	FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, ''SAMPLED'') ips
+	FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, '
+		+ ISNULL(QUOTENAME(NULLIF(NULLIF(@SampleMode, 'NULL'), 'DEFAULT'), ''''), N'NULL') 
+		+ N') ips
 	INNER JOIN sys.tables t on t.[object_id] = ips.[object_id]
 	INNER JOIN sys.schemas s on t.[schema_id] = s.[schema_id]
 	INNER JOIN sys.indexes i ON (ips.object_id = i.object_id) AND (ips.index_id = i.index_id)
 	WHERE
-		avg_fragmentation_in_percent > 20
-	AND page_count > 1000
+		avg_fragmentation_in_percent > ', @MinFragmentation, N'
+	AND page_count > ', @MinPageCount, N'
 	AND t.is_ms_shipped = 0
 
 	SET @RCount = @@ROWCOUNT;
 	SET @TimeString = CONVERT(VARCHAR, GETDATE(), 121);
 	RAISERROR(N''[%s] Found %d fragmented items in "?"'',0,1, @TimeString, @RCount);
-END'
+END')
+EXEC sp_MSforeachdb @cmd;
 
 SELECT 
 	CONCAT(QUOTENAME(databaseName), '.', QUOTENAME(schemaName), '.', QUOTENAME(tableName)) AS full_table_name
