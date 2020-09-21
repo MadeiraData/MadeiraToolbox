@@ -17,12 +17,7 @@ CREATE TABLE #tmpStats(
 );
 
 DECLARE @qry NVARCHAR(MAX);
-SET @qry = N'IF DATABASEPROPERTYEX(''?'', ''Updateability'') = ''READ_WRITE'' 
- AND DATABASEPROPERTYEX(''?'', ''Status'') = ''ONLINE''
- AND DB_ID(''?'') > 4
- AND ''?'' NOT IN(''master'', ''model'', ''msdb'', ''tempdb'', ''ReportServerTempDB'', ''distribution'', ''SSISDB'')
-BEGIN
- USE [?];
+SET @qry = N'
  SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
  INSERT #tmpStats
@@ -33,7 +28,7 @@ BEGIN
   stat.name,
   MIN(sp.last_updated),
   MAX(sp.modification_counter),
-  SUM(sp.rows)
+  SUM(ps.rows)
  FROM sys.tables AS t
   INNER JOIN (
    SELECT SUM(ps.rows) AS rows, ps.object_id
@@ -44,13 +39,40 @@ BEGIN
    ) AS ps
    ON t.object_id = ps.object_id 
   INNER JOIN sys.stats AS stat ON t.object_id = stat.object_id
-  CROSS APPLY sys.dm_db_stats_properties(stat.object_id, stat.stats_id) AS sp
- WHERE sp.modification_counter >= ' + CONVERT(nvarchar, @MinimumModCountr) + N'
-  AND sp.last_updated < DATEADD(day, -' + CONVERT(nvarchar, @MinimumDaysOld) + N', GETDATE())
- GROUP BY stat.object_id,stat.name
-END'
+  CROSS APPLY
+  (
+  SELECT modification_counter, last_updated
+  FROM sys.dm_db_stats_properties(stat.object_id, stat.stats_id)
+  WHERE modification_counter >= ' + CONVERT(nvarchar, @MinimumModCountr) + N'
+  AND last_updated < DATEADD(day, -' + CONVERT(nvarchar, @MinimumDaysOld) + N', GETDATE())
+  '
+  + CASE WHEN OBJECT_ID('sys.dm_db_incremental_stats_properties') IS NULL THEN N'' ELSE 
+  N'UNION ALL
+  SELECT modification_counter, last_updated
+  FROM sys.dm_db_incremental_stats_properties(stat.object_id, stat.stats_id)
+  WHERE modification_counter >= ' + CONVERT(nvarchar, @MinimumModCountr) + N'
+  AND last_updated < DATEADD(day, -' + CONVERT(nvarchar, @MinimumDaysOld) + N', GETDATE())
+  ' END
+  + N') AS sp
+ GROUP BY stat.object_id,stat.name'
 
-EXEC sp_MSforeachdb @qry;
+IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) = 'SQL Azure'
+BEGIN
+	exec (@qry)
+END
+ELSE
+BEGIN
+	SET @qry =  N'
+IF EXISTS (SELECT * FROM sys.databases WHERE database_id > 4 AND name = ''?'' AND state_desc = ''ONLINE'' AND DATABASEPROPERTYEX(name, ''Updateability'') = ''READ_WRITE'')
+ AND ''?'' NOT IN(''master'', ''model'', ''msdb'', ''tempdb'', ''ReportServerTempDB'', ''distribution'', ''SSISDB'')
+BEGIN
+ USE [?];'
++ @qry + N'
+END'
+	exec sp_MSforeachdb @qry
+END
+
+PRINT @qry
 
 SELECT
   [database_name] = DB_NAME(databaseId)
