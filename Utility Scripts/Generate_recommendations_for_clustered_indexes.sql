@@ -10,8 +10,8 @@
 -- The script implements the following algorithm:
 --
 -- 1. Look in index usage stats for the most "popular" non-clustered indexes which would be a good candidate as clustered index. If no such was found, then:
--- 2. Look in missing index stats for the most impactful index that has the highest number of INCLUDE columns. If no such was found, then:
--- 3. If there's any non-clustered index at all, get the first one created with the highest number of INCLUDE columns, give priority to UNIQUE indexes. If no such was found, then:
+-- 2. If there's any non-clustered index at all, get the first one created with the highest number of INCLUDE columns, give priority to UNIQUE indexes. If no such was found, then:
+-- 3. Look in missing index stats for the most impactful index that has the highest number of INCLUDE columns. If no such was found, then:
 -- 4. Use the IDENTITY column in the table. If no such was found, then:
 -- 5. Use the first date/time column in the table, give priority to columns with a default constraint. If no such was found, then:
 -- 6. Check for any column statistics in the table and look for the column which is the most selective (most unique values). If no such was found, then:
@@ -19,6 +19,9 @@
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2020-09-21	Added columns list in initial recommendations retrieval, removed newlines from remediation scripts
+-- 2020-07-14	Added proper support for replacing unique indexes
+-- 2020-07-14	Added generated script for replacing existing nc index with a clustered index
 -- 2020-02-19	Added support for Azure SQL DB, and added version-dependent check to ignore memory optimized tables
 -- 2020-02-12	Changed prioritization a bit for the recommendations, added automatic generation of basic CREATE script
 -- 2020-01-07	Added check of database Updateability, and moved around a few columns
@@ -46,18 +49,22 @@ CREATE TABLE #temp_heap
 	num_of_rows INT NULL,
 	[object_id] INT,
         candidate_index SYSNAME NULL,
+	candidate_columns_from_existing_index NVARCHAR(MAX) NULL,
 	candidate_columns_from_missing_index NVARCHAR(MAX) NULL,
 	identity_column SYSNAME NULL,
 	most_selective_column_from_stats SYSNAME NULL,
 	first_date_column SYSNAME NULL,
-	first_date_column_default NVARCHAR(MAX) NULL
+	first_date_column_default NVARCHAR(MAX) NULL,
+	is_unique BIT NULL
     );
 
 SET @CMD = N'
- INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index)
+ INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, is_unique)
  SELECT DB_NAME() as DatabaseName, t.object_id, OBJECT_NAME(t.object_id) AS table_name, QUOTENAME(OBJECT_SCHEMA_NAME(t.object_id)) + ''.'' + QUOTENAME(OBJECT_NAME(t.object_id)) AS FullTableName
  , SUM(p.rows)
  , QUOTENAME(ix.name) AS CandidateIndexName
+ , ix_columns
+ , ix.is_unique
  FROM sys.tables t
  INNER JOIN sys.partitions p
  ON t.object_id = p.OBJECT_ID
@@ -73,6 +80,15 @@ SET @CMD = N'
  LEFT JOIN sys.indexes AS ix
  ON ixus.index_id = ix.index_id
  AND ix.object_id = t.object_id
+ OUTER APPLY
+ (SELECT ix_columns = STUFF((
+				SELECT '', '' + QUOTENAME(c.name) + CASE ic.is_descending_key WHEN 1 THEN '' DESC'' ELSE '' ASC'' END
+				FROM sys.index_columns AS ic
+				INNER JOIN sys.columns AS c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+				WHERE ic.object_id = t.object_id AND ic.index_id = ix.index_id AND ic.is_included_column = 0
+				FOR XML PATH('''')
+			), 1, 2, '''')
+) AS ixcolumns
  WHERE p.index_id = 0
  AND t.is_ms_shipped = 0
  AND t.OBJECT_ID > 255'
@@ -80,7 +96,7 @@ SET @CMD = N'
  + CASE WHEN CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 12 THEN N'
  AND t.is_memory_optimized = 0'
  ELSE N'' END + N'
- GROUP BY t.object_id, ix.name
+ GROUP BY t.object_id, ix.name, ix.is_unique, ix_columns
  ' + ISNULL(N'HAVING SUM(p.rows) >= ' + CONVERT(nvarchar,@MinimumRowsInTable), N'')
 
 IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) = 'SQL Azure'
@@ -131,11 +147,23 @@ FETCH NEXT FROM Tabs INTO @CurrDB, @CurrObjId, @CurrTable
 WHILE @@FETCH_STATUS = 0
 BEGIN
 	-- Get additional metadata for current table
-	DECLARE @FirstIndex SYSNAME, @IdentityColumn SYSNAME, @FirstDateColumn SYSNAME, @FirstDateColumnDefault NVARCHAR(MAX);
-	SET @CMD = N'SELECT TOP 1 @FirstIndex = name FROM ' + QUOTENAME(@CurrDB) + N'.sys.indexes AS ix 
+	DECLARE @FirstIndex SYSNAME, @IsUnique BIT, @FirstIndexColumns NVARCHAR(MAX), @IdentityColumn SYSNAME, @FirstDateColumn SYSNAME, @FirstDateColumnDefault NVARCHAR(MAX);
+	SET @CMD = N'SELECT TOP 1 
+		@FirstIndex = name,
+		@IsUnique = ix.is_unique,
+		@FirstIndexColumns = 
+			STUFF((
+				SELECT '', '' + QUOTENAME(c.name) + CASE ic.is_descending_key WHEN 1 THEN '' DESC'' ELSE '' ASC'' END
+				FROM ' + QUOTENAME(@CurrDB) + N'.sys.index_columns AS ic
+				INNER JOIN ' + QUOTENAME(@CurrDB) + N'.sys.columns AS c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+				WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id AND ic.is_included_column = 0
+				FOR XML PATH('''')
+			), 1, 2, '''')
+	FROM ' + QUOTENAME(@CurrDB) + N'.sys.indexes AS ix 
 	OUTER APPLY (SELECT SUM(CASE WHEN is_included_column = 1 THEN 1 ELSE 0 END) AS included_columns, COUNT(*) AS indexed_columns 
 			FROM ' + QUOTENAME(@CurrDB) + N'.sys.index_columns AS ic WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id) AS st  
-	WHERE object_id = @ObjId AND index_id > 0 ORDER BY ix.is_unique DESC, included_columns DESC, indexed_columns ASC, index_id ASC;
+	WHERE object_id = @ObjId AND index_id > 0
+	ORDER BY ix.is_unique DESC, included_columns DESC, indexed_columns ASC, index_id ASC;
 	
 	SELECT @IdentityColumn = [name]
 	FROM ' + QUOTENAME(@CurrDB) + N'.sys.identity_columns
@@ -157,16 +185,18 @@ BEGIN
 	SET @FirstDateColumn = NULL;
 	SET @FirstDateColumnDefault = NULL
 	EXEC sp_executesql @CMD
-			, N'@ObjId INT, @FirstIndex SYSNAME OUTPUT, @IdentityColumn SYSNAME OUTPUT, @FirstDateColumn SYSNAME OUTPUT, @FirstDateColumnDefault NVARCHAR(MAX) OUTPUT'
-			, @CurrObjId, @FirstIndex OUTPUT, @IdentityColumn OUTPUT, @FirstDateColumn OUTPUT, @FirstDateColumnDefault OUTPUT
+			, N'@ObjId INT, @FirstIndex SYSNAME OUTPUT, @IsUnique BIT OUTPUT, @FirstIndexColumns NVARCHAR(MAX) OUTPUT, @IdentityColumn SYSNAME OUTPUT, @FirstDateColumn SYSNAME OUTPUT, @FirstDateColumnDefault NVARCHAR(MAX) OUTPUT'
+			, @CurrObjId, @FirstIndex OUTPUT, @IsUnique OUTPUT, @FirstIndexColumns OUTPUT, @IdentityColumn OUTPUT, @FirstDateColumn OUTPUT, @FirstDateColumnDefault OUTPUT
 
 	IF @FirstIndex IS NOT NULL
 	BEGIN
 		---------------------
-		-- Add recommendations based on existing non-clustered indexes (even if no existing or missing index stats found)
+		-- Add recommendations based on existing non-clustered indexes (even if no existing usage stats or missing index stats found)
 		---------------------
 		UPDATE #temp_heap SET candidate_index = QUOTENAME(@FirstIndex) --+ N' (no usage)'
-		WHERE database_name = @CurrDB AND object_id = @CurrObjId
+		, candidate_columns_from_existing_index = @FirstIndexColumns
+		, is_unique = @IsUnique
+		WHERE database_name = @CurrDB AND object_id = @CurrObjId AND candidate_index IS NULL
 	END
 
 	IF @IdentityColumn IS NOT NULL
@@ -175,6 +205,7 @@ BEGIN
 		-- Add recommendations based on identity column
 		---------------------
 		UPDATE #temp_heap SET identity_column = QUOTENAME(@IdentityColumn)
+		, is_unique = ISNULL(is_unique, 1)
 		WHERE database_name = @CurrDB AND object_id = @CurrObjId;
 	END
 	
@@ -182,6 +213,7 @@ BEGIN
 	BEGIN
 		-- Add recommendation based on the first date/time column
 		UPDATE #temp_heap SET first_date_column = QUOTENAME(@FirstDateColumn)
+		, is_unique = ISNULL(is_unique, 0)
 		WHERE database_name = @CurrDB AND object_id = @CurrObjId;
 	END
 
@@ -225,6 +257,7 @@ BEGIN
 							FROM @DensityStats
 							ORDER BY AllDensity ASC, AvgLength ASC
 						)
+				, is_unique = ISNULL(is_unique, 0)
 			WHERE
 				database_name = @CurrDB
 			AND object_id = @CurrObjId;
@@ -245,16 +278,20 @@ DEALLOCATE Tabs
 SELECT 
 Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_table_name
 + COALESCE(
-	  N', candidate INDEX: ' + t.candidate_index
+	  N', candidate INDEX: ' + t.candidate_index + ISNULL(N' (' + t.candidate_columns_from_existing_index + N')', N'')
 	, N', candidate column(s) from MISSING INDEX stats: ' + t.candidate_columns_from_missing_index
 	, N', IDENTITY column: ' + t.identity_column
 	, N', first DATE/TIME column: ' + t.first_date_column
 	, N', most SELECTIVE column: ' + t.most_selective_column_from_stats
 	, N', NO RECOMMENDATION POSSIBLE')
 , Script = N'USE ' + QUOTENAME(t.database_name) 
-	+ CASE WHEN t.candidate_index IS NOT NULL THEN N'; -- Recreate as clustered index: ' + t.candidate_index 
+	+
+	CASE 
+	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NULL THEN N'; -- Recreate as clustered index: ' + t.candidate_index
+	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NOT NULL THEN N'; DROP INDEX ' + t.candidate_index + ' ON ' + t.full_table_name
+	+ N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX ' + t.candidate_index + ' ON ' + t.full_table_name + N' (' + t.candidate_columns_from_existing_index + N');'
 	ELSE 
-	N'; CREATE CLUSTERED INDEX IX_clust ON ' + t.full_table_name 
+	N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX IX_clust ON ' + t.full_table_name 
 	+ N' ('
 	+ COALESCE(
 		t.candidate_columns_from_missing_index,
