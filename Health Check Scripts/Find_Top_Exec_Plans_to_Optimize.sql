@@ -11,7 +11,7 @@ Finds execution plans with warnings and problematic operators.
 Filter based on execution count, CPU time and duration.
 
 You can use the parameters at the top to control behavior.
-Change the sorting column at the end to control which queries
+Change the sorting column to control which queries
 would show up first.
 =======================================================
 Change Log:
@@ -214,4 +214,4 @@ CROSS APPLY (
 		WHERE S.node_xml.query('.').exist('data(//StmtSimple[@StatementSubTreeCost>0][1])') = 1
 		) AS StmtSummary
 WHERE WarningTypes IS NOT NULL
-ORDER BY ID DESC
+ORDER BY ID ASC
