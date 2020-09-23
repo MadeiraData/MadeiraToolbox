@@ -40,22 +40,25 @@ FROM msdb..backupset
 WHERE database_name = db.name)
 
 
+IF OBJECT_ID('sys.dm_hadr_auto_page_repair') IS NOT NULL
+BEGIN
+	INSERT INTO @Alerts
+	select 'Corruption', 'Automatic Page Repair Was Used in AlwaysOn',
+	'Database: ' + db_name(rep.database_id) + ' File: ' + fil.name
+	+ ' PageID: ' + CONVERT(varchar,rep.page_id)
+	, ' Error Type: '
+	+ CASE rep.error_type WHEN -1 THEN 'Hardware 823 Error' WHEN 1 THEN 'General 824 Error' WHEN 2 THEN 'Bad Checksum' WHEN 3 THEN 'Torn Page' ELSE 'Unknown - ' + CONVERT(varchar, rep.error_type) END
+	+ ' Page Status: ' + CASE rep.page_status WHEN 2 THEN 'Queued for Request from Partner' WHEN 3 THEN 'Request Sent to Partner' WHEN 4 THEN 'Queued for Automatic Page Repair' WHEN 5 THEN 'Automatic Page Repair Succeeded' WHEN 6 THEN 'Unable to Repair' ELSE 'Unknown - ' + CONVERT(varchar, rep.page_status) END
+	+ ' Modification Time: ' + CONVERT(varchar, rep.modification_time, 120)
+	from sys.dm_hadr_auto_page_repair AS rep
+	inner join sys.master_files AS fil
+	ON rep.database_id = fil.database_id
+	AND rep.file_id = fil.file_id
+	WHERE rep.modification_time >= DATEADD(minute, -@NumOfMinutesBackToCheck, GETDATE())
+	OPTION (RECOMPILE);
+END
+ 
 INSERT INTO @Alerts
-select 'Corruption', 'Automatic Page Repair Was Used in AlwaysOn',
-'Database: ' + db_name(rep.database_id) + ' File: ' + fil.name
-+ ' PageID: ' + CONVERT(varchar,rep.page_id)
-, ' Error Type: '
-+ CASE rep.error_type WHEN -1 THEN 'Hardware 823 Error' WHEN 1 THEN 'General 824 Error' WHEN 2 THEN 'Bad Checksum' WHEN 3 THEN 'Torn Page' ELSE 'Unknown - ' + CONVERT(varchar, rep.error_type) END
-+ ' Page Status: ' + CASE rep.page_status WHEN 2 THEN 'Queued for Request from Partner' WHEN 3 THEN 'Request Sent to Partner' WHEN 4 THEN 'Queued for Automatic Page Repair' WHEN 5 THEN 'Automatic Page Repair Succeeded' WHEN 6 THEN 'Unable to Repair' ELSE 'Unknown - ' + CONVERT(varchar, rep.page_status) END
-+ ' Modification Time: ' + CONVERT(varchar, rep.modification_time, 120)
-from sys.dm_hadr_auto_page_repair AS rep
-inner join sys.master_files AS fil
-ON rep.database_id = fil.database_id
-AND rep.file_id = fil.file_id
-WHERE rep.modification_time >= DATEADD(minute, -@NumOfMinutesBackToCheck, GETDATE())
- 
-UNION ALL
- 
 select 'Corruption', 'Automatic Page Repair Was Used in DB Mirroring',
 'Database: ' + db_name(rep.database_id) + ' File: ' + fil.name
 + ' PageID: ' + CONVERT(varchar,rep.page_id)
@@ -382,8 +385,7 @@ CROSS APPLY
 SELECT 'clr enabled', 0, 'CLR Integration recommended to be disabled'
 UNION ALL SELECT 'xp_cmdshell', 0, 'XP_CMDSHELL recommended to be disabled'
 UNION ALL SELECT 'Ole Automation Procedures', 0, 'Ole Automation Procedures setting is not the recommended value'
-UNION ALL SELECT 'remote admin connections', 1, 'DAC listener should be enabled on clustered servers' WHERE CONVERT(bit,SERVERPROPERTY('IsClustered')) = 1
-UNION ALL SELECT 'remote admin connections', 0, 'DAC listener should be disabled on non-clustered servers' WHERE CONVERT(bit,SERVERPROPERTY('IsClustered')) = 0
+UNION ALL SELECT 'remote admin connections', 1, 'DAC listener should be enabled'
 ) AS R (setting, recommendedvalue, errormsg)
 WHERE c.name = R.setting
 AND CONVERT(int, c.[value]) <> R.recommendedvalue
@@ -563,9 +565,27 @@ IF OBJECT_ID('tempdb..#err_log_tmp') IS NOT NULL DROP TABLE #err_log_tmp;
 CREATE TABLE #err_log_tmp (ArchiveNo int, CreateDate nvarchar(128), Size int);
 
 INSERT INTO #err_log_tmp
-EXEC master.dbo.sp_enumerrorlogs
+EXEC master.dbo.sp_enumerrorlogs 1
 
 DECLARE @currentlogid int, @createdate datetime, @currfilesize int;
+
+SELECT TOP 1
+		@currentlogid = er.ArchiveNo,
+		@createdate = CONVERT(datetime, er.CreateDate, 101),
+		@currfilesize = er.Size
+FROM #err_log_tmp er
+ORDER BY [ArchiveNo] ASC
+
+IF ROUND(CONVERT(float,@currfilesize)/1024,2) > @MaxSQLErrorLogSize
+BEGIN
+	INSERT INTO @Alerts
+	SELECT 'Performance', 'SQL Server Error Log Size Too Big'
+	, 'SQL Server Error Log Size is ' + CONVERT(nvarchar(4000),ROUND(CONVERT(float,@currfilesize)/1024,2)) + N' MB.'
+	, 'Please use sp_cycle_errorlog to cycle the Error Log periodically!'
+END
+
+INSERT INTO #err_log_tmp
+EXEC master.dbo.sp_enumerrorlogs 2
 
 SELECT TOP 1
 		@currentlogid = er.ArchiveNo,
@@ -579,9 +599,9 @@ DROP TABLE #err_log_tmp
 IF ROUND(CONVERT(float,@currfilesize)/1024,2) > @MaxSQLErrorLogSize
 BEGIN
 	INSERT INTO @Alerts
-	SELECT 'Performance', 'SQL Server Error Log Size Too Big'
-	, 'SQL Server Error Log Size is ' + CONVERT(nvarchar(4000),ROUND(CONVERT(float,@currfilesize)/1024,2)) + N' MB.'
-	, 'Please use sp_cycle_errorlog to cycle the Error Log periodically!'
+	SELECT 'Performance', 'SQL Server Agent Error Log Size Too Big'
+	, 'SQL Server Agent Error Log Size is ' + CONVERT(nvarchar(4000),ROUND(CONVERT(float,@currfilesize)/1024,2)) + N' MB.'
+	, 'Please use sp_cycle_agent_errorlog to cycle the SQL Agent Error Log periodically!'
 END
 
 
@@ -773,6 +793,7 @@ BEGIN
 	OR [send_queue_size] > @UnsentLogThresholdKB
 	OR [redo_queue_size] > @UnrestoredLogThresholdKB
 	OR [transaction_delay] > @TransactionDelayThresholdMil)
+	OPTION (RECOMPILE);
 END
 
 
@@ -806,6 +827,7 @@ INSERT INTO @word values
 ,('pwd')
 ,('Password')
 ,('Password1')
+,('Password1!')
 ,('password')
 ,('P@ssw0rd')
 ,('p@ssw0rd')
@@ -818,6 +840,11 @@ INSERT INTO @word values
 ,('p@wd')
 ,('qwerty')
 ,('Qwerty')
+,('vampire')
+,('jinjer')
+,('1q2w3e4r!')
+,('!q2w3e4r')
+,('1q2w3e4R!')
  
 INSERT INTO @passwords
 SELECT DISTINCT 'Weak or Common Password' AS Deviation, RTRIM(s.name) AS [Name], createdate AS [CreateDate] 
@@ -944,9 +971,40 @@ WHERE Deviation <> '[OK]'
 
 DECLARE @ifi bit
 DECLARE @xp_cmdshell_output2 TABLE ([Output] VARCHAR (8000));
+
+DECLARE @CmdShellOrigValue INT, @AdvancedOptOrigValue INT
+SELECT @CmdShellOrigValue = CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'xp_cmdshell';
+
+IF @CmdShellOrigValue = 0
+BEGIN
+	PRINT N'temporarily activating xp_cmdshell...'
+	SELECT @AdvancedOptOrigValue = CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'show advanced options';
+
+	IF @AdvancedOptOrigValue = 0
+	BEGIN
+		EXEC sp_configure 'show advanced options', 1;
+		RECONFIGURE;
+	END
+
+	EXEC sp_configure 'xp_cmdshell', 1;
+	RECONFIGURE;
+END
+
 INSERT INTO @xp_cmdshell_output2
 EXEC master.dbo.xp_cmdshell 'whoami /priv';
-				
+
+IF @CmdShellOrigValue = 0
+BEGIN
+	EXEC sp_configure 'xp_cmdshell', 0;
+	RECONFIGURE;
+
+	IF @AdvancedOptOrigValue = 0
+	BEGIN
+		EXEC sp_configure 'show advanced options', 0;
+		RECONFIGURE;
+	END
+END
+
 IF EXISTS (SELECT * FROM @xp_cmdshell_output2 WHERE [Output] LIKE '%SeManageVolumePrivilege%')
 BEGIN
 	SET @ifi = 1;
