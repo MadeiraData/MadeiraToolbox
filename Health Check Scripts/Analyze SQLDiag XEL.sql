@@ -137,7 +137,8 @@ AND ([object_name] <> 'component_health_result'
 		event_data_xml.value('(event/data[@name="component"])[1]', 'varchar(256)') = 'query_processing'
 		)
 	)
-ORDER BY timestamp_utc DESC;
+ORDER BY timestamp_utc DESC
+OPTION (RECOMPILE);
 
 RAISERROR(N'Filtered events found: %d',0,1,@@ROWCOUNT) WITH NOWAIT;
 
