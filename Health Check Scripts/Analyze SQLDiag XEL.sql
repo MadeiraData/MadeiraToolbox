@@ -12,6 +12,7 @@ Description:
 	https://www.sqlskills.com/help/waits/threadpool/
 
 Change Log:
+	2020-09-24 Fixed backward compatibility bug, added @Verbose parameter
 	2020-09-21 Implemented backward-compatible version for SQL versions that don't support the AT TIME ZONE syntax.
 	2020-09-21 Added #data and #alldata temp tables for persistence.
 	2020-09-21 Added @LocalDateFrom and @LocalDateTo parameters.
@@ -19,10 +20,11 @@ Change Log:
 */
 DECLARE
 	@FileTargetPath		NVARCHAR(256)	= '*_SQLDIAG_*.xel',
-	@Top			INT		= 1000,
+	@Top			    INT		= 1000,
 	@LocalDateFrom		DATETIME	= NULL,
 	@LocalDateTo		DATETIME	= NULL,
-	@LocalTimeZone		VARCHAR(50)	= NULL -- Supported in SQL 2016 and newer only
+	@LocalTimeZone		VARCHAR(50)	= NULL, -- Supported in SQL 2016 and newer only
+	@Verbose		BIT		= 0
 	
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 DECLARE
@@ -58,10 +60,13 @@ IF CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 13
 BEGIN
 	IF @LocalTimeZone IS NULL
 	BEGIN
+		IF @Verbose = 1 RAISERROR(N'Getting local machine time zone',0,1) WITH NOWAIT;
 		EXEC master.dbo.xp_regread 'HKEY_LOCAL_MACHINE',
 		'SYSTEM\CurrentControlSet\Control\TimeZoneInformation',
 		'TimeZoneKeyName',@LocalTimeZone OUT
 	END
+
+	IF @Verbose = 1 RAISERROR(N'Setting UTC parameters based on selected time zone "%s"',0,1, @LocalTimeZone) WITH NOWAIT;
 
 	EXEC sp_executesql N'
 	SET @UtcDateFrom = @LocalDateFrom AT TIME ZONE @LocalTimeZone AT TIME ZONE ''UTC'';
@@ -71,8 +76,19 @@ BEGIN
 
 	SET @CMD = N'ALTER TABLE #data DROP COLUMN timestamp_local;
 	ALTER TABLE #data ADD timestamp_local AS (timestamp_utc AT TIME ZONE ''UTC'' AT TIME ZONE ' + QUOTENAME(@LocalTimeZone, '''') + N' )'
+	IF @Verbose = 1 RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
 	EXEC sp_executesql @CMD;
 
+END
+ELSE
+BEGIN
+	SET @UtcDateFrom = DATEADD(minute, DATEDIFF(minute, GETDATE(), GETUTCDATE()), @LocalDateFrom);
+	SET @UtcDateTo = DATEADD(minute, DATEDIFF(minute, GETDATE(), GETUTCDATE()), @LocalDateTo);
+END
+
+-- If SQL 2017 and newer, use timestamp_utc column from fn_xe_file_target_read_file:
+IF CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 14
+BEGIN
 	SET @CMD = N'INSERT INTO #alldata
 SELECT
   timestamp_utc
@@ -86,8 +102,6 @@ OPTION (RECOMPILE);'
 END
 ELSE
 BEGIN
-	SET @UtcDateFrom = DATEADD(minute, DATEDIFF(minute, GETDATE(), GETUTCDATE()), @LocalDateFrom);
-	SET @UtcDateTo = DATEADD(minute, DATEDIFF(minute, GETDATE(), GETUTCDATE()), @LocalDateTo);
 	SET @CMD = N'INSERT INTO #alldata
 SELECT
   t.timestamp_utc
@@ -101,6 +115,7 @@ CROSS APPLY (SELECT timestamp_utc = event_data_xml.value(''(event/@timestamp)[1]
 OPTION (RECOMPILE);'
 END
 
+IF @Verbose = 1 RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
 EXEC sp_executesql @CMD, N'@FileTargetPath NVARCHAR(256)', @FileTargetPath;
 RAISERROR(N'Total events found in SQLDiag files: %d',0,1,@@ROWCOUNT) WITH NOWAIT;
 
