@@ -1057,6 +1057,16 @@ BEGIN
 	GROUP BY mf.name, mf.[size], is_percent_growth, mf.growth, mf.type_desc, mf.[type]
 END
 
+IF OBJECT_ID('sys.dm_server_memory_dumps') IS NOT NULL
+BEGIN
+	SELECT 'Instance Health' AS [Category], 'SQLDump File Found' AS [SubCategory],
+	N'SQLDump created on '
+	+ CONVERT(varchar(35), creation_time, 121) + ' : ' + [filename],
+	N'Please review corresponding log file for details: ' + REPLACE([filename], '.mdmp', '.txt')
+	FROM sys.dm_server_memory_dumps
+	OPTION (RECOMPILE);
+END
+
 SELECT *
 FROM @Alerts
 ORDER BY 1, 2, 3
