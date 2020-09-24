@@ -685,7 +685,37 @@ WHERE PercentUsed >= 80
  
 DROP TABLE #IdentityColumns;
 
+IF OBJECT_ID ('tempdb..#Sequences') IS NOT NULL DROP TABLE #Sequences;
+CREATE TABLE #Sequences
+(
+ DatabaseName SYSNAME,
+ SchemaName SYSNAME,
+ SequenceName SYSNAME,
+ LastValue SQL_VARIANT,
+ MaxValue SQL_VARIANT,
+ PercentUsed FLOAT ---DECIMAL(38,15)
+);
+ 
+INSERT INTO #Sequences(DatabaseName,SchemaName,SequenceName,LastValue,MaxValue,PercentUsed) 
+exec sp_MSforeachdb 'IF EXISTS (SELECT * FROM sys.databases WHERE name = ''?'' AND state_desc = ''ONLINE'' AND DATABASEPROPERTYEX([name],''Updateability'') = ''READ_WRITE''
+AND OBJECT_ID(''[?].sys.sequences'') IS NOT NULL)
+SELECT ''?'' AS DatabaseName,
+OBJECT_SCHEMA_NAME(sequences.object_id, DB_ID(''?'')) SchemaName, 
+OBJECT_NAME(sequences.object_id, DB_ID(''?'')) SequenceName, 
+Last_used_Value LastValue, 
+MaxValue = sequences.maximum_value, 
+CAST(CAST(sequences.last_used_value AS FLOAT)/CAST(sequences.maximum_value AS FLOAT) *100.0 AS DECIMAL(10, 2))
 
+FROM [?].sys.sequences WITH (NOLOCK)
+WHERE is_cycling = 0
+' 
+INSERT INTO @Alerts
+SELECT 'General', 'Sequence Overflow Alert', QUOTENAME(DatabaseName)
+, QUOTENAME(SchemaName) + N'.' + QUOTENAME(SequenceName) + N' reached value: ' + CONVERT(varchar(max), LastValue) + ' (' + CONVERT(varchar(max), PercentUsed) + '% of max value)'
+FROM #Sequences
+WHERE PercentUsed > 80
+
+DROP TABLE #Sequences;
 
 INSERT INTO @Alerts
 SELECT 'Automation', 'Invalid Job Owner', sj.name COLLATE database_default, N'Invalid Owner SID: ' + CONVERT(nvarchar(4000), sj.owner_sid, 1)
@@ -797,7 +827,7 @@ BEGIN
 END
 
 
-DECLARE @passwords TABLE ([Deviation] NVARCHAR(100), [Name] sysname, [CreateDate] DATETIME)
+DECLARE @passwords TABLE ([Deviation] NVARCHAR(100), [Name] sysname)
 DECLARE @word TABLE (word NVARCHAR(50))
 INSERT INTO @word values
  ('0')
@@ -836,7 +866,6 @@ INSERT INTO @word values
 ,('Test')
 ,('Test1')
 ,('test')
-,('')
 ,('p@wd')
 ,('qwerty')
 ,('Qwerty')
@@ -847,19 +876,19 @@ INSERT INTO @word values
 ,('1q2w3e4R!')
  
 INSERT INTO @passwords
-SELECT DISTINCT 'Weak or Common Password' AS Deviation, RTRIM(s.name) AS [Name], createdate AS [CreateDate] 
+SELECT DISTINCT 'Weak or Common Password' AS Deviation, RTRIM(s.name) AS [Name]
 FROM @word d
-	INNER JOIN master.sys.syslogins s ON PWDCOMPARE(RTRIM(RTRIM(d.word)), s.[password]) = 1
+	INNER JOIN master.sys.sql_logins s ON PWDCOMPARE(RTRIM(RTRIM(d.word)), s.[password_hash]) = 1 AND s.is_disabled = 0
 UNION ALL
-SELECT 'NULL Password' AS Deviation, RTRIM(name) AS [Name], createdate AS [CreateDate] 
-FROM master.sys.syslogins
-WHERE [password] IS NULL
-	AND isntname = 0 
+SELECT 'Empty Password' AS Deviation, RTRIM(name) AS [Name]
+FROM master.sys.sql_logins
+WHERE ([password_hash] IS NULL OR PWDCOMPARE('', [password_hash]) = 1)
+	AND is_disabled = 0 
 	AND name NOT IN ('MSCRMSqlClrLogin','##MS_SmoExtendedSigningCertificate##','##MS_PolicySigningCertificate##','##MS_SQLResourceSigningCertificate##','##MS_SQLReplicationSigningCertificate##','##MS_SQLAuthenticatorCertificate##','##MS_AgentSigningCertificate##','##MS_SQLEnableSystemAssemblyLoadingUser##')
 UNION ALL
-SELECT DISTINCT 'Login Name is the same as Password' AS Deviation, RTRIM(s.name) AS [Name], createdate AS [CreateDate] 
-FROM master.sys.syslogins s 
-WHERE PWDCOMPARE(RTRIM(RTRIM(s.name)), s.[password]) = 1
+SELECT DISTINCT 'Login Name is the same as Password' AS Deviation, RTRIM(s.name) AS [Name]
+FROM master.sys.sql_logins s 
+WHERE PWDCOMPARE(RTRIM(RTRIM(s.name)), s.[password_hash]) = 1
 ORDER BY [Deviation], [Name]
  
 INSERT INTO @Alerts
@@ -1059,10 +1088,11 @@ END
 
 IF OBJECT_ID('sys.dm_server_memory_dumps') IS NOT NULL
 BEGIN
+	INSERT INTO @Alerts
 	SELECT 'Instance Health' AS [Category], 'SQLDump File Found' AS [SubCategory],
+	[filename],
 	N'SQLDump created on '
-	+ CONVERT(varchar(35), creation_time, 121) + ' : ' + [filename],
-	N'Please review corresponding log file for details: ' + REPLACE([filename], '.mdmp', '.txt')
+	+ CONVERT(varchar(35), creation_time, 121) + ' | details: ' + REPLACE([filename], '.mdmp', '.txt')
 	FROM sys.dm_server_memory_dumps
 	OPTION (RECOMPILE);
 END
