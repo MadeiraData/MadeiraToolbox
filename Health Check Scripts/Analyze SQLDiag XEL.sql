@@ -1,4 +1,14 @@
 /*
+
+	!!! ATTENTION !!!
+	
+	THIS SCRIPT HAS BEEN DEPRECATED AND WILL NO LONGER BE MAINTAINED.
+	Please use the new version at the new path:
+	https://github.com/MadeiraData/MadeiraToolbox/blob/master/Health%20Check%20Scripts/Troubleshoot_high_THREADPOOL_waits_and_Deadlocked_Schedulers.sql
+
+	!!! ATTENTION !!!
+
+
 Analyze SQLDiag extended event files
 =====================================
 Author: Eitan Blumin , Madeira Data Solutions (https://www.madeiradata.com | https://www.eitanblumin.com)
@@ -13,6 +23,7 @@ Description:
 	https://www.sqlskills.com/help/waits/threadpool/
 
 Change Log:
+	2020-09-29 Deprecated
 	2020-09-27 Added support for querying from system_health instead of SQLDiag files; Added @PersistAllData, @ForceRingBuffer parameters.
 	2020-09-24 Fixed backward compatibility bug, added @Verbose parameter.
 	2020-09-21 Implemented backward-compatible version for SQL versions that don't support the AT TIME ZONE syntax.
