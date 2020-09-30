@@ -17,6 +17,7 @@ Description:
 	https://docs.microsoft.com/en-us/sql/relational-databases/extended-events/use-the-system-health-session
 
 Change Log:
+	2020-10-01 Added columns "blockedByNonSession" and "possibleHeadBlockers"
 	2020-09-28 Added detailed explanations for every parameter and some additional info in comments.
 	2020-09-28 Output improvements.
 	2020-09-28 Added persistence of @FileTargetPath for smart validation of @PersistAllData.
@@ -342,8 +343,9 @@ SELECT
 , pendingTasks		= event_data_xml.value('(event/data[@name="data"]/value/queryProcessing/@pendingTasks)[1]', 'int')
 , hasUnresolvableDeadlockOccurred = event_data_xml.value('(event/data[@name="data"]/value/queryProcessing/@hasUnresolvableDeadlockOccurred)[1]', 'int')
 , hasDeadlockedSchedulersOccurred = event_data_xml.value('(event/data[@name="data"]/value/queryProcessing/@hasDeadlockedSchedulersOccurred)[1]', 'int')
-, blockedProcesses = CASE WHEN [object_name] = 'info_message' THEN NULL 
-			WHEN event_data_xml.exist('*//blocked-process-report/blocked-process/process/inputbuf') = 1 THEN
+
+, blockedProcesses = CASE WHEN [object_name] <> 'info_message' 
+			AND event_data_xml.exist('*//blocked-process-report/blocked-process/process/inputbuf') = 1 THEN
 			event_data_xml.query('
 let $items := *//blocked-process-report/blocked-process/process/inputbuf
 let $unique-items := distinct-values($items)
@@ -364,10 +366,10 @@ return
       </details>
    </blocked>
 ') 
-			ELSE '<blocked totalCount="0"/>'
 		END
-, blockingProcesses = CASE WHEN [object_name] = 'info_message' THEN NULL
-			WHEN event_data_xml.exist('*//blocked-process-report/blocking-process/process/inputbuf') = 1 THEN
+
+, blockingProcesses = CASE WHEN [object_name] <> 'info_message' 
+			AND event_data_xml.exist('*//blocked-process-report/blocking-process/process/inputbuf') = 1 THEN
 			event_data_xml.query('
 let $items := *//blocked-process-report/blocking-process/process/inputbuf
 let $unique-items := distinct-values($items)
@@ -385,8 +387,37 @@ return
       </details>
    </blocking>
 ')
-			ELSE '<blocking totalCount="0"/>'
 		END
+
+, blockedByNonSession = CASE WHEN [object_name] <> 'info_message' 
+			AND event_data_xml.exist('*//blocked-process-report/blocking-process/process/inputbuf') = 1 THEN
+			event_data_xml.query('let $items := *//blocked-process-report/blocked-process/process[empty(../../blocking-process/process/inputbuf/text())]/../..
+return
+	<blocked-by-non-session totalCount="{count($items)}">
+	{$items}
+	</blocked-by-non-session>')
+	END
+
+, possibleHeadBlockers = CASE WHEN [object_name] <> 'info_message' 
+			AND event_data_xml.exist('*//blocked-process-report/blocking-process/process/inputbuf') = 1 THEN
+			event_data_xml.query('
+let $items := distinct-values(*//blocked-process-report/blocking-process/process/@spid)
+return
+    <blockers totalCount="{count($items)}">
+    {
+       for $spid in $items
+           let $blockedByResource := *//blocked-process-report/blocked-process/process[@spid = $spid and empty(../../blocking-process/process/inputbuf/text())]/../..
+	   let $isBlockedByResource := not(empty(*//blocked-process-report/blocked-process/process[@spid = $spid]))
+           return
+	       <blocker spid="{$spid}" is-blocked-by-non-session="{$isBlockedByResource}">
+	       {$blockedByResource}
+	       </blocker>
+    }
+    </blockers>').query('let $items := *//blocker[not(@is-blocked-by-non-session) or not(empty(*//process/inputbuf/text()))]
+return
+	<head-blockers totalCount="{count($items)}">{$items}</head-blockers>')
+    END
+
 , [file_name]
 , file_offset
 , event_data_xml
