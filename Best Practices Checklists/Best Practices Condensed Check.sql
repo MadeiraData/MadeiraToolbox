@@ -19,6 +19,10 @@ DECLARE
 	@MaxSQLErrorLogSize INT = 100
 
 SET NOCOUNT ON;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SET DEADLOCK_PRIORITY LOW;
+SET LOCK_TIMEOUT 30;
+
 DECLARE @Alerts AS TABLE
 (
 	Category NVARCHAR(1000),
@@ -27,21 +31,22 @@ DECLARE @Alerts AS TABLE
 	Details NVARCHAR(MAX)
 );
 
+IF CAST(SERVERPROPERTY('Edition') AS VARCHAR(255)) NOT LIKE '%Azure%'
+BEGIN
+	PRINT 'Checking: Database Backup';
 
-INSERT INTO @Alerts
-SELECT 'Database Backup', 'Database has never been backed up', QUOTENAME(name), 'It''s recommended to have a backup plan for all databases, including user databases as well as the system databases MSDB and Master.'
-FROM sys.databases AS db
-WHERE database_id NOT IN (2,32767)
-AND state_desc = 'ONLINE'
-AND name NOT IN ('ReportServerTempDB', 'model')
-AND NOT EXISTS
-(SELECT NULL
-FROM msdb..backupset
-WHERE database_name = db.name)
-
+	INSERT INTO @Alerts
+	SELECT 'Database Backup', 'Database has never been backed up', QUOTENAME(name), 'It''s recommended to have a backup plan for all databases, including user databases as well as the system databases MSDB and Master.'
+	FROM sys.databases AS db
+	WHERE database_id NOT IN (2,32767)
+	AND state_desc = 'ONLINE'
+	AND name NOT IN ('ReportServerTempDB', 'model')
+	AND NOT EXISTS (SELECT NULL FROM msdb..backupset WHERE database_name = db.name)
+END
 
 IF OBJECT_ID('sys.dm_hadr_auto_page_repair') IS NOT NULL
 BEGIN
+	PRINT 'Checking: Automatic Page Repair Was Used in AlwaysOn';
 	INSERT INTO @Alerts
 	select 'Corruption', 'Automatic Page Repair Was Used in AlwaysOn',
 	'Database: ' + db_name(rep.database_id) + ' File: ' + fil.name
@@ -58,6 +63,7 @@ BEGIN
 	OPTION (RECOMPILE);
 END
  
+PRINT 'Checking: Automatic Page Repair Was Used in DB Mirroring';
 INSERT INTO @Alerts
 select 'Corruption', 'Automatic Page Repair Was Used in DB Mirroring',
 'Database: ' + db_name(rep.database_id) + ' File: ' + fil.name
@@ -72,7 +78,7 @@ ON rep.database_id = fil.database_id
 AND rep.file_id = fil.file_id
 WHERE rep.modification_time >= DATEADD(minute, -@NumOfMinutesBackToCheck, GETDATE())
 
-
+PRINT 'Checking: Auto Create Statistics, Auto Update Statistics';
 INSERT INTO @Alerts
 SELECT 'Performance', 'Auto Create Statistics is OFF', name, 'Recommended to turn Auto Create Statistics ON'
 FROM sys.databases
@@ -90,6 +96,7 @@ AND is_auto_update_stats_on = 0
 DECLARE @RecentBackups AS TABLE (PhysicalPath NVARCHAR(4000), DeviceName NVARCHAR(4000))
 DECLARE @CurrFile NVARCHAR(4000), @Exists INT;
  
+PRINT 'Checking: Backups and database files in the same physical volume';
 INSERT INTO @RecentBackups
 SELECT DISTINCT physical_device_name, UPPER(SUBSTRING(physical_device_name, 0, CHARINDEX('\', physical_device_name, 3)))
 FROM msdb.dbo.backupmediafamily AS bmf
@@ -125,10 +132,11 @@ SELECT 'Database Backup', N'Backups and database files in the same physical volu
 , N'The volumn Contains ' + CONVERT(nvarchar(4000), COUNT(DISTINCT bmf.PhysicalPath)) + N' backup file(s) and ' + CONVERT(nvarchar(4000), COUNT(DISTINCT mf.physical_name)) + N' database file(s).'
 FROM @RecentBackups AS bmf
 INNER JOIN sys.master_files AS mf
-ON UPPER(SUBSTRING(physical_name, 0, CHARINDEX('\', physical_name, 3))) = DeviceName
+ON UPPER(SUBSTRING(physical_name, 0, CHARINDEX('\', physical_name, 3))) COLLATE database_default = DeviceName
 WHERE ([database_id] > 3 OR [database_id] = 2) AND [database_id] <> 32767
 GROUP BY DeviceName
 
+PRINT 'Checking: Database Compatibility Mismatch';
 DECLARE @MasterCmpt INT;
 SELECT @MasterCmpt = cmptlevel FROM sysdatabases WHERE dbid = 1;
  
@@ -138,6 +146,7 @@ SELECT 'Database Compatibility Mismatch', 'Database Compatibility: ' + CONVERT(n
 FROM sysdatabases
 WHERE cmptlevel <> @MasterCmpt
 
+PRINT 'Checking: Database Auto Close';
 INSERT INTO @Alerts
 SELECT 'General', 'Database Auto Close is ON', name, 'Strongly recommended to set Database Auto Close to OFF'
 FROM sys.databases
@@ -145,6 +154,7 @@ WHERE state_desc = 'ONLINE'
 AND is_auto_close_on = 1
 
 
+PRINT 'Checking: File Auto Growth is Disabled';
 INSERT INTO @Alerts
 SELECT 'General', 'File Auto Growth is Disabled', 'File ' + QUOTENAME(name) + ' in database ' + QUOTENAME(DB_NAME(database_id)) + ' has Auto Growth disabled'
 ,'File Auto Growth should be ON (with a max size limit)'
@@ -152,20 +162,24 @@ FROM sys.master_files
 WHERE growth = 0 AND type IN (0,1)
 
 
+PRINT 'Checking: Database Auto Shrink';
 INSERT INTO @Alerts
 SELECT 'Performance', 'Database Auto Shrink is ON', name, 'Strongly recommended to set Database Auto Shrink to OFF'
 FROM sys.databases
 WHERE state_desc = 'ONLINE'
 AND is_auto_shrink_on = 1
 
-
-INSERT INTO @Alerts
-SELECT 'General', N'Database File(s) on Volume C'
-, 'Database ' + DB_NAME([database_id]) + N': ' + physical_name
-, 'Placing database files on the system volume puts the Operating System in danger when these files grow too much'
-FROM sys.master_files AS mf
-WHERE ([database_id] > 3 OR [database_id] = 2) AND [database_id] <> 32767
-AND UPPER(SUBSTRING(physical_name, 0, CHARINDEX('\', physical_name, 3))) = 'C:'
+IF CAST(SERVERPROPERTY('Edition') AS varchar(255)) NOT LIKE '%Azure%'
+BEGIN
+	PRINT 'Checking: Database File(s) on Volume C';
+	INSERT INTO @Alerts
+	SELECT 'General', N'Database File(s) on Volume C'
+	, 'Database ' + DB_NAME([database_id]) + N': ' + physical_name
+	, 'Placing database files on the system volume puts the Operating System in danger when these files grow too much'
+	FROM sys.master_files AS mf
+	WHERE ([database_id] > 3 OR [database_id] = 2) AND [database_id] <> 32767
+	AND UPPER(SUBSTRING(physical_name, 0, CHARINDEX('\', physical_name, 3))) = 'C:'
+END
 
 -- Tiger Toolbox Recommendations:
 -- backup compression default
@@ -182,6 +196,7 @@ AND UPPER(SUBSTRING(physical_name, 0, CHARINDEX('\', physical_name, 3))) = 'C:'
 -- max worker threads (should be zero in 2005 or above)
 -- affinity mask and affinity I/O mask (must not overlap)
  
+PRINT 'Checking: Not recommended instance configuration';
 DECLARE @sqlmajorver int, @systemmem int, @systemfreemem int, @maxservermem int, @numa_nodes_afinned int, @numa int
 DECLARE @mwthreads_count int, @mwthreads int, @arch smallint, @sqlcmd nvarchar(4000)
 DECLARE @MinMBMemoryForOS INT, @RecommendedMaxMemMB INT
@@ -256,6 +271,7 @@ FROM
 	SELECT 'Current MaxMem setting is too high. Recommended maximum value for MaxMem setting on this configuration is ' + CONVERT(nvarchar(1000), @RecommendedMaxMemMB) + N' MB for a single instance'
 	WHERE @numa <= 1 AND @maxservermem BETWEEN @RecommendedMaxMemMB AND @systemmem
 ) AS V(Report)
+WHERE CAST(SERVERPROPERTY('Edition') AS varchar(255)) NOT LIKE '%Azure%'
  
 UNION ALL
  
@@ -325,8 +341,8 @@ SELECT 'Max worker threads should not be larger than 1024 on a x86 system'
 WHERE @mwthreads > 1024 AND @arch = 32
 ) AS R(errormsg)
 
--- Check Failed Login Auditing
  
+PRINT 'Checking: Failed Login Auditing';
 DECLARE @AuditLevel INT
 EXEC   xp_instance_regread
 @rootkey    = 'HKEY_LOCAL_MACHINE',
@@ -334,8 +350,8 @@ EXEC   xp_instance_regread
 @value_name = 'AuditLevel',
 @value      = @AuditLevel OUTPUT
  
--- Check SQL Default Port Using system registry (dynamic port):
  
+PRINT 'Checking: SQL Default Port Using system registry (dynamic port)';
 DECLARE @portNo NVARCHAR(10)
 EXEC   xp_instance_regread
 @rootkey    = 'HKEY_LOCAL_MACHINE',
@@ -347,13 +363,29 @@ EXEC   xp_instance_regread
 -- Using system registry (static port):
  
 IF @portNo IS NULL
+BEGIN
+	PRINT 'Checking: SQL Default Port Using system registry (static port)';
 	EXEC   xp_instance_regread
 	@rootkey    = 'HKEY_LOCAL_MACHINE',
 	@key        =
 	'Software\Microsoft\Microsoft SQL Server\MSSQLServer\SuperSocketNetLib\Tcp\IpAll',
 	@value_name = 'TcpPort',
 	@value      = @portNo OUTPUT
-  
+END
+
+PRINT 'Checking: Linked Server Security Vulnerability'
+INSERT INTO @Alerts
+SELECT 'Security', N'Linked Server Security Vulnerability'
+, QUOTENAME(a.name), N'No login mapping configured (anyone can access it)'
+FROM sys.servers a
+INNER JOIN sys.linked_logins b ON b.server_id = a.server_id
+WHERE b.local_principal_id = 0
+AND uses_self_credential = 0
+AND a.server_id <> 0
+AND 1 IN (a.is_data_access_enabled, a.is_rpc_out_enabled);
+
+
+PRINT 'Checking: Not recommended instance security configuration'
 INSERT INTO @Alerts
 SELECT 'Security', N'Not recommended instance security configuration', ObjectName, Report
 FROM
@@ -365,13 +397,6 @@ FROM sys.server_principals
 WHERE sid = 0x01
 AND name = 'sa'
 AND is_disabled = 0
- 
-UNION ALL SELECT QUOTENAME(a.name), N'Security vulnerability detected in authentication settings of linked server (anyone can access it)'
-FROM sys.Servers a
-INNER JOIN sys.linked_logins b ON b.server_id = a.server_id
-WHERE b.local_principal_id = 0
-AND uses_self_credential = 0
-AND a.server_id <> 0
 ) AS v(ObjectName, Report)
  
 UNION ALL
@@ -385,12 +410,13 @@ CROSS APPLY
 SELECT 'clr enabled', 0, 'CLR Integration recommended to be disabled'
 UNION ALL SELECT 'xp_cmdshell', 0, 'XP_CMDSHELL recommended to be disabled'
 UNION ALL SELECT 'Ole Automation Procedures', 0, 'Ole Automation Procedures setting is not the recommended value'
-UNION ALL SELECT 'remote admin connections', 1, 'DAC listener should be enabled'
+UNION ALL SELECT 'remote admin connections', 1, 'Remote DAC listener should be enabled'
 ) AS R (setting, recommendedvalue, errormsg)
 WHERE c.name = R.setting
 AND CONVERT(int, c.[value]) <> R.recommendedvalue
 
 
+PRINT 'Checking: Integrity Checks'
 
 DECLARE @DBCC AS TABLE(
 	RowId INT NOT NULL IDENTITY(1,1),
@@ -401,7 +427,7 @@ DECLARE @DBCC AS TABLE(
 );
  
 INSERT INTO @DBCC
-EXEC sp_MSFOREACHDB
+EXEC sp_MSforeachDb
 'IF EXISTS (SELECT [name] FROM master.sys.databases WITH (NOLOCK) WHERE database_id NOT IN (2,3) AND is_read_only = 0 AND [state] = 0 AND [name] = ''?'')
 BEGIN
 	USE [?];
@@ -436,6 +462,7 @@ AND ([Value] IS NULL OR CONVERT(datetime, [Value]) < DATEADD(dd,-7,GETDATE()))
 ) AS b
 
 
+PRINT 'Checking: Invalid database owner';
 INSERT INTO @Alerts
 SELECT 'General', 'Invalid database owner', QUOTENAME(db.name)
 , 'Login may have been deleted, or the database was copied from another server. Please set a new valid owner for the database.'
@@ -446,6 +473,7 @@ WHERE sp.sid IS NULL
 AND db.state = 0
 
 
+PRINT 'Checking: Missing Agent Alert(s)';
 INSERT INTO @Alerts
 SELECT 'Automation', 'Missing Agent Alert(s)', 'Missing Agent Alert(s) for Severity ' + CONVERT(varchar(10), msgs.severity),
 'Error ' + CONVERT(varchar(10), msgs.message_id) + ': ' + msgs.text
@@ -465,6 +493,7 @@ WHERE a.id is null
 
 
 
+PRINT 'Checking: Orphaned User(s)';
 SET NOCOUNT ON;
 DECLARE @db SYSNAME, @user NVARCHAR(MAX);
 INSERT INTO @Alerts
@@ -479,6 +508,7 @@ AND authentication_type_desc = ''INSTANCE''
 ;'
 
 
+PRINT 'Checking: DB Page Verification';
 INSERT INTO @Alerts
 SELECT 'General', 'DB Page Verification different from CHECKSUM', QUOTENAME(name), 'Current setting: ' + page_verify_option_desc
 FROM sys.databases
@@ -487,6 +517,7 @@ AND state = 0
 AND page_verify_option_desc <> 'CHECKSUM'
 
 
+PRINT 'Checking: Query Store Capture';
 INSERT INTO @Alerts
 EXEC sp_MSforeachdb '
 IF EXISTS (SELECT * FROM sys.databases WHERE state_desc = ''ONLINE'' AND name = ''?'')
@@ -499,12 +530,14 @@ AND size_based_cleanup_mode <> 1 -- cleanup is off
 '
 
  
+PRINT 'Checking: @@SERVERNAME';
 INSERT INTO @Alerts
-SELECT 'General', N'@@SERVERNAME different from actual server name', N'@@SERVERNAME: ' + @@SERVERNAME, N'Actual server name: ' + CONVERT(nvarchar,SERVERPROPERTY('ServerName'))
-WHERE @@SERVERNAME <> CONVERT(nvarchar,SERVERPROPERTY('ServerName'))
+SELECT 'General', N'@@SERVERNAME different from actual server name', N'@@SERVERNAME: ' + @@SERVERNAME, N'Actual server name: ' + CONVERT(nvarchar(max),SERVERPROPERTY('ServerName'))
+WHERE @@SERVERNAME <> CONVERT(nvarchar(max),SERVERPROPERTY('ServerName'))
 
 
 
+PRINT 'Checking: Suspect Page(s)';
 INSERT INTO @Alerts
 SELECT 'Corruption', 'Suspect Page(s) Found in database ' + DB_NAME(database_id)
 , N'File ID: ' + CONVERT(nvarchar(4000), [file_id])
@@ -521,22 +554,25 @@ FROM msdb.dbo.suspect_pages WITH (NOLOCK)
 WHERE event_type IN (1,2,3)
 
 
+PRINT 'Checking: Untrusted Check Constraint(s)';
 INSERT INTO @Alerts
 EXEC sp_MSforeachdb '
 IF EXISTS (SELECT * FROM sys.databases WHERE state_desc = ''ONLINE'' AND name = ''?'')
-SELECT ''General'', ''Untrusted Check Constraint(s)'', ''?'', QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id, DB_ID(''?''))) + ''.'' + QUOTENAME(OBJECT_NAME(parent_object_id, DB_ID(''?''))) + ''.'' + QUOTENAME(name)
+SELECT ''General'', ''Untrusted Check Constraint(s)'', ''?'', QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id, DB_ID(''?''))) COLLATE database_default + ''.'' + QUOTENAME(OBJECT_NAME(parent_object_id, DB_ID(''?''))) COLLATE database_default + ''.'' + QUOTENAME(name) COLLATE database_default
 FROM [?].sys.check_constraints
 WHERE is_not_trusted = 1 AND is_not_for_replication = 0 AND is_disabled = 0'
  
 
+PRINT 'Checking: Untrusted Foreign Key(s)';
 INSERT INTO @Alerts
 EXEC sp_MSforeachdb '
 IF EXISTS (SELECT * FROM sys.databases WHERE state_desc = ''ONLINE'' AND name = ''?'')
-SELECT ''General'', ''Untrusted Foreign Key(s)'', ''?'', QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id, DB_ID(''?''))) + ''.'' + QUOTENAME(OBJECT_NAME(parent_object_id, DB_ID(''?''))) + ''.'' + QUOTENAME(name)
+SELECT ''General'', ''Untrusted Foreign Key(s)'', ''?'', QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id, DB_ID(''?''))) COLLATE database_default + ''.'' + QUOTENAME(OBJECT_NAME(parent_object_id, DB_ID(''?''))) COLLATE database_default + ''.'' + QUOTENAME(name) COLLATE database_default
 FROM [?].sys.foreign_keys
 WHERE is_not_trusted = 1 AND is_not_for_replication = 0 AND is_disabled = 0'
 
 
+PRINT 'Checking: Database status';
 INSERT INTO @Alerts
 select 'General', 'Database is not online!', QUOTENAME(db.name),  'Database status is ' + db.state_desc
 from sys.databases db
@@ -547,6 +583,7 @@ AND ISNULL(dm.mirroring_role,1) <> 2
 AND state_desc <> 'ONLINE'
 
 
+PRINT 'Checking: DB Mail Error';
 INSERT INTO @Alerts
 select 'Automation', 'DB Mail Error', 'MailItemID ' + CONVERT(varchar, fi.mailitem_id),
 ' Recipient(s): "' + fi.recipients + ISNULL(';' + NULLIF(fi.copy_recipients,''),'') + ISNULL(';' + NULLIF(fi.blind_copy_recipients,''), '')
@@ -560,6 +597,7 @@ and el.log_date >= DATEADD(minute, -@MinutesBackToCheck, GETDATE())
 order by el.log_date desc
 
 
+PRINT 'Checking: SQL Server Error Log Size';
 
 IF OBJECT_ID('tempdb..#err_log_tmp') IS NOT NULL DROP TABLE #err_log_tmp;
 CREATE TABLE #err_log_tmp (ArchiveNo int, CreateDate nvarchar(128), Size int);
@@ -571,42 +609,45 @@ DECLARE @currentlogid int, @createdate datetime, @currfilesize int;
 
 SELECT TOP 1
 		@currentlogid = er.ArchiveNo,
-		@createdate = CONVERT(datetime, er.CreateDate, 101),
+		@createdate = CONVERT(datetime, er.CreateDate, 121),
 		@currfilesize = er.Size
 FROM #err_log_tmp er
 ORDER BY [ArchiveNo] ASC
+OPTION(RECOMPILE);
 
-IF ROUND(CONVERT(float,@currfilesize)/1024,2) > @MaxSQLErrorLogSize
+IF ROUND(CONVERT(float,@currfilesize)/1024/1024.0,2) > @MaxSQLErrorLogSize
 BEGIN
 	INSERT INTO @Alerts
 	SELECT 'Performance', 'SQL Server Error Log Size Too Big'
-	, 'SQL Server Error Log Size is ' + CONVERT(nvarchar(4000),ROUND(CONVERT(float,@currfilesize)/1024,2)) + N' MB.'
+	, 'SQL Server Error Log Size is ' + CONVERT(nvarchar(4000),ROUND(CONVERT(float,@currfilesize)/1024/1024.0,2)) + N' MB.'
 	, 'Please use sp_cycle_errorlog to cycle the Error Log periodically!'
 END
 
+PRINT 'Checking: SQL Server Agent Error Log Size';
 INSERT INTO #err_log_tmp
 EXEC master.dbo.sp_enumerrorlogs 2
 
 SELECT TOP 1
 		@currentlogid = er.ArchiveNo,
-		@createdate = CONVERT(datetime, er.CreateDate, 101),
+		@createdate = CONVERT(datetime, er.CreateDate, 121),
 		@currfilesize = er.Size
 FROM #err_log_tmp er
 ORDER BY [ArchiveNo] ASC
 
 DROP TABLE #err_log_tmp
 
-IF ROUND(CONVERT(float,@currfilesize)/1024,2) > @MaxSQLErrorLogSize
+IF ROUND(CONVERT(float,@currfilesize)/1024/1024.0,2) > @MaxSQLErrorLogSize
 BEGIN
 	INSERT INTO @Alerts
 	SELECT 'Performance', 'SQL Server Agent Error Log Size Too Big'
-	, 'SQL Server Agent Error Log Size is ' + CONVERT(nvarchar(4000),ROUND(CONVERT(float,@currfilesize)/1024,2)) + N' MB.'
+	, 'SQL Server Agent Error Log Size is ' + CONVERT(nvarchar(4000),ROUND(CONVERT(float,@currfilesize)/1024/1024.0,2)) + N' MB.'
 	, 'Please use sp_cycle_agent_errorlog to cycle the SQL Agent Error Log periodically!'
 END
 
 
 
 
+PRINT 'Checking: Free Disk Space';
 DECLARE @drives TABLE (drive varchar(2), MBFree int)
 	
 INSERT INTO @drives
@@ -630,6 +671,7 @@ WHERE D.percentfree < @FreespaceMinimumPercent
 
 
 
+PRINT 'Checking: High Number of Failed Login Attempts';
 DECLARE @log AS TABLE
   (
    logdate DATETIME,
@@ -654,23 +696,25 @@ END
 
 
 
+PRINT 'Checking: Identity Overflow';
 IF OBJECT_ID ('tempdb..#IdentityColumns') IS NOT NULL DROP TABLE #IdentityColumns;
 CREATE TABLE #IdentityColumns
 (
-	DatabaseName	SYSNAME,
-	SchemaName		SYSNAME,
-	TableName		SYSNAME,
-	ColumnName		SYSNAME,
-	LastValue		SQL_VARIANT,
-	MaxValue		SQL_VARIANT,
-	PercentUsed		DECIMAL(10, 2)
+	DatabaseName	SYSNAME COLLATE database_default NULL,
+	SchemaName	SYSNAME COLLATE database_default NULL,
+	TableName	SYSNAME COLLATE database_default NULL,
+	ColumnName	SYSNAME COLLATE database_default NULL,
+	LastValue	SQL_VARIANT NULL,
+	MaxValue	SQL_VARIANT NULL,
+	PercentUsed	DECIMAL(10, 2)	NULL
 );
  
 exec sp_MSforeachdb 'IF EXISTS (SELECT * FROM sys.databases WHERE name = ''?'' AND state_desc = ''ONLINE'')
 INSERT INTO  #IdentityColumns(DatabaseName,SchemaName,TableName,ColumnName,LastValue,MaxValue,PercentUsed)	
 SELECT ''?'' DatabaseName,
-	OBJECT_SCHEMA_NAME(identity_columns.object_id, DB_ID(''?'')) SchemaName, OBJECT_NAME(identity_columns.object_id, DB_ID(''?'')) TableName
-	, columns.name ColumnName, Last_Value LastValue, Calc1.MaxValue, Calc2.Percent_Used						
+	OBJECT_SCHEMA_NAME(identity_columns.object_id, DB_ID(''?'')) COLLATE database_default SchemaName
+	, OBJECT_NAME(identity_columns.object_id, DB_ID(''?'')) COLLATE database_default TableName
+	, columns.name COLLATE database_default ColumnName, Last_Value LastValue, Calc1.MaxValue, Calc2.Percent_Used						
 FROM		[?].sys.identity_columns WITH (NOLOCK)
 INNER JOIN	[?].sys.columns WITH (NOLOCK) ON columns.column_id = identity_columns.column_id AND columns.object_id = identity_columns.object_id
 INNER JOIN	[?].sys.types ON types.system_type_id = columns.system_type_id
@@ -685,30 +729,31 @@ WHERE PercentUsed >= 80
  
 DROP TABLE #IdentityColumns;
 
+PRINT 'Checking: Sequence Overflow';
 IF OBJECT_ID ('tempdb..#Sequences') IS NOT NULL DROP TABLE #Sequences;
 CREATE TABLE #Sequences
 (
- DatabaseName SYSNAME,
- SchemaName SYSNAME,
- SequenceName SYSNAME,
- LastValue SQL_VARIANT,
- MaxValue SQL_VARIANT,
- PercentUsed FLOAT ---DECIMAL(38,15)
+ DatabaseName	SYSNAME COLLATE database_default NULL,
+ SchemaName	SYSNAME COLLATE database_default NULL,
+ SequenceName	SYSNAME COLLATE database_default NULL,
+ LastValue	SQL_VARIANT NULL,
+ MaxValue	SQL_VARIANT NULL,
+ PercentUsed	FLOAT NULL
 );
  
 INSERT INTO #Sequences(DatabaseName,SchemaName,SequenceName,LastValue,MaxValue,PercentUsed) 
 exec sp_MSforeachdb 'IF EXISTS (SELECT * FROM sys.databases WHERE name = ''?'' AND state_desc = ''ONLINE'' AND DATABASEPROPERTYEX([name],''Updateability'') = ''READ_WRITE''
 AND OBJECT_ID(''[?].sys.sequences'') IS NOT NULL)
 SELECT ''?'' AS DatabaseName,
-OBJECT_SCHEMA_NAME(sequences.object_id, DB_ID(''?'')) SchemaName, 
-OBJECT_NAME(sequences.object_id, DB_ID(''?'')) SequenceName, 
+OBJECT_SCHEMA_NAME(sequences.object_id, DB_ID(''?'')) COLLATE database_default SchemaName, 
+OBJECT_NAME(sequences.object_id, DB_ID(''?'')) COLLATE database_default SequenceName, 
 Last_used_Value LastValue, 
 MaxValue = sequences.maximum_value, 
 CAST(CAST(sequences.last_used_value AS FLOAT)/CAST(sequences.maximum_value AS FLOAT) *100.0 AS DECIMAL(10, 2))
 
 FROM [?].sys.sequences WITH (NOLOCK)
-WHERE is_cycling = 0
-' 
+WHERE is_cycling = 0' 
+
 INSERT INTO @Alerts
 SELECT 'General', 'Sequence Overflow Alert', QUOTENAME(DatabaseName)
 , QUOTENAME(SchemaName) + N'.' + QUOTENAME(SequenceName) + N' reached value: ' + CONVERT(varchar(max), LastValue) + ' (' + CONVERT(varchar(max), PercentUsed) + '% of max value)'
@@ -717,61 +762,66 @@ WHERE PercentUsed > 80
 
 DROP TABLE #Sequences;
 
+PRINT 'Checking: Invalid Job Owner';
 INSERT INTO @Alerts
-SELECT 'Automation', 'Invalid Job Owner', sj.name COLLATE database_default, N'Invalid Owner SID: ' + CONVERT(nvarchar(4000), sj.owner_sid, 1)
+SELECT 'Automation', 'Invalid Job Owner', sj.name COLLATE database_default, N'Invalid Owner SID: ' + CONVERT(nvarchar(4000), sj.owner_sid, 1) COLLATE database_default
 FROM msdb.dbo.sysjobs_view sj
 LEFT JOIN master.dbo.syslogins sl ON sj.owner_sid = sl.sid
 WHERE sj.enabled = 1
 AND sl.sid IS NULL
 
 
+PRINT 'Checking: Failed Job(s)';
 INSERT INTO @Alerts
-SELECT 'Automation', 'Failed Job(s)', jobs.name, ISNULL(jobServ.last_outcome_message,N'') + N' (' +
-	CONVERT(nvarchar,msdb.dbo.[agent_datetime](last_run_date, last_run_time), 121) + N')'
+SELECT 'Automation', 'Failed Job(s)', jobs.name, ISNULL(jobServ.last_outcome_message,N'') COLLATE database_default + N' (' +
+	CONVERT(nvarchar,msdb.dbo.[agent_datetime](last_run_date, last_run_time), 121) COLLATE database_default + N')'
 FROM msdb..sysjobservers AS jobServ JOIN msdb..sysjobs AS jobs
 ON jobServ.job_id = jobs.job_id
 WHERE last_run_outcome IN (0,3)
 AND last_run_date > 0 AND enabled = 1
 
+IF CAST(SERVERPROPERTY('EngineEdition') AS INT) IN (2, 3)
+BEGIN
+	PRINT 'Checking: Log Shipping Alert';
+	IF OBJECT_ID('tempdb..#logshipstats') IS NOT NULL DROP TABLE #logshipstats;
+	CREATE TABLE #logshipstats
+	(
+		[status]			bit NULL,
+		is_primary			bit NULL,
+		[server]			sysname COLLATE database_default NULL,
+		[database_name]			sysname COLLATE database_default NULL,
+		time_since_last_backup		int NULL,
+		last_backup_file		nvarchar(500) COLLATE database_default NULL,	
+		backup_threshold		int NULL,
+		is_backup_alert_enabled		bit NULL,
+		time_since_last_copy		int NULL,
+		last_copied_file		nvarchar(500) COLLATE database_default NULL,
+		time_since_last_restore		int NULL,
+		last_restored_file		nvarchar(500) COLLATE database_default NULL,
+		last_restored_latency		int NULL,
+		restore_threshold		int NULL,
+		is_restore_alert_enabled	bit NULL
+	);
 
-IF OBJECT_ID('tempdb..#logshipstats') IS NOT NULL DROP TABLE #logshipstats;
-CREATE TABLE #logshipstats
-(
-	[status]					bit,
-	is_primary					bit,
-	[server]					sysname,
-	[database_name]				sysname,
-	time_since_last_backup		int,
-	last_backup_file			nvarchar(500),	
-	backup_threshold			int,
-	is_backup_alert_enabled		bit,
-	time_since_last_copy		int,
-	last_copied_file			nvarchar(500),
-	time_since_last_restore		int,
-	last_restored_file			nvarchar(500),
-	last_restored_latency		int,
-	restore_threshold			int,
-	is_restore_alert_enabled	bit
-);
+	INSERT INTO #logshipstats
+	EXEC master..sp_help_log_shipping_monitor;
 
-INSERT INTO #logshipstats
-EXEC master..sp_help_log_shipping_monitor;
+	INSERT INTO @Alerts
+	SELECT 'HADR', 'Log Shipping Alert', [database_name] + ' (' + CASE is_primary WHEN 1 THEN 'Primary' ELSE 'Secondary' END + ')'
+	, CASE WHEN is_backup_alert_enabled = 1 AND time_since_last_backup > backup_threshold THEN
+		'Backup Threshold Alert! Last File Backed up: ' + ISNULL(last_backup_file, '(null)')
+		WHEN is_restore_alert_enabled = 1 AND time_since_last_restore > last_restored_latency THEN
+		'Restore Threshold Alert! Last Restored File: ' + ISNULL(last_restored_file, '(null)')
+		ELSE
+		'Status is not healthy!'
+		END
+	FROM #logshipstats
+	WHERE [status] = 1
+	OR (is_backup_alert_enabled = 1 AND time_since_last_backup > backup_threshold)
+	OR (is_restore_alert_enabled = 1 AND time_since_last_restore > last_restored_latency)
+END
 
-INSERT INTO @Alerts
-SELECT 'HADR', 'Log Shipping Alert', [database_name] + ' (' + CASE is_primary WHEN 1 THEN 'Primary' ELSE 'Secondary' END + ')'
-, CASE WHEN is_backup_alert_enabled = 1 AND time_since_last_backup > backup_threshold THEN
-	'Backup Threshold Alert! Last File Backed up: ' + ISNULL(last_backup_file, '(null)')
-	WHEN is_restore_alert_enabled = 1 AND time_since_last_restore > last_restored_latency THEN
-	'Restore Threshold Alert! Last Restored File: ' + ISNULL(last_restored_file, '(null)')
-	ELSE
-	'Status is not healthy!'
-	END
-FROM #logshipstats
-WHERE [status] = 1
-OR (is_backup_alert_enabled = 1 AND time_since_last_backup > backup_threshold)
-OR (is_restore_alert_enabled = 1 AND time_since_last_restore > last_restored_latency)
-
-
+PRINT 'Checking: Low SQL Memory';
 INSERT INTO @Alerts
 SELECT 'Resources', 'Low SQL Memory Alert', CASE
 	WHEN process_physical_memory_low = 1 AND process_virtual_memory_low = 1 THEN
@@ -786,6 +836,7 @@ FROM sys.dm_os_process_memory WITH (NOLOCK)
 WHERE process_physical_memory_low = 1 OR process_virtual_memory_low = 1
 
 
+PRINT 'Checking: Low Windows Memory';
 INSERT INTO @Alerts
 SELECT TOP 1 'Resources', 'Low Windows Memory Alert', 'Low Windows Memory Notification Detected'
 , 'You may need to lower SQL Max Memory setting, or add more RAM to the server'
@@ -802,18 +853,19 @@ WHERE rec.x.value('(ResourceMonitor/IndicatorsSystem)[1]','tinyint') = 2
 
 IF OBJECT_ID('msdb.dbo.dbm_monitor_data') IS NOT NULL
 BEGIN
+	PRINT 'Checking: Database Mirroring';
 	INSERT INTO @Alerts
 	SELECT N'HADR',
-	'Database Mirroring Alert ', DB_NAME(database_id) + ' (' + CASE [role] WHEN 1 THEN 'Principal' WHEN 2 THEN 'Mirror' ELSE RTRIM(STR([role])) END + ')'
+	'Database Mirroring Alert ', DB_NAME(database_id) COLLATE database_default + ' (' + CASE [role] WHEN 1 THEN 'Principal' WHEN 2 THEN 'Mirror' ELSE RTRIM(STR([role])) END + ')'
 	, CASE WHEN [status] NOT IN (2,4) THEN
-		'Mirroring State is ' + CASE [status] WHEN 0 THEN 'Suspended' WHEN 1 THEN 'Disconnected' WHEN 3 THEN 'Pending Failover' ELSE RTRIM(STR([status])) END
+		'Mirroring State is ' + CASE [status] WHEN 0 THEN 'Suspended' WHEN 1 THEN 'Disconnected' WHEN 3 THEN 'Pending Failover' ELSE RTRIM(STR([status])) COLLATE database_default END
 		WHEN [witness_status] = 2 THEN
 		'Witness Status is Disconnected' --RTRIM(STR([witness_status]))
 		ELSE
 			STUFF(
-			  CASE WHEN [transaction_delay] > @TransactionDelayThresholdMil THEN ', Transaction Delay is ' + RTRIM(STR([transaction_delay])) ELSE '' END
-			+ CASE WHEN [send_queue_size] > @UnsentLogThresholdKB THEN ', Unsent Log is ' + RTRIM(STR([send_queue_size])) ELSE '' END
-			+ CASE WHEN [redo_queue_size] > @UnrestoredLogThresholdKB THEN ', Unrestored Log is ' + RTRIM(STR([redo_queue_size])) ELSE '' END
+			  CASE WHEN [transaction_delay] > @TransactionDelayThresholdMil THEN ', Transaction Delay is ' + RTRIM(STR([transaction_delay])) COLLATE database_default ELSE '' END
+			+ CASE WHEN [send_queue_size] > @UnsentLogThresholdKB THEN ', Unsent Log is ' + RTRIM(STR([send_queue_size])) COLLATE database_default ELSE '' END
+			+ CASE WHEN [redo_queue_size] > @UnrestoredLogThresholdKB THEN ', Unrestored Log is ' + RTRIM(STR([redo_queue_size])) COLLATE database_default ELSE '' END
 			, 1, 2, '')
 	  END
 	FROM
@@ -826,7 +878,7 @@ BEGIN
 	OPTION (RECOMPILE);
 END
 
-
+PRINT 'Checking: Login Password Strength';
 DECLARE @passwords TABLE ([Deviation] NVARCHAR(100), [Name] sysname)
 DECLARE @word TABLE (word NVARCHAR(50))
 INSERT INTO @word values
@@ -860,6 +912,7 @@ INSERT INTO @word values
 ,('Password1!')
 ,('password')
 ,('P@ssw0rd')
+,('P@ssword1')
 ,('p@ssw0rd')
 ,('Teste')
 ,('teste')
@@ -897,6 +950,7 @@ FROM @passwords
 ORDER BY [Deviation], [Name]
 
 
+PRINT 'Checking: Query Store Status';
 INSERT INTO @Alerts
 EXEC sp_MSforeachdb '
 IF EXISTS (SELECT * FROM sys.databases WHERE state_desc = ''ONLINE'' AND name = ''?'')
@@ -918,7 +972,7 @@ AND ags.primary_replica <> @@SERVERNAME
 
 IF OBJECT_ID('distribution.sys.sp_replmonitorhelppublication') IS NOT NULL
 BEGIN
-	-- Check replication status
+	PRINT 'Checking: Replication Error(s)';
 	DECLARE @temp_Pub TABLE (
 			publisher_db sysname
 			,publication sysname null
@@ -956,7 +1010,7 @@ BEGIN
 
 END
 
-
+PRINT 'Checking: SQL Server Agent service';
 INSERT INTO @Alerts
 SELECT 'Automation', 'SQLServerAgent Service', 'SQL Server Agent service is not running or connected!'
 , 'Jobs and Alerts will not work until you start the SQL Server Agent service'
@@ -964,6 +1018,7 @@ WHERE NOT EXISTS (SELECT * FROM master.dbo.sysprocesses WHERE program_name = 'SQ
 AND CONVERT(nvarchar(200), SERVERPROPERTY('Edition')) NOT LIKE 'Express%'
 
 
+PRINT 'Checking: Max DOP setting';
 DECLARE @cpucount int, @affined_cpus int
 SELECT @cpucount = COUNT(cpu_id) FROM sys.dm_os_schedulers WHERE scheduler_id < 255 AND parent_node_id < 64
 SELECT @numa = COUNT(DISTINCT parent_node_id) FROM sys.dm_os_schedulers WHERE scheduler_id < 255 AND parent_node_id < 64;
@@ -997,54 +1052,58 @@ WHERE Deviation <> '[OK]'
 --OR [Current_MaxDOP] = 0
 ;
 
-
-DECLARE @ifi bit
-DECLARE @xp_cmdshell_output2 TABLE ([Output] VARCHAR (8000));
-
-DECLARE @CmdShellOrigValue INT, @AdvancedOptOrigValue INT
-SELECT @CmdShellOrigValue = CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'xp_cmdshell';
-
-IF @CmdShellOrigValue = 0
+IF CAST(SERVERPROPERTY('Edition') AS VARCHAR(255)) NOT LIKE '%Azure%'
 BEGIN
-	PRINT N'temporarily activating xp_cmdshell...'
-	SELECT @AdvancedOptOrigValue = CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'show advanced options';
+	PRINT 'Checking: Instant File Initialization';
+	DECLARE @ifi bit
+	DECLARE @xp_cmdshell_output2 TABLE ([Output] VARCHAR (8000));
 
-	IF @AdvancedOptOrigValue = 0
+	DECLARE @CmdShellOrigValue INT, @AdvancedOptOrigValue INT
+	SELECT @CmdShellOrigValue = CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'xp_cmdshell';
+
+	IF @CmdShellOrigValue = 0
 	BEGIN
-		EXEC sp_configure 'show advanced options', 1;
+		PRINT N'temporarily activating xp_cmdshell...'
+		SELECT @AdvancedOptOrigValue = CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'show advanced options';
+
+		IF @AdvancedOptOrigValue = 0
+		BEGIN
+			EXEC sp_configure 'show advanced options', 1;
+			RECONFIGURE;
+		END
+
+		EXEC sp_configure 'xp_cmdshell', 1;
 		RECONFIGURE;
 	END
 
-	EXEC sp_configure 'xp_cmdshell', 1;
-	RECONFIGURE;
-END
+	INSERT INTO @xp_cmdshell_output2
+	EXEC master.dbo.xp_cmdshell 'whoami /priv';
 
-INSERT INTO @xp_cmdshell_output2
-EXEC master.dbo.xp_cmdshell 'whoami /priv';
-
-IF @CmdShellOrigValue = 0
-BEGIN
-	EXEC sp_configure 'xp_cmdshell', 0;
-	RECONFIGURE;
-
-	IF @AdvancedOptOrigValue = 0
+	IF @CmdShellOrigValue = 0
 	BEGIN
-		EXEC sp_configure 'show advanced options', 0;
+		EXEC sp_configure 'xp_cmdshell', 0;
 		RECONFIGURE;
+
+		IF @AdvancedOptOrigValue = 0
+		BEGIN
+			EXEC sp_configure 'show advanced options', 0;
+			RECONFIGURE;
+		END
+	END
+
+	IF EXISTS (SELECT * FROM @xp_cmdshell_output2 WHERE [Output] LIKE '%SeManageVolumePrivilege%')
+	BEGIN
+		SET @ifi = 1;
+	END
+	ELSE
+	BEGIN
+		INSERT INTO @Alerts
+		SELECT 'Performance' AS [Category], 'Instant File Initialization' AS [Check], 'Instant File Initialization is disabled.' AS ObjectName, 'This can negatively impact data file autogrowth times' AS [Deviation];
+		SET @ifi = 0
 	END
 END
 
-IF EXISTS (SELECT * FROM @xp_cmdshell_output2 WHERE [Output] LIKE '%SeManageVolumePrivilege%')
-BEGIN
-	SET @ifi = 1;
-END
-ELSE
-BEGIN
-	INSERT INTO @Alerts
-	SELECT 'Performance' AS [Category], 'Instant File Initialization' AS [Check], 'Instant File Initialization is disabled.' AS ObjectName, 'This can negatively impact data file autogrowth times' AS [Deviation];
-	SET @ifi = 0
-END
-
+PRINT 'Checking: TempDB Configuration (Number of Files)';
 DECLARE @tdb_files int, @online_count int, @filesizes smallint
 SELECT @tdb_files = COUNT(physical_name) FROM sys.master_files (NOLOCK) WHERE database_id = 2 AND [type] = 0;
 SELECT @online_count = COUNT(cpu_id) FROM sys.dm_os_schedulers WHERE is_online = 1 AND scheduler_id < 255 AND parent_node_id < 64;
@@ -1069,6 +1128,7 @@ END;
 IF (SELECT COUNT(DISTINCT growth) FROM sys.master_files WHERE [database_id] = 2 AND [type] = 0) > 1
 	OR (SELECT COUNT(DISTINCT is_percent_growth) FROM sys.master_files WHERE [database_id] = 2 AND [type] = 0) > 1
 BEGIN
+	PRINT 'Checking: TempDB Configuration (Auto-Growth)';
 	INSERT INTO @Alerts
 	SELECT 'Performance' AS [Category], 'TempDB Configuration', 'Some tempDB data files have different growth settings' AS [Information], 
 		mf.name + N' (' + mf.type_desc + N'): '
@@ -1088,6 +1148,7 @@ END
 
 IF OBJECT_ID('sys.dm_server_memory_dumps') IS NOT NULL
 BEGIN
+	PRINT 'Checking: SQLDump File(s)';
 	INSERT INTO @Alerts
 	SELECT 'Instance Health' AS [Category], 'SQLDump File Found' AS [SubCategory],
 	[filename],
