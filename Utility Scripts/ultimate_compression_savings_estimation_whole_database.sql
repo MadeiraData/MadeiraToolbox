@@ -23,6 +23,7 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2020-09-30 - added @MaxDOP parameter
 -- 2020-09-06 - added support for readable secondaries, added MAXDOP 1 for the query from operational stats to avoid access violation bug
 -- 2020-03-30 - added filter to ignore indexes and tables with unsupported LOB/FILESTREAM columns
 -- 2020-03-16 - added informational and status messages in output script
@@ -83,6 +84,7 @@ DECLARE
 	-- Parameters controlling the structure of output scripts:
 	,@OnlineRebuild				BIT		= 1		-- If 1, will generate REBUILD commands with the ONLINE option turned on
 	,@SortInTempDB				BIT		= 1		-- If 1, will generate REBUILD commands with the SORT_IN_TEMPDB option turned on
+	,@MaxDOP				INT		= NULL		-- If not NULL, will add a MaxDOP option accordingly. Set to 1 to prevent parallelism and reduce workload.
 
 --------------------------------------------------------------------
 --     		  DO NOT CHANGE ANYTHING BELOW THIS LINE       	  --
@@ -120,6 +122,7 @@ END
 SET @RebuildOptions = N''
 IF @OnlineRebuild = 1 SET @RebuildOptions = @RebuildOptions + N', ONLINE = ON'
 IF @SortInTempDB = 1  SET @RebuildOptions = @RebuildOptions + N', SORT_IN_TEMPDB = ON'
+IF @MaxDOP IS NOT NULL SET @RebuildOptions = @RebuildOptions + N', MAXDOP = ' + CONVERT(nvarchar(4000), @MaxDOP)
 SET @ChecksSkipped = 0;
 SET @FeasibilityCheckOnly = ISNULL(@FeasibilityCheckOnly, 1)
 
