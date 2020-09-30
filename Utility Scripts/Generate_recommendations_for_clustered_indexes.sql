@@ -19,6 +19,7 @@
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2020-09-30	Added optional parameters @OnlineRebuild, @SortInTempDB, @MaxDOP
 -- 2020-09-21	Added columns list in initial recommendations retrieval, removed newlines from remediation scripts
 -- 2020-07-14	Added proper support for replacing unique indexes
 -- 2020-07-14	Added generated script for replacing existing nc index with a clustered index
@@ -32,6 +33,11 @@
 -- ------------
 DECLARE
 	 @MinimumRowsInTable	INT		=	200000	-- Minimum number of rows in a table in order to check it
+
+	-- Parameters controlling the structure of output scripts:
+	,@OnlineRebuild		BIT		= 1	-- If 1, will generate CREATE INDEX commands with the ONLINE option turned on.
+	,@SortInTempDB		BIT		= 1	-- If 1, will generate CREATE INDEX commands with the SORT_IN_TEMPDB option turned on.
+	,@MaxDOP		INT		= NULL	-- If not NULL, will generate CREATE INDEX commands with the MAXDOP option. Set to 1 to prevent parallelism and reduce workload.
 -------------------------------------------------------
 
 
@@ -39,7 +45,20 @@ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 IF OBJECT_ID(N'tempdb..#temp_heap') IS NOT NULL DROP TABLE #temp_heap;
 
-DECLARE @CMD NVARCHAR(MAX), @CurrDB SYSNAME, @CurrObjId INT, @CurrTable NVARCHAR(1000)
+DECLARE @CMD NVARCHAR(MAX), @CurrDB SYSNAME, @CurrObjId INT, @CurrTable NVARCHAR(1000);
+DECLARE @RebuildOptions NVARCHAR(MAX);
+
+-- Init local variables and defaults
+SET @RebuildOptions = N''
+IF @OnlineRebuild = 1 SET @RebuildOptions = @RebuildOptions + N', ONLINE = ON'
+IF @SortInTempDB = 1  SET @RebuildOptions = @RebuildOptions + N', SORT_IN_TEMPDB = ON'
+IF @MaxDOP IS NOT NULL SET @RebuildOptions = @RebuildOptions + N', MAXDOP = ' + CONVERT(nvarchar(4000), @MaxDOP)
+IF @RebuildOptions LIKE N',%' SET @RebuildOptions = N' WITH (' + STUFF(@RebuildOptions, 1, 2, N'') + N')';
+
+IF @OnlineRebuild = 1 AND ISNULL(CONVERT(int, SERVERPROPERTY('EngineEdition')),0) NOT IN (3,5,8)
+BEGIN
+	RAISERROR(N'-- WARNING: @OnlineRebuild is set to 1, but current SQL edition does not support ONLINE rebuilds.', 0, 1);
+END
 
 CREATE TABLE #temp_heap
     (
@@ -289,7 +308,8 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 	CASE 
 	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NULL THEN N'; -- Recreate as clustered index: ' + t.candidate_index
 	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NOT NULL THEN N'; DROP INDEX ' + t.candidate_index + ' ON ' + t.full_table_name
-	+ N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX ' + t.candidate_index + ' ON ' + t.full_table_name + N' (' + t.candidate_columns_from_existing_index + N');'
+	+ N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX ' + t.candidate_index + ' ON ' + t.full_table_name 
+	+ N' (' + t.candidate_columns_from_existing_index + N')' + @RebuildOptions
 	ELSE 
 	N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX IX_clust ON ' + t.full_table_name 
 	+ N' ('
@@ -299,7 +319,7 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 		t.first_date_column,
 		t.most_selective_column_from_stats
 		)
-	+ N');' 
+	+ N')' + @RebuildOptions
 	END
 , *
 FROM #temp_heap AS t
