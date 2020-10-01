@@ -914,6 +914,7 @@ INSERT INTO @word values
 ,('P@ssw0rd')
 ,('P@ssword1')
 ,('p@ssw0rd')
+,('Pa55w.rd')
 ,('Teste')
 ,('teste')
 ,('Test')
