@@ -1,0 +1,46 @@
+When configuring a scheduled SQL Server job step that could potentially output
+long but meaningful messages (such as database maintenance jobs or jobs with verbose logging),
+then it's strongly recommended to configure an output log file for the job step.
+
+The examples below can be copy-pasted into your job's output file setting for optimal results.
+These conventions are based on Ola Hallengren's maintenance solution, and are the best in the industry.
+
+=============================================================
+Windows:
+=============================================================
+
+SQL 2016 and newer:
+$(ESCAPE_SQUOTE(SQLLOGDIR))\$(ESCAPE_SQUOTE(JOBNAME))_$(ESCAPE_SQUOTE(STEPNAME))_$(ESCAPE_SQUOTE(DATE))_$(ESCAPE_SQUOTE(TIME)).txt
+
+SQL 2014:
+$(ESCAPE_SQUOTE(SQLLOGDIR))\$(ESCAPE_SQUOTE(JOBID))_$(ESCAPE_SQUOTE(STEPID))_$(ESCAPE_SQUOTE(DATE))_$(ESCAPE_SQUOTE(TIME)).txt
+
+SQL 2012 and older:
+$(ESCAPE_SQUOTE(JOBID))_$(ESCAPE_SQUOTE(STEPID))_$(ESCAPE_SQUOTE(DATE))_$(ESCAPE_SQUOTE(TIME)).txt
+
+
+=============================================================
+Linux:
+=============================================================
+
+SQL 2016 and newer:
+$(ESCAPE_SQUOTE(SQLLOGDIR))/$(ESCAPE_SQUOTE(JOBNAME))_$(ESCAPE_SQUOTE(STEPNAME))_$(ESCAPE_SQUOTE(DATE))_$(ESCAPE_SQUOTE(TIME)).txt
+
+SQL 2014 and older:
+$(ESCAPE_SQUOTE(JOBID))_$(ESCAPE_SQUOTE(STEPID))_$(ESCAPE_SQUOTE(DATE))_$(ESCAPE_SQUOTE(TIME)).txt
+
+
+=============================================================
+Use the following query to find the configured Log Directory:
+=============================================================
+
+IF CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 11
+BEGIN
+	SELECT LogDirectory = [path]
+	FROM sys.dm_os_server_diagnostics_log_configurations
+	OPTION(RECOMPILE)
+END
+ELSE
+BEGIN
+	SELECT LogDirectory = LEFT(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)),LEN(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max))) - CHARINDEX('\',REVERSE(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)))))
+END
