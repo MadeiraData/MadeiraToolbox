@@ -17,6 +17,7 @@ Description:
 	https://docs.microsoft.com/en-us/sql/relational-databases/extended-events/use-the-system-health-session
 
 Change Log:
+	2020-10-04 Added parameters @ExcludeClean and @MinPendingTasks
 	2020-10-01 Added columns "blockedByNonSession" and "possibleHeadBlockers"
 	2020-09-28 Added detailed explanations for every parameter and some additional info in comments.
 	2020-09-28 Output improvements.
@@ -65,6 +66,22 @@ DECLARE
 	-- Using a custom timezone is supported in SQL Server 2016 and newer ONLY.
 	,@LocalTimeZone		VARCHAR(50)	= NULL
 	
+	----------------------------------
+	-- @ExcludeClean
+	----------------------------------
+	-- Optionally limit to only "warning" or "error" component states, thus ignoring the "clean" ones.
+	-- Can be useful for pinpointing problematic incidents specifically.
+	-- Set to 0 or NULL to show all data.
+	,@ExcludeClean		BIT		= 0
+
+	----------------------------------
+	-- @MinPendingTasks
+	----------------------------------
+	-- Optionally limit results only to those with a minimal number of pendingTasks.
+	-- Can be useful for pinpointing problematic incidents specifically.
+	-- Set to 0 or NULL to show all data.
+	,@MinPendingTasks	INT		= 0
+
 	----------------------------------
 	-- @PersistAllData
 	----------------------------------
@@ -318,6 +335,19 @@ AND ([object_name] = 'info_message'
 			event_data_xml.value('(event/data[@name="component"]/text)[1]', 'varchar(256)') -- system_health/sp_server_diagnostics_component_result version
 			)
 		)
+	)
+AND (ISNULL(@ExcludeClean,0) = 0 OR
+		(
+		[object_name] IN ('component_health_result','sp_server_diagnostics_component_result')
+		AND
+		'clean' <> COALESCE(
+				  event_data_xml.value('(event/data[@name="state"]/text)[1]', 'varchar(50)') -- sp_server_diagnostics_component_result
+				, event_data_xml.value('(event/data[@name="state_desc"])[1]', 'varchar(50)') -- query_processing in SQLDIAG
+				)
+		) 
+	)
+AND (ISNULL(@MinPendingTasks,0) <= 0 OR
+	event_data_xml.value('(event/data[@name="data"]/value/queryProcessing/@pendingTasks)[1]', 'int') >= @MinPendingTasks
 	)
 ORDER BY timestamp_utc DESC
 OPTION (RECOMPILE);
