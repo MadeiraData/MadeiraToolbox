@@ -7,7 +7,7 @@ SET @MinVLFCountForAlert = 300;
 IF CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) < 13
 BEGIN
  --table variable to hold results  
- DECLARE @vlfcounts AS TABLE(DBname SYSNAME,VLF_Count INT);
+ DECLARE @vlfcounts AS TABLE(dbname SYSNAME,VLF_Count INT);
  DECLARE @dbccloginfo AS TABLE
  (  
   RecoveryUnitId INT NULL, 
@@ -60,14 +60,14 @@ BEGIN
  CLOSE minor_crsr;  
  DEALLOCATE minor_crsr;  
  
- SELECT 'In server: ' + @@SERVERNAME + ', database: ' + QUOTENAME(dbname) + ' has a high VLF count', VLF_Count
+ SELECT 'In server: ' + @@SERVERNAME + ', database: ' + QUOTENAME(dbname) + ' has a high VLF count' AS msg, VLF_Count
  FROM @vlfcounts
  WHERE VLF_Count > @MinVLFCountForAlert
 END
 ELSE
 BEGIN 
 
- SELECT 'In server: ' + @@SERVERNAME + ', database: ' + QUOTENAME(d.[name]) + ' has a high VLF count', vlf.total_vlf_count
+ SELECT 'In server: ' + @@SERVERNAME + ', database: ' + QUOTENAME(d.[name]) + ' has a high VLF count' AS msg, vlf.total_vlf_count AS VLF_Count
  FROM sys.databases d
  CROSS APPLY sys.dm_db_log_stats(database_id) AS vlf
  WHERE d.database_id > 4
