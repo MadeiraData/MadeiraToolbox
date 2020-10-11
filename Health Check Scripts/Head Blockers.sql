@@ -160,7 +160,7 @@ SELECT
 	ActiveRequestReads						= Requests.reads ,
 	ActiveRequestWrites						= Requests.writes ,
 	ActiveRequestLogicalReads				= Requests.logical_reads ,
-	ActiveRequestDegreeOfParallelism		= Requests.dop ,
+	--ActiveRequestDegreeOfParallelism		= Requests.dop ,
 	ActiveTransactionName					= ActiveTransactions.[name] ,
 	ActiveTransactionBeginDateTime			= ActiveTransactions.transaction_begin_time
 FROM
