@@ -2,7 +2,9 @@ SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
 DECLARE @MinPendingTasksForAlert INT;
+DECLARE @MinCreatedWorkersPercent INT;
 SET @MinPendingTasksForAlert = 25;
+SET @MinCreatedWorkersPercent = 85;
 
 DECLARE @results AS TABLE
 (
@@ -90,7 +92,9 @@ BEGIN
   FROM possibleHeadBlockers.nodes('*//inputbuf') AS n(x)
  ) AS m(msg)
  WHERE m.msg IS NOT NULL
- AND pendingTasks >= @MinPendingTasksForAlert;
+ AND pendingTasks >= @MinPendingTasksForAlert
+ AND workersCreated * 100.0 / maxWorkers >= @MinCreatedWorkersPercent
+ ;
 
  -- If nothing returned from diagnostics, then this was a false positive
  IF @@ROWCOUNT = 0
