@@ -9,6 +9,7 @@ the disk volume where the TempDB files are located.
 This check only works when TempDB files are isolated from other databases and exist on their own dedicated volume.
 
 Change log:
+2020-10-11 - Added WITH NO_INFOMSGS to shrink command, added ForceShrink parameter
 2020-08-04 - Added @ClearServerCache and @SpaceUsedMaxPercent parameters, updated indentations and comments
 2020-03-08 - Bug fixes, added parameters for more control
 2020-01-19 - Removed max size setting, replaced with UNLIMITED. Added @FileGrowthMB as parameter.
@@ -23,6 +24,7 @@ DECLARE @InitialSizeMBOverride 		INT 	= NULL -- 2048 -- hard-coded size per file
 DECLARE @FileGrowthMB 			INT 	= 1024 -- Auto-growth increment in MB.
 DECLARE @IncludeTransactionLog 		BIT 	= 0 -- Specify whether to include the transaction log file in the calculations.
 DECLARE @SpaceUsedMaxPercent 		INT 	= 50 -- Maximum percent space used compared to desired file size, if found to be above - a warning will be raised.
+DECLARE @ForceShrink			BIT	= 0 -- Set this to 1 to force shrink (use this if size on disk is larger than what's specified in system tables).
 
 /** DO NOT CHANGE ANYTHING BELOW THIS LINE **/
 
@@ -34,7 +36,7 @@ DECLARE @CMDs AS TABLE (CMD nvarchar(max));
 INSERT INTO @CMDs
 SELECT
  Remediation_Script = 
- CASE WHEN current_size_MB > InitSizeMBPerFile THEN N'USE tempdb; DBCC SHRINKFILE (N' + QUOTENAME(name, '''') + ' , ' + CONVERT(nvarchar,InitSizeMBPerFile) + N'); '
+ CASE WHEN current_size_MB > InitSizeMBPerFile OR @ForceShrink = 1 THEN N'USE tempdb; DBCC SHRINKFILE (N' + QUOTENAME(name, '''') + ' , ' + CONVERT(nvarchar,ISNULL(@InitialSizeMBOverride, InitSizeMBPerFile)) + N') WITH NO_INFOMSGS; '
  ELSE N'' END
 + 'ALTER DATABASE [tempdb] MODIFY FILE (NAME = ' + QUOTENAME(name, '''') + ', SIZE = ' + CONVERT(nvarchar,ISNULL(@InitialSizeMBOverride, InitSizeMBPerFile)) + N'MB, MAXSIZE = ' + ISNULL(CONVERT(nvarchar,MaxSizeMBPerFile) + 'MB','UNLIMITED') + N', FILEGROWTH = ' + CONVERT(nvarchar, @FileGrowthMB) + N'MB);'
 + CONCAT('-- Current size: ', current_size_MB, ' MB, Space Used: ', current_spaceused_MB, ' MB (', ROUND(current_spaceused_MB * 1.0 / InitSizeMBPerFile * 100,2), ' % of desired size)')
