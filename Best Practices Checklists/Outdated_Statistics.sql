@@ -81,10 +81,10 @@ SELECT
 , statsName
 , ModCntr
 , LastUpdate
-, RemediationCmd = N'USE ' + QUOTENAME(DB_NAME(databaseId)) + N'; UPDATE STATISTICS ' + QUOTENAME(DB_NAME(databaseId))
-	+ N'.' + QUOTENAME(OBJECT_SCHEMA_NAME(objectId, databaseId))
-	+ N'.' + QUOTENAME(OBJECT_NAME(objectId, databaseId))
-	+ N' ' + QUOTENAME(statsName)
+, RemediationCmd = N'USE ' + QUOTENAME(DB_NAME(databaseId)) COLLATE database_default + N'; UPDATE STATISTICS ' + QUOTENAME(DB_NAME(databaseId)) COLLATE database_default
+	+ N'.' + QUOTENAME(OBJECT_SCHEMA_NAME(objectId, databaseId)) COLLATE database_default
+	+ N'.' + QUOTENAME(OBJECT_NAME(objectId, databaseId)) COLLATE database_default
+	+ N' ' + QUOTENAME(statsName) COLLATE database_default
 	+ CASE WHEN @MaxDOP IS NULL THEN N'' ELSE N' WITH MAXDOP = ' + CONVERT(nvarchar, @MaxDOP) END
 	+ N';'
 FROM #tmpStats
