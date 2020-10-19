@@ -11,6 +11,7 @@ Description:
 	This script is only supported on SQL Server versions 2012 and newer.
 
 	For more info:
+	https://eitanblumin.com/2020/10/05/how-to-troubleshoot-threadpool-waits-and-deadlocked-schedulers/
 	https://techcommunity.microsoft.com/t5/sql-server-support/the-tao-of-a-deadlock-scheduler-in-sql-server/ba-p/333991
 	https://www.sqlskills.com/help/waits/threadpool/
 	https://docs.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-server-diagnostics-transact-sql
