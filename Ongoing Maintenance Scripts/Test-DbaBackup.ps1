@@ -1,4 +1,4 @@
-﻿function Test-DbaBackup {
+function Test-DbaBackup {
     <#
     .SYNOPSIS
         Quickly and easily tests the set of full backups based on folder path.
@@ -124,8 +124,8 @@
             } 
             else {
                 Write-Information "Installing $module"
-                Install-Module $module -Force -SkipPublisherCheck -Scope CurrentUser
-                Import-Module $module -Force -PassThru -Scope Local
+                Install-Module $module -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop
+                Import-Module $module -Force -Scope Local
             }
         }
 
@@ -152,8 +152,6 @@
         $restoreresults = Restore-DbaDatabase @restoreSplat
 
         Write-Verbose "Restored $($restoreresults.Count) Backup(s)"
-        # $dbname = $restoreresults[0].Database
-        # $restoreObject = $restoreresults[0]
 
         $restoreresults | ForEach-Object { 
 
@@ -161,8 +159,9 @@
             $success = $restoreresult = $dbccresult = "Skipped"
 
             $restoreObject = $_
-
-            $restoreElapsed = $restoreObject.DatabaseRestoreTime
+            
+            $ts = [timespan]::fromseconds($restoreObject.DatabaseRestoreTime.TotalSeconds)
+            $restoreElapsed = "{0:HH:mm:ss}" -f ([datetime]$ts.Ticks)
         
             $backupfile = $restoreObject.BackupFile
             $backupheader = Read-DbaBackupHeader -SqlInstance $destserver -Path $backupfile
@@ -192,24 +191,27 @@
             if (-not $NoCheck) {
                 # shouldprocess is taken care of in Start-DbccCheck
                 if ($dbname -eq ($Prefix + "master")) {
-                    $dbccresult =
-                    "DBCC CHECKDB skipped for restored master ($dbname) database. `
-                        The master database cannot be copied off of a server and have a successful DBCC CHECKDB. `
-                        See https://www.itprotoday.com/my-master-database-really-corrupt for more information."
-                } else {
-                    if ($success -eq "Success") {
-                        Write-Verbose "Starting DBCC."
+                    $dbccresult = "Skipped (not supported in restored master)"
+                }
+                elseif ($success -eq "Success" -and $null -eq $destserver.databases[$dbname])
+                {
+                    $dbccresult = "Skipped (DB Removed)"
+                }
+                elseif ($success -eq "Success")
+                {
+                    Write-Verbose "Starting DBCC."
 
-                        $startDbcc = Get-Date
-                        $dbccresult = Start-DbccCheck -Server $destserver -DbName $dbname 3>$null
-                        $endDbcc = Get-Date
+                    $startDbcc = Get-Date
+                    $dbccresult = Start-DbccCheck -Server $destserver -DbName $dbname 3>$null
+                    $endDbcc = Get-Date
 
-                        $dbccts = New-TimeSpan -Start $startDbcc -End $endDbcc
-                        $ts = [timespan]::fromseconds($dbccts.TotalSeconds)
-                        $dbccElapsed = "{0:HH:mm:ss}" -f ([datetime]$ts.Ticks)
-                    } else {
-                        $dbccresult = "Skipped"
-                    }
+                    $dbccts = New-TimeSpan -Start $startDbcc -End $endDbcc
+                    $ts = [timespan]::fromseconds($dbccts.TotalSeconds)
+                    $dbccElapsed = "{0:HH:mm:ss}" -f ([datetime]$ts.Ticks)
+                }
+                else
+                {
+                    $dbccresult = "Skipped (Restore Failed)"
                 }
             }
 
