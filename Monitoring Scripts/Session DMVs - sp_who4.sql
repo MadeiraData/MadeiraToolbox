@@ -3,7 +3,6 @@ SELECT
 	er.blocking_session_id							AS [Blk by],
 	es.[Status]								AS [Status],
 	DATEDIFF(SECOND, last_request_end_time, GETDATE())			AS [Sec],
-	start_time								AS [Start Time],
 	er.Wait_Time								AS [Wait (ms)],		-- If the request is currently blocked, this column returns the duration in milliseconds, of the current wait. Is not nullable.
 	er.Wait_Type								AS [Wait Type],		-- If the request is currently blocked, this column returns the type of wait. Is nullable.
 	er.last_wait_type							AS [Last Wait Type],	-- If this request has previously been blocked, this column returns the type of the last wait. Is not nullable.
