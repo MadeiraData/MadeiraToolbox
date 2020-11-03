@@ -14,11 +14,14 @@
 -- 3. Look in missing index stats for the most impactful index that has the highest number of INCLUDE columns. If no such was found, then:
 -- 4. Use the IDENTITY column in the table. If no such was found, then:
 -- 5. Use the first date/time column in the table, give priority to columns with a default constraint. If no such was found, then:
--- 6. Check for any column statistics in the table and look for the column which is the most selective (most unique values). If no such was found, then:
--- 7. Bummer. I'm out of ideas. No recommendations are possible.
+-- 6. Use the first int/bigint/smallint/tinyint column in the table, give priority to columns without a default constraint. If no such was found, then:
+-- 7. Check for any column statistics in the table and look for the column which is the most selective (most unique values). If no such was found, then:
+-- 8. Use the first non-nullable column in the table, give priority to columns without a default constraint. If no such was found, then:
+-- 9. Bummer. I'm out of ideas. No recommendations are possible.
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2020-11-03	Added new step to find first integer column, and a new step to find first non-nullable column
 -- 2020-09-30	Added optional parameters @OnlineRebuild, @SortInTempDB, @MaxDOP
 -- 2020-09-21	Added columns list in initial recommendations retrieval, removed newlines from remediation scripts
 -- 2020-07-14	Added proper support for replacing unique indexes
@@ -73,7 +76,9 @@ CREATE TABLE #temp_heap
 	identity_column SYSNAME NULL,
 	most_selective_column_from_stats SYSNAME NULL,
 	first_date_column SYSNAME NULL,
-	first_date_column_default NVARCHAR(MAX) NULL,
+	first_integer_column SYSNAME NULL,
+	first_integer_column_type SYSNAME NULL,
+	first_non_nullable_column SYSNAME NULL,
 	is_unique BIT NULL
     );
 
@@ -166,7 +171,8 @@ FETCH NEXT FROM Tabs INTO @CurrDB, @CurrObjId, @CurrTable
 WHILE @@FETCH_STATUS = 0
 BEGIN
 	-- Get additional metadata for current table
-	DECLARE @FirstIndex SYSNAME, @IsUnique BIT, @FirstIndexColumns NVARCHAR(MAX), @IdentityColumn SYSNAME, @FirstDateColumn SYSNAME, @FirstDateColumnDefault NVARCHAR(MAX);
+	DECLARE @FirstIndex SYSNAME, @IsUnique BIT, @FirstIndexColumns NVARCHAR(MAX), @IdentityColumn SYSNAME
+	, @FirstDateColumn SYSNAME, @FirstIntColumn SYSNAME, @FirstIntColumnType SYSNAME, @FirstNonNullableColumn SYSNAME;
 	SET @CMD = N'SELECT TOP 1 
 		@FirstIndex = name,
 		@IsUnique = ix.is_unique,
@@ -188,7 +194,7 @@ BEGIN
 	FROM ' + QUOTENAME(@CurrDB) + N'.sys.identity_columns
 	WHERE object_id = @ObjId;
 
-	SELECT TOP 1 @FirstDateColumn = c.[name], @FirstDateColumnDefault = dc.[definition]
+	SELECT TOP 1 @FirstDateColumn = c.[name]
 	FROM ' + QUOTENAME(@CurrDB) + N'.sys.columns AS c
 	LEFT JOIN ' + QUOTENAME(@CurrDB) + N'.sys.default_constraints AS dc
 	ON c.default_object_id = dc.object_id
@@ -196,16 +202,46 @@ BEGIN
 	WHERE c.object_id = @ObjId
 	AND c.system_type_id IN
 	(SELECT system_type_id FROM ' + QUOTENAME(@CurrDB) + N'.sys.types WHERE precision > 0 AND (name LIKE ''%date%'' OR name LIKE ''%time%''))
-	ORDER BY CASE WHEN dc.[definition] IS NOT NULL THEN 0 ELSE 1 END ASC, c.column_id ASC;'
+	ORDER BY
+		CASE WHEN dc.[definition] IS NOT NULL THEN 0 ELSE 1 END ASC,
+		CONVERT(smallint, c.is_nullable) ASC,
+		c.column_id ASC;
+	
+	SELECT TOP 1 @FirstIntColumn = c.[name], @FirstIntColumnType = t.[name]
+	FROM ' + QUOTENAME(@CurrDB) + N'.sys.columns AS c
+	LEFT JOIN ' + QUOTENAME(@CurrDB) + N'.sys.default_constraints AS dc
+	ON c.default_object_id = dc.object_id
+	AND c.object_id = dc.parent_object_id
+	LEFT JOIN ' + QUOTENAME(@CurrDB) + N'.sys.types AS t ON c.system_type_id = t.system_type_id
+	WHERE c.object_id = @ObjId
+	AND t.[name] IN (''bigint'', ''int'', ''smallint'', ''tinyint'')
+	AND c.is_nullable = 0
+	ORDER BY
+		CASE WHEN dc.[definition] IS NOT NULL THEN 1 ELSE 0 END ASC,
+		CASE t.[name] WHEN ''int'' THEN 1 WHEN ''bigint'' THEN 2 WHEN ''smallint'' THEN 3 ELSE 4 END ASC,
+		c.column_id ASC;
+
+	SELECT TOP 1 @FirstNonNullableColumn = c.[name]
+	FROM ' + QUOTENAME(@CurrDB) + N'.sys.columns AS c
+	LEFT JOIN ' + QUOTENAME(@CurrDB) + N'.sys.default_constraints AS dc
+	ON c.default_object_id = dc.object_id
+	AND c.object_id = dc.parent_object_id
+	WHERE c.object_id = @ObjId
+	AND c.is_nullable = 0
+	ORDER BY
+		CASE WHEN dc.[definition] IS NOT NULL THEN 1 ELSE 0 END ASC,
+		c.column_id ASC;'
 
 	PRINT @CMD;
 	SET @FirstIndex = NULL;
 	SET @IdentityColumn = NULL;
 	SET @FirstDateColumn = NULL;
-	SET @FirstDateColumnDefault = NULL
+	SET @FirstIntColumn = NULL;
+	SET @FirstIntColumnType = NULL;
+	SET @FirstNonNullableColumn = NULL;
 	EXEC sp_executesql @CMD
-			, N'@ObjId INT, @FirstIndex SYSNAME OUTPUT, @IsUnique BIT OUTPUT, @FirstIndexColumns NVARCHAR(MAX) OUTPUT, @IdentityColumn SYSNAME OUTPUT, @FirstDateColumn SYSNAME OUTPUT, @FirstDateColumnDefault NVARCHAR(MAX) OUTPUT'
-			, @CurrObjId, @FirstIndex OUTPUT, @IsUnique OUTPUT, @FirstIndexColumns OUTPUT, @IdentityColumn OUTPUT, @FirstDateColumn OUTPUT, @FirstDateColumnDefault OUTPUT
+			, N'@ObjId INT, @FirstIndex SYSNAME OUTPUT, @IsUnique BIT OUTPUT, @FirstIndexColumns NVARCHAR(MAX) OUTPUT, @IdentityColumn SYSNAME OUTPUT, @FirstDateColumn SYSNAME OUTPUT, @FirstIntColumn SYSNAME OUTPUT, @FirstIntColumnType SYSNAME OUTPUT, @FirstNonNullableColumn SYSNAME OUTPUT'
+			, @CurrObjId, @FirstIndex OUTPUT, @IsUnique OUTPUT, @FirstIndexColumns OUTPUT, @IdentityColumn OUTPUT, @FirstDateColumn OUTPUT, @FirstIntColumn OUTPUT, @FirstIntColumnType OUTPUT, @FirstNonNullableColumn OUTPUT
 
 	IF @FirstIndex IS NOT NULL
 	BEGIN
@@ -232,6 +268,23 @@ BEGIN
 	BEGIN
 		-- Add recommendation based on the first date/time column
 		UPDATE #temp_heap SET first_date_column = QUOTENAME(@FirstDateColumn)
+		, is_unique = ISNULL(is_unique, 0)
+		WHERE database_name = @CurrDB AND object_id = @CurrObjId;
+	END
+	
+	IF @FirstIntColumn IS NOT NULL
+	BEGIN
+		-- Add recommendation based on the first date/time column
+		UPDATE #temp_heap SET first_integer_column = QUOTENAME(@FirstIntColumn)
+		, first_integer_column_type = @FirstIntColumnType
+		, is_unique = ISNULL(is_unique, 0)
+		WHERE database_name = @CurrDB AND object_id = @CurrObjId;
+	END
+
+	IF @FirstNonNullableColumn IS NOT NULL
+	BEGIN
+		-- Add recommendation based on the first date/time column
+		UPDATE #temp_heap SET first_non_nullable_column = QUOTENAME(@FirstNonNullableColumn)
 		, is_unique = ISNULL(is_unique, 0)
 		WHERE database_name = @CurrDB AND object_id = @CurrObjId;
 	END
@@ -301,7 +354,9 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 	, N', candidate column(s) from MISSING INDEX stats: ' + t.candidate_columns_from_missing_index
 	, N', IDENTITY column: ' + t.identity_column
 	, N', first DATE/TIME column: ' + t.first_date_column
+	, N', first ' + ISNULL(UPPER(t.first_integer_column_type), 'INTEGER') + ' column: ' + t.first_integer_column
 	, N', most SELECTIVE column: ' + t.most_selective_column_from_stats
+	, N', first non-nullable column: ' + t.first_non_nullable_column
 	, N', NO RECOMMENDATION POSSIBLE')
 , Script = N'USE ' + QUOTENAME(t.database_name) 
 	+
@@ -317,7 +372,9 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 		t.candidate_columns_from_missing_index,
 		t.identity_column,
 		t.first_date_column,
-		t.most_selective_column_from_stats
+		t.first_integer_column,
+		t.most_selective_column_from_stats,
+		t.first_non_nullable_column
 		)
 	+ N')' + @RebuildOptions
 	END
