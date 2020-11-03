@@ -8,6 +8,7 @@ Added support for Azure SQL DB: Performs the same check across schemas instead o
 Instructions:
 
 1. Run the script to detect all scalar functions with disabled SCHEMABINDING, that can potentially have it enabled.
+   Optionally set the @WithDependencies parameter to filter only on functions with/without dependencies.
 2. Review the 1st resultset for the full list of detected functions.
 3. Review the 2nd resultset to see how many times each function has identical definition in several databases (in case of Azure SQL DB: several schemas).
 4. Use the 3rd resultset by copying and pasting the "CreateScript" column to a different query window,
@@ -18,7 +19,8 @@ Instructions:
 	all with an identical definition. So you'd have less work in modifying them.
 
 */
-
+DECLARE
+	@WithDependencies BIT = NULL -- optionally filter only on functions with/without dependencies
 
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
@@ -114,6 +116,7 @@ WHERE [schema_name] IN ('sys', 'tSQLt')
 -- General summary:
 SELECT 'In server: ' + @@SERVERNAME + ', database: ' + QUOTENAME([database_name]) + ', fuction: ' + [name] + ', schemabinding option is disabled', *
 FROM #temp_Schemabinding
+WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
 
 IF CONVERT(varchar(4000), SERVERPROPERTY('Edition')) = 'SQL Azure'
 BEGIN
@@ -124,6 +127,7 @@ GO' AS [definition], COUNT(*) AS num_of_schemas
 	CROSS APPLY (VALUES(
 		REPLACE([definition],QUOTENAME([schema_name]),'[{SchemaName}]')
 		)) AS v(NormalizedDefinition)
+	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
 	GROUP BY [object_name], NormalizedDefinition
 	
 	-- Generate CREATE script for all unique or "rare" functions
@@ -137,12 +141,14 @@ GO'
 		REPLACE([definition],QUOTENAME([schema_name]),'[{SchemaName}]')
 		)) AS v(NormalizedDefinition)
 	) AS a
-	WHERE InsNum < 5
+	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
+	AND (InsNum < 5
 	OR [object_name] IN (SELECT [object_name] FROM #temp_Schemabinding 
 						CROSS APPLY (VALUES(
 							REPLACE([definition],QUOTENAME([schema_name]),'[{SchemaName}]')
 						)) AS v(NormalizedDefinition) GROUP BY [object_name] 
 						HAVING COUNT(DISTINCT NormalizedDefinition) > 1)
+		)
 	ORDER BY 1, 2, 3
 	
 	-- Generate cursor command to CREATE function in all schemas that contain it
@@ -177,6 +183,7 @@ GO'
 	CROSS APPLY (VALUES(
 		REPLACE([definition],QUOTENAME([schema_name]),'[{SchemaName}]')
 		)) AS v(NormalizedDefinition)
+	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
 	GROUP BY [object_name], NormalizedDefinition
 	HAVING COUNT(*) >= 3
 	AND [object_name] NOT IN (SELECT [object_name] FROM #temp_Schemabinding 
@@ -191,6 +198,7 @@ BEGIN
 	-- Check how many times each identical function exists in multiple databases
 	SELECT [schema_name], [object_name], [definition], COUNT(*) AS num_of_databases
 	FROM #temp_Schemabinding
+	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
 	GROUP BY [schema_name], [object_name], [definition]
 	
 	-- Generate CREATE script for all unique or "rare" functions
@@ -203,8 +211,10 @@ GO'
 	SELECT *, COUNT(*) OVER (PARTITION BY [name]) AS InsNum
 	FROM #temp_Schemabinding
 	) AS a
-	WHERE InsNum < 5
+	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
+	AND (InsNum < 5
 	OR [name] IN (SELECT [name] FROM #temp_Schemabinding GROUP BY [name] HAVING COUNT(DISTINCT [definition]) > 1)
+	)
 	ORDER BY 1, 2, 3
 
 	-- Generate sp_MSforeachdb command to CREATE function in all databases that contain it
@@ -214,6 +224,7 @@ IF OBJECT_ID(''''' + [name] + N''''') IS NOT NULL
 EXEC(N''''' + REPLACE([definition],N'''', N'''''''''') + N''''');''
 GO'
 	FROM #temp_Schemabinding
+	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
 	GROUP BY [name], [definition]
 	HAVING COUNT(*) >= 5
 	AND [name] NOT IN (SELECT [name] FROM #temp_Schemabinding GROUP BY [name] HAVING COUNT(DISTINCT [definition]) > 1)
