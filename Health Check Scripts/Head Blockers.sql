@@ -160,7 +160,7 @@ SELECT
 	ActiveRequestReads						= Requests.reads ,
 	ActiveRequestWrites						= Requests.writes ,
 	ActiveRequestLogicalReads				= Requests.logical_reads ,
-	--ActiveRequestDegreeOfParallelism		= Requests.dop ,
+	ActiveRequestDegreeOfParallelism		= Requests.dop , -- supported only in SQL2016 and newer. remove if using an older version.
 	ActiveTransactionName					= ActiveTransactions.[name] ,
 	ActiveTransactionBeginDateTime			= ActiveTransactions.transaction_begin_time
 FROM
