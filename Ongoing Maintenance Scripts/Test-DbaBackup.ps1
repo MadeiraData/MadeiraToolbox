@@ -95,7 +95,7 @@ function Test-DbaBackup {
                         $null = $server.databases[$dbname].CheckTables('None')
                         Write-Verbose "Dbcc CheckTables finished successfully for $dbname on $servername"
                     } else {
-                        $null = $server.Query("DBCC CHECKDB ([$dbname]) WITH DATA_PURITY, EXTENDED_LOGICAL_CHECKS, NO_INFOMSGS, ALL_ERRORMSGS")
+                        $null = $server.Query("DBCC CHECKDB ([$dbname]) WITH DATA_PURITY, EXTENDED_LOGICAL_CHECKS, TABLOCK, NO_INFOMSGS, ALL_ERRORMSGS")
                         Write-Verbose "Dbcc CHECKDB finished successfully for $dbname on $servername"
                     }
                     return "Success"
@@ -117,7 +117,7 @@ function Test-DbaBackup {
             }
         }
         $modules = @("PSFramework", "PSModuleDevelopment", "dbatools")
-
+        
         foreach ($module in $modules) {
             if (Get-Module -ListAvailable -Name $module) {
                 Write-Verbose "$module already installed"
