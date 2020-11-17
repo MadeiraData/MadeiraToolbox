@@ -1,9 +1,10 @@
 DECLARE
    @MinimumTableRows	INT = 200000
  , @MinimumModCountr	INT = 100000
- , @MinimumDaysOld	INT = 35
+ , @MinimumDaysOld	INT = 35 -- adjust as needed
  , @MaxDOP		INT = NULL -- set to 1 to reduce server workload
  , @SampleRatePercent	INT = NULL -- set to number between 1 and 100 to force a specific sample rate, where 100 = FULLSCAN
+ , @ExecuteRemediation	BIT = 0 -- set to 1 to automatically execute UPDATE STATISTICS remediation commands
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 IF OBJECT_ID('tempdb..#tmpStats') IS NOT NULL DROP TABLE #tmpStats;
@@ -39,7 +40,7 @@ SET @qry = N'
     MIN(sp.last_updated),
     MAX(sp.modification_counter),
     SUM(ps.rows)
-  FROM sys.tables AS t
+  FROM sys.objects AS t
   INNER JOIN (
      SELECT SUM(ps.rows) AS rows, ps.object_id
      FROM sys.partitions ps 
@@ -64,6 +65,8 @@ SET @qry = N'
     AND last_updated < DATEADD(day, -' + CONVERT(nvarchar, @MinimumDaysOld) + N', GETDATE())
     ' END
   + N') AS sp
+  WHERE t.is_ms_shipped = 0
+  AND t.[type] = ''U''
   GROUP BY stat.object_id,stat.name
   OPTION (MAXDOP 1)'
 
@@ -83,7 +86,7 @@ END'
 	exec sp_MSforeachdb @qry
 END
 
-PRINT @qry
+IF @ExecuteRemediation = 0 PRINT @qry
 
 SELECT
   [database_name] = DB_NAME(databaseId)
@@ -102,3 +105,44 @@ FROM #tmpStats
 ORDER BY
   ModCntr DESC
 , LastUpdate ASC
+
+IF @ExecuteRemediation = 1
+BEGIN
+	DECLARE @Msg NVARCHAR(4000)
+	DECLARE Cmds CURSOR
+	LOCAL FAST_FORWARD
+	FOR
+	SELECT
+	  Msg = N'ModCntr: ' + CAST(ModCntr as nvarchar(max)) + N', LastUpdate: ' + ISNULL(CONVERT(nvarchar(25), LastUpdate, 121), N'(never)')
+	, RemediationCmd = N'USE ' + QUOTENAME(DB_NAME(databaseId)) COLLATE database_default + N'; UPDATE STATISTICS ' + QUOTENAME(DB_NAME(databaseId)) COLLATE database_default
+		+ N'.' + QUOTENAME(OBJECT_SCHEMA_NAME(objectId, databaseId)) COLLATE database_default
+		+ N'.' + QUOTENAME(OBJECT_NAME(objectId, databaseId)) COLLATE database_default
+		+ N' ' + QUOTENAME(statsName) COLLATE database_default
+		+ ISNULL(@options, N'')
+		+ N';'
+	FROM #tmpStats
+	ORDER BY
+	  ModCntr DESC
+	, LastUpdate ASC
+
+	OPEN Cmds
+	FETCH NEXT FROM Cmds INTO @Msg, @qry
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @Msg = CHAR(13) + CHAR(10) + N'-- ' + CONVERT(nvarchar(25), GETDATE(), 121) + CHAR(13) + CHAR(10) + N'-- ' + @Msg
+		RAISERROR(N'%s',0,1,@Msg) WITH NOWAIT;
+		RAISERROR(N'%s',0,1,@qry) WITH NOWAIT;
+
+		EXEC (@qry);
+
+		FETCH NEXT FROM Cmds INTO @Msg, @qry
+	END
+
+	CLOSE Cmds
+	DEALLOCATE Cmds
+
+	
+	SET @Msg = CHAR(13) + CHAR(10) + N'-- ' + CONVERT(nvarchar(25), GETDATE(), 121) + CHAR(13) + CHAR(10) + N'-- Done.'
+	RAISERROR(N'%s',0,1,@Msg) WITH NOWAIT;
+END
