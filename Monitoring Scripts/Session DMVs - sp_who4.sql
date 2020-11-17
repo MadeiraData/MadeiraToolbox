@@ -2,7 +2,7 @@ SELECT
 	er.session_id								AS [SPID],
 	er.blocking_session_id							AS [Blk by],
 	es.[status]								AS [Status],
-	DATEDIFF(SECOND, last_request_end_time, GETDATE())			AS [Duration (sec)],
+	GETDATE() - last_request_end_time					AS [Duration],
 	start_time								AS [Start Time],
 	er.wait_time								AS [Wait (ms)],		-- If the request is currently blocked, this column returns the duration in milliseconds, of the current wait. Is not nullable.
 	er.wait_type								AS [Wait Type],		-- If the request is currently blocked, this column returns the type of wait. Is nullable.
@@ -41,8 +41,8 @@ WHERE
 	er.session_id <> @@SPID
 	AND es.[status] = N'running'
 ORDER BY
-	--[Threads] DESC,
-	--[Session Total CPU (ms)] DESC,
-	--[Duration (sec)] DESC,
+	[Threads] DESC,
+	[Session Total CPU (ms)] DESC,
+	--[Duration] DESC,
 	[SPID] ASC
 OPTION (RECOMPILE);
