@@ -16,6 +16,7 @@ schema X - owned by role X - owned by dbo.
 If the database is a system database, its owner should be sa (or equivalent, if it was renamed).
  
 Invalid owners for such system objects can potentially cause severe errors during version updates/upgrades, or when using certain HADR features.
+Additionally, once a system object is owned by a user-created login/user, it becomes very problematic to remove or make changes to such logins/users.
 
 This script will detect any such misconfigurations, and provide you with the proper remediation scripts to fix it.
 */
