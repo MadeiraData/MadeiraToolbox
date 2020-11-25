@@ -21,6 +21,7 @@
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2020-11-18	Added Rollback_Script column in output
 -- 2020-11-03	Added new step to find first integer column, and a new step to find first non-nullable column
 -- 2020-09-30	Added optional parameters @OnlineRebuild, @SortInTempDB, @MaxDOP
 -- 2020-09-21	Added columns list in initial recommendations retrieval, removed newlines from remediation scripts
@@ -35,7 +36,7 @@
 -- Parameters:
 -- ------------
 DECLARE
-	 @MinimumRowsInTable	INT		=	200000	-- Minimum number of rows in a table in order to check it
+	 @MinimumRowsInTable	INT		= 200000	-- Minimum number of rows in a table in order to check it
 
 	-- Parameters controlling the structure of output scripts:
 	,@OnlineRebuild		BIT		= 1	-- If 1, will generate CREATE INDEX commands with the ONLINE option turned on.
@@ -72,6 +73,7 @@ CREATE TABLE #temp_heap
 	[object_id] INT,
         candidate_index SYSNAME NULL,
 	candidate_columns_from_existing_index NVARCHAR(MAX) NULL,
+	include_columns_from_existing_index NVARCHAR(MAX) NULL,
 	candidate_columns_from_missing_index NVARCHAR(MAX) NULL,
 	identity_column SYSNAME NULL,
 	most_selective_column_from_stats SYSNAME NULL,
@@ -83,11 +85,11 @@ CREATE TABLE #temp_heap
     );
 
 SET @CMD = N'
- INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, is_unique)
  SELECT DB_NAME() as DatabaseName, t.object_id, OBJECT_NAME(t.object_id) AS table_name, QUOTENAME(OBJECT_SCHEMA_NAME(t.object_id)) + ''.'' + QUOTENAME(OBJECT_NAME(t.object_id)) AS FullTableName
  , SUM(p.rows)
  , QUOTENAME(ix.name) AS CandidateIndexName
  , ix_columns
+ , inc_columns
  , ix.is_unique
  FROM sys.tables t
  INNER JOIN sys.partitions p
@@ -112,6 +114,13 @@ SET @CMD = N'
 				WHERE ic.object_id = t.object_id AND ic.index_id = ix.index_id AND ic.is_included_column = 0
 				FOR XML PATH('''')
 			), 1, 2, '''')
+	, inc_columns = STUFF((
+				SELECT '', '' + QUOTENAME(c.name)
+				FROM sys.index_columns AS ic
+				INNER JOIN sys.columns AS c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+				WHERE ic.object_id = t.object_id AND ic.index_id = ix.index_id AND ic.is_included_column = 1
+				FOR XML PATH('''')
+			), 1, 2, '''')
 ) AS ixcolumns
  WHERE p.index_id = 0
  AND t.is_ms_shipped = 0
@@ -120,11 +129,12 @@ SET @CMD = N'
  + CASE WHEN CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 12 THEN N'
  AND t.is_memory_optimized = 0'
  ELSE N'' END + N'
- GROUP BY t.object_id, ix.name, ix.is_unique, ix_columns
+ GROUP BY t.object_id, ix.name, ix.is_unique, ix_columns, inc_columns
  ' + ISNULL(N'HAVING SUM(p.rows) >= ' + CONVERT(nvarchar,@MinimumRowsInTable), N'')
 
 IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) = 'SQL Azure'
 BEGIN
+	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique)
 	exec (@CMD)
 END
 ELSE
@@ -132,9 +142,10 @@ BEGIN
 	SET @CMD =  N'
 IF EXISTS (SELECT * FROM sys.databases WHERE database_id > 4 AND name = ''?'' AND state_desc = ''ONLINE'' AND DATABASEPROPERTYEX(name, ''Updateability'') = ''READ_WRITE'')
 BEGIN
- USE [?];'
-+ @CMD + N'
+ USE [?];
+ ' + @CMD + N'
 END'
+	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique)
 	exec sp_MSforeachdb @CMD
 END
 
@@ -171,7 +182,7 @@ FETCH NEXT FROM Tabs INTO @CurrDB, @CurrObjId, @CurrTable
 WHILE @@FETCH_STATUS = 0
 BEGIN
 	-- Get additional metadata for current table
-	DECLARE @FirstIndex SYSNAME, @IsUnique BIT, @FirstIndexColumns NVARCHAR(MAX), @IdentityColumn SYSNAME
+	DECLARE @FirstIndex SYSNAME, @IsUnique BIT, @FirstIndexColumns NVARCHAR(MAX), @FirstIndexIncludeColumns NVARCHAR(MAX), @IdentityColumn SYSNAME
 	, @FirstDateColumn SYSNAME, @FirstIntColumn SYSNAME, @FirstIntColumnType SYSNAME, @FirstNonNullableColumn SYSNAME;
 	SET @CMD = N'SELECT TOP 1 
 		@FirstIndex = name,
@@ -182,6 +193,14 @@ BEGIN
 				FROM ' + QUOTENAME(@CurrDB) + N'.sys.index_columns AS ic
 				INNER JOIN ' + QUOTENAME(@CurrDB) + N'.sys.columns AS c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
 				WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id AND ic.is_included_column = 0
+				FOR XML PATH('''')
+			), 1, 2, ''''),
+		@FirstIndexIncludeColumns = 
+			STUFF((
+				SELECT '', '' + QUOTENAME(c.name)
+				FROM ' + QUOTENAME(@CurrDB) + N'.sys.index_columns AS ic
+				INNER JOIN ' + QUOTENAME(@CurrDB) + N'.sys.columns AS c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+				WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id AND ic.is_included_column = 1
 				FOR XML PATH('''')
 			), 1, 2, '''')
 	FROM ' + QUOTENAME(@CurrDB) + N'.sys.indexes AS ix 
@@ -240,8 +259,8 @@ BEGIN
 	SET @FirstIntColumnType = NULL;
 	SET @FirstNonNullableColumn = NULL;
 	EXEC sp_executesql @CMD
-			, N'@ObjId INT, @FirstIndex SYSNAME OUTPUT, @IsUnique BIT OUTPUT, @FirstIndexColumns NVARCHAR(MAX) OUTPUT, @IdentityColumn SYSNAME OUTPUT, @FirstDateColumn SYSNAME OUTPUT, @FirstIntColumn SYSNAME OUTPUT, @FirstIntColumnType SYSNAME OUTPUT, @FirstNonNullableColumn SYSNAME OUTPUT'
-			, @CurrObjId, @FirstIndex OUTPUT, @IsUnique OUTPUT, @FirstIndexColumns OUTPUT, @IdentityColumn OUTPUT, @FirstDateColumn OUTPUT, @FirstIntColumn OUTPUT, @FirstIntColumnType OUTPUT, @FirstNonNullableColumn OUTPUT
+			, N'@ObjId INT, @FirstIndex SYSNAME OUTPUT, @IsUnique BIT OUTPUT, @FirstIndexColumns NVARCHAR(MAX) OUTPUT, @FirstIndexIncludeColumns NVARCHAR(MAX) OUTPUT, @IdentityColumn SYSNAME OUTPUT, @FirstDateColumn SYSNAME OUTPUT, @FirstIntColumn SYSNAME OUTPUT, @FirstIntColumnType SYSNAME OUTPUT, @FirstNonNullableColumn SYSNAME OUTPUT'
+			, @CurrObjId, @FirstIndex OUTPUT, @IsUnique OUTPUT, @FirstIndexColumns OUTPUT, @FirstIndexIncludeColumns OUTPUT, @IdentityColumn OUTPUT, @FirstDateColumn OUTPUT, @FirstIntColumn OUTPUT, @FirstIntColumnType OUTPUT, @FirstNonNullableColumn OUTPUT
 
 	IF @FirstIndex IS NOT NULL
 	BEGIN
@@ -250,6 +269,7 @@ BEGIN
 		---------------------
 		UPDATE #temp_heap SET candidate_index = QUOTENAME(@FirstIndex) --+ N' (no usage)'
 		, candidate_columns_from_existing_index = @FirstIndexColumns
+		, include_columns_from_existing_index = @FirstIndexIncludeColumns
 		, is_unique = @IsUnique
 		WHERE database_name = @CurrDB AND object_id = @CurrObjId AND candidate_index IS NULL
 	END
@@ -377,6 +397,16 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 		t.first_non_nullable_column
 		)
 	+ N')' + @RebuildOptions
+	END
+, Rollback_Script = N'USE ' + QUOTENAME(t.database_name) 
+	+
+	CASE 
+	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NULL THEN N'; -- Recreate as nonclustered index: ' + t.candidate_index
+	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NOT NULL THEN N'; DROP INDEX ' + t.candidate_index + ' ON ' + t.full_table_name
+	+ N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'NONCLUSTERED INDEX ' + t.candidate_index + ' ON ' + t.full_table_name 
+	+ N' (' + t.candidate_columns_from_existing_index + N')' + ISNULL(N' INCLUDE (' + t.include_columns_from_existing_index + N')', N'') + @RebuildOptions
+	ELSE 
+	N'; DROP INDEX IX_clust ON ' + t.full_table_name
 	END
 , *
 FROM #temp_heap AS t
