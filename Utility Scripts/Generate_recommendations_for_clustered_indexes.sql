@@ -9,7 +9,7 @@
 -- This script finds all heap tables, and "guestimates" a clustered index recommendation for each.
 -- The script implements the following algorithm:
 --
--- 1. Look in index usage stats for the most "popular" non-clustered indexes which would be a good candidate as clustered index. If no such was found, then:
+-- 1. Look in index usage stats for the most "popular" non-clustered indexes which would be a good candidate as clustered index, give priority to UNIQUE indexes. If no such was found, then:
 -- 2. If there's any non-clustered index at all, get the first one created with the highest number of INCLUDE columns, give priority to UNIQUE indexes. If no such was found, then:
 -- 3. Look in missing index stats for the most impactful index that has the highest number of INCLUDE columns. If no such was found, then:
 -- 4. Use the IDENTITY column in the table. If no such was found, then:
@@ -21,7 +21,12 @@
 -------------------------------------------------------
 -- Change log:
 -- ------------
--- 2020-11-25	Changed recommendations prioritization - gave higher priority to most SELECTIVE column
+-- 2020-11-25	Various improvements:
+--			- Changed recommendations prioritization - gave higher priority to most SELECTIVE column
+--			- Added parameter @RetainHighestCompression to retain DATA_COMPRESSION settings in scripts
+--			- Ignore special index types (columnstore, XML, spatial, ...), and hypothetical indexes
+--			- Give priority to UNIQUE indexes when prioritizing existing indexes based on usage stats
+--			- Replaced usage of sp_MSforeachDb with a cursor, to support longer command text
 -- 2020-11-18	Added Rollback_Script column in output
 -- 2020-11-03	Added new step to find first integer column, and a new step to find first non-nullable column
 -- 2020-09-30	Added optional parameters @OnlineRebuild, @SortInTempDB, @MaxDOP
@@ -37,12 +42,13 @@
 -- Parameters:
 -- ------------
 DECLARE
-	 @MinimumRowsInTable	INT		= 200000	-- Minimum number of rows in a table in order to check it
+	 @MinimumRowsInTable		INT	= 200000	-- Minimum number of rows in a table in order to check it
 
 	-- Parameters controlling the structure of output scripts:
-	,@OnlineRebuild		BIT		= 1	-- If 1, will generate CREATE INDEX commands with the ONLINE option turned on.
-	,@SortInTempDB		BIT		= 1	-- If 1, will generate CREATE INDEX commands with the SORT_IN_TEMPDB option turned on.
-	,@MaxDOP		INT		= NULL	-- If not NULL, will generate CREATE INDEX commands with the MAXDOP option. Set to 1 to prevent parallelism and reduce workload.
+	,@OnlineRebuild			BIT	= 1	-- If 1, will generate CREATE INDEX commands with the ONLINE option turned on.
+	,@SortInTempDB			BIT	= 1	-- If 1, will generate CREATE INDEX commands with the SORT_IN_TEMPDB option turned on.
+	,@MaxDOP			INT	= NULL	-- If not NULL, will generate CREATE INDEX commands with the MAXDOP option. Set to 1 to prevent parallelism and reduce workload.
+	,@RetainHighestCompression	BIT	= 1	-- If 1, will retain the highest data compression setting when replacing existing indexes
 -------------------------------------------------------
 
 
@@ -58,6 +64,7 @@ SET @RebuildOptions = N''
 IF @OnlineRebuild = 1 SET @RebuildOptions = @RebuildOptions + N', ONLINE = ON'
 IF @SortInTempDB = 1  SET @RebuildOptions = @RebuildOptions + N', SORT_IN_TEMPDB = ON'
 IF @MaxDOP IS NOT NULL SET @RebuildOptions = @RebuildOptions + N', MAXDOP = ' + CONVERT(nvarchar(4000), @MaxDOP)
+IF @RetainHighestCompression = 1 SET @RebuildOptions = @RebuildOptions + N', DATA_COMPRESSION = {COMPRESSION}'
 IF @RebuildOptions LIKE N',%' SET @RebuildOptions = N' WITH (' + STUFF(@RebuildOptions, 1, 2, N'') + N')';
 
 IF @OnlineRebuild = 1 AND ISNULL(CONVERT(int, SERVERPROPERTY('EngineEdition')),0) NOT IN (3,5,8)
@@ -82,7 +89,9 @@ CREATE TABLE #temp_heap
 	first_integer_column SYSNAME NULL,
 	first_integer_column_type SYSNAME NULL,
 	first_non_nullable_column SYSNAME NULL,
-	is_unique BIT NULL
+	is_unique BIT NULL,
+	data_compression_type TINYINT NULL,
+	data_compression_type_desc AS (CASE data_compression_type WHEN 2 THEN 'PAGE' WHEN 1 THEN 'ROW' ELSE 'NONE' END)
     );
 
 SET @CMD = N'
@@ -92,21 +101,23 @@ SET @CMD = N'
  , ix_columns
  , inc_columns
  , ix.is_unique
+ , data_compression_type = MAX(p.data_compression)
  FROM sys.tables t
  INNER JOIN sys.partitions p
  ON t.object_id = p.OBJECT_ID
  OUTER APPLY
  (
-	SELECT TOP 1 us.index_id
+	SELECT TOP 1 us.index_id, ix.[name], ix.is_unique
 	FROM sys.dm_db_index_usage_stats AS us
+	INNER JOIN sys.indexes AS ix
+	ON us.index_id = ix.index_id AND us.object_id = ix.object_id
 	WHERE us.database_id = DB_ID()
 	AND us.object_id = t.object_id
-	AND us.index_id > 1
-	ORDER BY us.user_updates DESC, us.user_scans DESC, us.user_seeks DESC
- ) AS ixus
- LEFT JOIN sys.indexes AS ix
- ON ixus.index_id = ix.index_id
- AND ix.object_id = t.object_id
+	AND ix.index_id > 1
+	AND ix.is_hypothetical = 0
+	AND ix.type <= 2
+	ORDER BY CONVERT(tinyint, ix.is_unique) DESC, us.user_updates DESC, us.user_scans DESC, us.user_seeks DESC
+ ) AS ix
  OUTER APPLY
  (SELECT ix_columns = STUFF((
 				SELECT '', '' + QUOTENAME(c.name) + CASE ic.is_descending_key WHEN 1 THEN '' DESC'' ELSE '' ASC'' END
@@ -132,22 +143,39 @@ SET @CMD = N'
  ELSE N'' END + N'
  GROUP BY t.object_id, ix.name, ix.is_unique, ix_columns, inc_columns
  ' + ISNULL(N'HAVING SUM(p.rows) >= ' + CONVERT(nvarchar,@MinimumRowsInTable), N'')
-
+ 
 IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) = 'SQL Azure'
 BEGIN
-	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique)
+	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, data_compression_type)
 	exec (@CMD)
 END
 ELSE
 BEGIN
-	SET @CMD =  N'
-IF EXISTS (SELECT * FROM sys.databases WHERE database_id > 4 AND name = ''?'' AND state_desc = ''ONLINE'' AND DATABASEPROPERTYEX(name, ''Updateability'') = ''READ_WRITE'')
-BEGIN
- USE [?];
- ' + @CMD + N'
-END'
-	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique)
-	exec sp_MSforeachdb @CMD
+	DECLARE @Executor NVARCHAR(1000)
+	DECLARE DBs CURSOR
+	LOCAL FAST_FORWARD
+	FOR
+	SELECT [name]
+	FROM sys.databases
+	WHERE database_id > 4 
+	AND state_desc = 'ONLINE'
+	AND DATABASEPROPERTYEX(name, 'Updateability') = 'READ_WRITE'
+
+	OPEN DBs
+	FETCH NEXT FROM DBs INTO @CurrDB
+
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		SET @Executor = QUOTENAME(@CurrDB) + N'..sp_executesql'
+
+		INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, data_compression_type)
+		EXEC @Executor @CMD
+
+		FETCH NEXT FROM DBs INTO @CurrDB
+	END
+
+	CLOSE DBs
+	DEALLOCATE DBs
 END
 
 -- Add recommendations based on missing index stats
@@ -208,6 +236,8 @@ BEGIN
 	OUTER APPLY (SELECT SUM(CASE WHEN is_included_column = 1 THEN 1 ELSE 0 END) AS included_columns, COUNT(*) AS indexed_columns 
 			FROM ' + QUOTENAME(@CurrDB) + N'.sys.index_columns AS ic WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id) AS st  
 	WHERE object_id = @ObjId AND index_id > 0
+	AND is_hypothetical = 0
+	AND type <= 2 -- ignore special index types
 	ORDER BY ix.is_unique DESC, included_columns DESC, indexed_columns ASC, index_id ASC;
 	
 	SELECT @IdentityColumn = [name]
@@ -385,7 +415,7 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NULL THEN N'; -- Recreate as clustered index: ' + t.candidate_index
 	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NOT NULL THEN N'; DROP INDEX ' + t.candidate_index + ' ON ' + t.full_table_name
 	+ N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX ' + t.candidate_index + ' ON ' + t.full_table_name 
-	+ N' (' + t.candidate_columns_from_existing_index + N')' + @RebuildOptions
+	+ N' (' + t.candidate_columns_from_existing_index + N')' + REPLACE(@RebuildOptions, N'{COMPRESSION}', t.data_compression_type_desc)
 	ELSE 
 	N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX IX_clust ON ' + t.full_table_name 
 	+ N' ('
@@ -397,7 +427,7 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 		t.first_integer_column,
 		t.first_non_nullable_column
 		)
-	+ N')' + @RebuildOptions
+	+ N')' + REPLACE(@RebuildOptions, N'{COMPRESSION}', t.data_compression_type_desc)
 	END
 , Rollback_Script = N'USE ' + QUOTENAME(t.database_name) 
 	+
@@ -405,7 +435,8 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NULL THEN N'; -- Recreate as nonclustered index: ' + t.candidate_index
 	WHEN t.candidate_index IS NOT NULL AND t.candidate_columns_from_existing_index IS NOT NULL THEN N'; DROP INDEX ' + t.candidate_index + ' ON ' + t.full_table_name
 	+ N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'NONCLUSTERED INDEX ' + t.candidate_index + ' ON ' + t.full_table_name 
-	+ N' (' + t.candidate_columns_from_existing_index + N')' + ISNULL(N' INCLUDE (' + t.include_columns_from_existing_index + N')', N'') + @RebuildOptions
+	+ N' (' + t.candidate_columns_from_existing_index + N')' + ISNULL(N' INCLUDE (' + t.include_columns_from_existing_index + N')', N'')
+	+ REPLACE(@RebuildOptions, N'{COMPRESSION}', t.data_compression_type_desc)
 	ELSE 
 	N'; DROP INDEX IX_clust ON ' + t.full_table_name
 	END
