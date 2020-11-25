@@ -13,14 +13,15 @@
 -- 2. If there's any non-clustered index at all, get the first one created with the highest number of INCLUDE columns, give priority to UNIQUE indexes. If no such was found, then:
 -- 3. Look in missing index stats for the most impactful index that has the highest number of INCLUDE columns. If no such was found, then:
 -- 4. Use the IDENTITY column in the table. If no such was found, then:
--- 5. Use the first date/time column in the table, give priority to columns with a default constraint. If no such was found, then:
--- 6. Use the first int/bigint/smallint/tinyint column in the table, give priority to columns without a default constraint. If no such was found, then:
--- 7. Check for any column statistics in the table and look for the column which is the most selective (most unique values). If no such was found, then:
+-- 5. Check for any column statistics in the table and look for the column which is the most selective (most unique values). If no such was found, then:
+-- 6. Use the first date/time column in the table, give priority to columns with a default constraint. If no such was found, then:
+-- 7. Use the first int/bigint/smallint/tinyint column in the table, give priority to columns without a default constraint. If no such was found, then:
 -- 8. Use the first non-nullable column in the table, give priority to columns without a default constraint. If no such was found, then:
 -- 9. Bummer. I'm out of ideas. No recommendations are possible.
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2020-11-25	Changed recommendations prioritization - gave higher priority to most SELECTIVE column
 -- 2020-11-18	Added Rollback_Script column in output
 -- 2020-11-03	Added new step to find first integer column, and a new step to find first non-nullable column
 -- 2020-09-30	Added optional parameters @OnlineRebuild, @SortInTempDB, @MaxDOP
@@ -373,9 +374,9 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 	  N', candidate INDEX: ' + t.candidate_index + ISNULL(N' (' + t.candidate_columns_from_existing_index + N')', N'')
 	, N', candidate column(s) from MISSING INDEX stats: ' + t.candidate_columns_from_missing_index
 	, N', IDENTITY column: ' + t.identity_column
+	, N', most SELECTIVE column: ' + t.most_selective_column_from_stats
 	, N', first DATE/TIME column: ' + t.first_date_column
 	, N', first ' + ISNULL(UPPER(t.first_integer_column_type), 'INTEGER') + ' column: ' + t.first_integer_column
-	, N', most SELECTIVE column: ' + t.most_selective_column_from_stats
 	, N', first non-nullable column: ' + t.first_non_nullable_column
 	, N', NO RECOMMENDATION POSSIBLE')
 , Script = N'USE ' + QUOTENAME(t.database_name) 
@@ -391,9 +392,9 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 	+ COALESCE(
 		t.candidate_columns_from_missing_index,
 		t.identity_column,
+		t.most_selective_column_from_stats,
 		t.first_date_column,
 		t.first_integer_column,
-		t.most_selective_column_from_stats,
 		t.first_non_nullable_column
 		)
 	+ N')' + @RebuildOptions
@@ -410,6 +411,5 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 	END
 , *
 FROM #temp_heap AS t
-
 
 --DROP TABLE #temp_heap
