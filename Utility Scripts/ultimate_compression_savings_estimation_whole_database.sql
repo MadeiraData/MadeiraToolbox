@@ -3,7 +3,7 @@
 ----------------------------------------------------------------
 -- Author: Eitan Blumin | https://www.eitanblumin.com
 -- Create Date: 2019-12-08
--- Last Update: 2020-09-06
+-- Last Update: 2020-12-01
 -- Source: http://bit.ly/SQLCompressionEstimation
 -- Full Link: https://gist.github.com/EitanBlumin/85cf620f7267b234d677f9c3027fb7ce
 ----------------------------------------------------------------
@@ -23,16 +23,17 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2020-12-01 - output remediation script is now idempotent; fixed recommendations in resultset to match actual remediation script
 -- 2020-09-30 - added @MaxDOP parameter
--- 2020-09-06 - added support for readable secondaries, added MAXDOP 1 for the query from operational stats to avoid access violation bug
+-- 2020-09-06 - added support for readable secondaries; added MAXDOP 1 for the query from operational stats to avoid access violation bug
 -- 2020-03-30 - added filter to ignore indexes and tables with unsupported LOB/FILESTREAM columns
 -- 2020-03-16 - added informational and status messages in output script
--- 2020-03-15 - tweaked default parameter values a bit, and added server uptime message
--- 2020-02-26 - added best guess for unknown compression recommendations, improved performance for DBs with many objects
+-- 2020-03-15 - tweaked default parameter values a bit; added server uptime message
+-- 2020-02-26 - added best guess for unknown compression recommendations; improved performance for DBs with many objects
 -- 2020-02-19 - added support for Azure SQL DB
 -- 2020-02-18 - cleaned the code a bit and fixed some bugs
--- 2020-02-17 - added specific database support, adjusted tabs to match github standard, added compatibility checks
--- 2020-02-16 - added threshold parameters, and additional checks based on partition stats and operational stats
+-- 2020-02-17 - added specific database support; adjusted tabs to match github standard; added compatibility checks
+-- 2020-02-16 - added threshold parameters; additional checks based on partition stats and operational stats
 -- 2019-12-09 - added ONLINE rebuild option
 -- 2019-12-24 - flipped to traditional ratio calculation; added READ UNCOMMITTED isolation level; added minimum difference thresholds for PAGE vs. ROW considerations
 ----------------------------------------------------------------
@@ -304,7 +305,7 @@ SELECT
 FROM sys.tables AS t WITH(NOLOCK)
 INNER JOIN sys.partitions AS p WITH(NOLOCK) ON t.object_id = p.object_id AND p.data_compression = 0
 INNER JOIN sys.indexes AS ix WITH(NOLOCK) ON ix.object_id = t.object_id AND ix.index_id = p.index_id
-INNER JOIN sys.dm_db_partition_stats AS sps WITH(NOLOCK) ON sps.partition_id = p.partition_id
+LEFT JOIN sys.dm_db_partition_stats AS sps WITH(NOLOCK) ON sps.partition_id = p.partition_id
 WHERE 
 -- Ignore system objects
     t.is_ms_shipped = 0
@@ -523,7 +524,7 @@ END
 
 -- Return results to client
 SELECT
-	 database_name
+	 [database_name]
 	,[schema_name]
 	,[table_name]
 	,full_table_name		= QUOTENAME([schema_name]) + '.' + QUOTENAME([table_name])
@@ -548,14 +549,28 @@ SELECT
 							WHEN compression_type = 'PAGE' AND ISNULL(scan_percent,0) = 0 AND ISNULL(update_percent,0) = 0 THEN 'Yes'
 							ELSE 'No'
 						END + ' (best guess)'
-						WHEN is_compression_recommended = 1 THEN 'Yes' ELSE 'No' END
+						WHEN is_compression_recommended = 1 AND SavingsRating = 1 THEN 'Yes' ELSE 'No' END
 	,remediation_command		= 
-					CASE WHEN ISNULL(is_compression_recommended,0) = 0 THEN N'-- ' ELSE N'' END
+					CASE WHEN ISNULL(is_compression_recommended,0) = 0 OR SavingsRating <> 1 THEN N'-- ' ELSE N'' END
 				+ N'USE ' + QUOTENAME([database_name]) + N'; ALTER ' + ISNULL(N'INDEX ' + QUOTENAME(index_name) + N' ON ', N'TABLE ') + QUOTENAME([schema_name]) + '.' + QUOTENAME([table_name]) 
 				+ N' REBUILD PARTITION = ' + ISNULL(CONVERT(nvarchar,partition_number), N'ALL') 
 				+ N' WITH (DATA_COMPRESSION = ' + compression_type + @RebuildOptions + N');'
 FROM
-	#ResultsAll
+(
+	SELECT 
+	 *, SavingsRating = ROW_NUMBER() OVER (
+		PARTITION BY 
+				[database_name]
+			, table_name
+			, index_name 
+			, partition_number
+			, is_compression_recommended
+		ORDER BY 
+			compression_ratio + (CASE WHEN compression_type = 'ROW' THEN @MinimumRatioDifferenceForPage ELSE 0 END) DESC, 
+			compression_size_saving_KB + (CASE WHEN compression_type = 'ROW' THEN ISNULL(@MinimumSavingsMBDifferenceForPage,0) * 1024.0 ELSE 0 END) DESC
+		)
+	FROM #ResultsAll
+ ) AS r
 ORDER BY
 	  [database_name] ASC
 	, compression_size_saving_KB DESC
@@ -579,10 +594,15 @@ BEGIN
 	FOR
 	SELECT
 	  [database_name]
-	, RemediationCmd = N'USE ' + QUOTENAME([database_name]) + N'; ALTER ' + ISNULL(N'INDEX ' + QUOTENAME(index_name) + N' ON ', N'TABLE ') + QUOTENAME([schema_name]) + '.' + QUOTENAME([table_name]) + N'
-	REBUILD PARTITION = ' + ISNULL(CONVERT(nvarchar,partition_number), N'ALL') + N' WITH (DATA_COMPRESSION = ' + compression_type + @RebuildOptions + N');'
-	, StatusMessage = QUOTENAME([database_name]) + N': ' + ISNULL(N'INDEX ' + QUOTENAME(index_name) + N' ON ', N'TABLE ') + QUOTENAME([schema_name]) + N'.' + QUOTENAME([table_name])
-					+ N' PARTITION = ' + ISNULL(CONVERT(nvarchar,partition_number), N'ALL') + N', DATA_COMPRESSION = ' + compression_type
+	, InsertCmd = N'INSERT INTO #INDEXTABLE VALUES (' 
+			+ QUOTENAME([index_name], N'''') + N', '
+			+ QUOTENAME(QUOTENAME([schema_name]) + N'.' + QUOTENAME([table_name]), N'''') + N', '
+			+ ISNULL(CONVERT(nvarchar(max), partition_number), N'NULL') + N', '
+			+ QUOTENAME([compression_type], N'''') + N');'
+	--, RemediationCmd = N'USE ' + QUOTENAME([database_name]) + N'; ALTER ' + ISNULL(N'INDEX ' + QUOTENAME(index_name) + N' ON ', N'TABLE ') + QUOTENAME([schema_name]) + '.' + QUOTENAME([table_name]) + N'
+	--REBUILD PARTITION = ' + ISNULL(CONVERT(nvarchar,partition_number), N'ALL') + N' WITH (DATA_COMPRESSION = ' + compression_type + @RebuildOptions + N');'
+	--, StatusMessage = QUOTENAME([database_name]) + N': ' + ISNULL(N'INDEX ' + QUOTENAME(index_name) + N' ON ', N'TABLE ') + QUOTENAME([schema_name]) + N'.' + QUOTENAME([table_name])
+	--				+ N' PARTITION = ' + ISNULL(CONVERT(nvarchar,partition_number), N'ALL') + N', DATA_COMPRESSION = ' + compression_type
 	FROM
 	(
 	SELECT
@@ -616,7 +636,7 @@ BEGIN
 	, compression_ratio DESC
 
 	OPEN Rebuilds
-	FETCH NEXT FROM Rebuilds INTO @CurrDB, @CMD, @StatusMsg
+	FETCH NEXT FROM Rebuilds INTO @CurrDB, @CMD
 
 	WHILE @@FETCH_STATUS = 0
 	BEGIN
@@ -628,22 +648,83 @@ SELECT @Size = SUM(FILEPROPERTY([name], ''SpaceUsed'')) / 128.0 FROM sys.databas
 SET @DB = DB_NAME();
 
 RAISERROR(N''Space used for data in "%s" BEFORE compression: %d MB'', 0, 1, @DB, @Size) WITH NOWAIT;
-GO'
+GO
+SET NOCOUNT ON;
+IF OBJECT_ID(''tempdb..#INDEXTABLE'') IS NOT NULL DROP TABLE #INDEXTABLE;
+CREATE TABLE #INDEXTABLE (
+	IndexName SYSNAME NULL, 
+	TableName NVARCHAR(4000),
+	PartitionNumber INT NULL,
+	CompressionType SYSNAME
+)
+'
 			SET @PrevDB = @CurrDB;
 		END
 
-		PRINT N'DECLARE @time VARCHAR(25) = CONVERT(varchar(25), GETDATE(), 121); RAISERROR(N''%s - ' + REPLACE(REPLACE(@StatusMsg, '''', ''''''), '%', '') + N''',0,1,@time) WITH NOWAIT;'
+		--PRINT N'DECLARE @time VARCHAR(25) = CONVERT(varchar(25), GETDATE(), 121); RAISERROR(N''%s - ' + REPLACE(REPLACE(@StatusMsg, '''', ''''''), '%', '') + N''',0,1,@time) WITH NOWAIT;'
 		PRINT @CMD
-		PRINT N'GO'
+		--PRINT N'GO'
 
-		FETCH NEXT FROM Rebuilds INTO @CurrDB, @CMD, @StatusMsg
+		FETCH NEXT FROM Rebuilds INTO @CurrDB, @CMD
 		
 		IF @@FETCH_STATUS <> 0 OR @CurrDB <> @PrevDB
 		BEGIN
+			PRINT N'GO
+USE ' + QUOTENAME(@PrevDB) + N';
+
+DECLARE @WhatIf BIT = 0
+
+DECLARE @DB SYSNAME;
+SET @DB = DB_NAME();
+DECLARE @IndexName SYSNAME, @TableName NVARCHAR(4000), @PartitionNumber INT, @CompressionType SYSNAME, @CMD NVARCHAR(MAX)'
+
+			PRINT N'DECLARE TablesToCheck CURSOR
+LOCAL FORWARD_ONLY FAST_FORWARD
+FOR
+SELECT IndexName, TableName, PartitionNumber, CompressionType,
+	Cmd = N''USE '' + QUOTENAME(@DB) + N''; ALTER '' + ISNULL(N''INDEX '' + QUOTENAME(IndexName) + N'' ON '', N''TABLE '') + TableName 
+	+ N'' REBUILD PARTITION = '' + ISNULL(CONVERT(nvarchar,PartitionNumber), N''ALL'') 
+	+ N'' WITH (DATA_COMPRESSION = '' + CompressionType + N''' + @RebuildOptions + N');''
+FROM #INDEXTABLE
+
+OPEN TablesToCheck
+
+FETCH NEXT FROM TablesToCheck INTO @IndexName, @TableName, @PartitionNumber, @CompressionType, @CMD
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+	-- Check if index has no Compression
+	IF EXISTS (
+	SELECT NULL
+	FROM sys.partitions AS p WITH (NOLOCK)
+	INNER JOIN sys.indexes AS ix WITH (NOLOCK)
+		ON ix.object_id = p.object_id
+		AND ix.index_id = p.index_id
+	WHERE ix.object_id = OBJECT_ID(@TableName)
+	AND (ix.name = @IndexName OR (@IndexName IS NULL AND ix.index_id = 0))
+	AND p.data_compression_desc <> @CompressionType
+	AND (@PartitionNumber IS NULL OR p.partition_number = @PartitionNumber)
+	)
+	BEGIN
+		DECLARE @time VARCHAR(25) = CONVERT(VARCHAR(25), GETDATE(), 121);
+		RAISERROR (N''%s - [%s]: INDEX [%s] ON %s PARTITION = %s, DATA_COMPRESSION = %s'', 0, 1, @time, @DB, @IndexName, @TableName, @PartitionNumber, @CompressionType) WITH NOWAIT;
+		PRINT @CMD;
+		IF @WhatIf = 0 EXEC sp_executesql @CMD;
+	END
+
+	FETCH NEXT FROM TablesToCheck INTO @IndexName, @TableName, @PartitionNumber, @CompressionType, @CMD
+END
+
+CLOSE TablesToCheck
+DEALLOCATE TablesToCheck
+
+DROP TABLE #INDEXTABLE
+
+GO'
 			PRINT N'USE ' + QUOTENAME(@PrevDB) + N';
 DECLARE @Size INT, @DB SYSNAME;
-SELECT @Size = SUM(FILEPROPERTY([name], ''SpaceUsed'')) / 128.0 FROM sys.database_files WHERE type = 0;
 SET @DB = DB_NAME();
+SELECT @Size = SUM(FILEPROPERTY([name], ''SpaceUsed'')) / 128.0 FROM sys.database_files WHERE type = 0;
 
 RAISERROR(N''Space used for data in "%s" AFTER compression: %d MB'', 0, 1, @DB, @Size) WITH NOWAIT;
 GO'
