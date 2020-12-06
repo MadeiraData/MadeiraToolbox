@@ -23,7 +23,7 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
--- 2020-12-06 - reduced default minimum scan percent
+-- 2020-12-06 - added @MinimumUpdatePercentToConsider and @MinimumScanPercentToConsider parameters
 -- 2020-12-01 - output remediation script is now idempotent; fixed recommendations in resultset to match actual remediation script
 -- 2020-09-30 - added @MaxDOP parameter
 -- 2020-09-06 - added support for readable secondaries; added MAXDOP 1 for the query from operational stats to avoid access violation bug
@@ -67,15 +67,17 @@ DECLARE
 	,@MinimumSizeMB				INT		= 256		-- Minimum table/partition size in MB in order to perform estimation checks on it
 
 	-- Cautionary thresholds:
-	,@MaxSizeMBForActualCheck		INT		= 50000		-- If a table/partition is bigger than this size (in MB), then sp_estimate_data_compression_savings will NOT be executed for it
+	,@MaxSizeMBForActualCheck		INT		= NULL		-- If a table/partition is bigger than this size (in MB), then sp_estimate_data_compression_savings will NOT be executed for it. If set to NULL, then use available TempDB space instead
 	,@TempDBSpaceUsageThresholdPercent	INT		= 60		-- A percentage number between 1 and 100, representing how much of the disk space available to TempDB is allowed to be used for the estimation checks
 	 
 	-- Threshold parameters controlling recommendation algorithms based on partition stats:
 	,@MinimumCompressibleDataPercent	INT		= 45		-- Minimum percent of compressible in-row data, in order to consider any compression
-	,@MinimumScanPercentForPage		INT		= 0		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem PAGE compression preferable
-	,@MinimumScanPercentForRow		INT		= 10		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem ROW compression preferable
+	,@MinimumScanPercentForPage		INT		= 10		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem PAGE compression preferable
+	,@MinimumScanPercentForRow		INT		= 5		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem ROW compression preferable
 	,@MaximumUpdatePercentForPage		INT		= 30		-- Maximum percent of updates, in order to deem PAGE compression preferable
 	,@MaximumUpdatePercentForRow		INT		= 50		-- Maximum percent of updates, in order to deem ROW compression preferable
+	,@MinimumUpdatePercentToConsider	INT		= 5		-- Minimum percent of updates before considering to compare between update and scan percentages
+	,@MinimumScanPercentToConsider		INT		= 5		-- Minimum percent of range scans before considering to compare between update and scan percentages
 
 	-- Threshold parameters controlling recommendation algorithms based on savings estimation check:
 	,@CompressionRatioThreshold		FLOAT		= 45		-- Number between 0 and 100 representing the minimum compressed data ratio, relative to current size, for which a check will pass
@@ -140,6 +142,8 @@ FROM
 	,('@TempDBSpaceUsageThresholdPercent',@TempDBSpaceUsageThresholdPercent)
 	,('@CompressionRatioThreshold',@CompressionRatioThreshold)
 	,('@MinimumRatioDifferenceForPage',@MinimumRatioDifferenceForPage)
+	,('@MinimumUpdatePercentToConsider',@MinimumUpdatePercentToConsider)
+	,('@MinimumScanPercentToConsider',@MinimumScanPercentToConsider)
 ) AS v(VarName,VarValue)
 WHERE VarValue NOT BETWEEN 1 AND 100 OR VarValue IS NULL
 OPTION (RECOMPILE);
@@ -229,7 +233,7 @@ DECLARE @ObjectsToCheck AS TABLE
 SET @CurrDB = ISNULL(@DatabaseName, DB_NAME())
 PRINT N'------------------------------------------------------------------------------------'
 PRINT N'------------- Compression Savings Estimation Check by Eitan Blumin -----------------'
-PRINT N'--- Source: https://gist.github.com/EitanBlumin/85cf620f7267b234d677f9c3027fb7ce ---'
+PRINT N'---------------- Source: http://bit.ly/SQLCompressionEstimation --------------------'
 PRINT N'------------------------------------------------------------------------------------'
 PRINT N'--- for Server: ' + @@SERVERNAME + N' , Database: ' + QUOTENAME(@CurrDB)
 PRINT N'------------------------------------------------------------------------------------'
@@ -439,9 +443,9 @@ BEGIN
 
 	SET @EstimationCheckRecommended = CASE
 						WHEN @InRowPercent < @MinimumCompressibleDataPercent THEN 0
-						WHEN @CompressionType = 'PAGE' AND @ScanPercent >= @MinimumScanPercentForPage AND @UpdatePercent <= @MaximumUpdatePercentForPage THEN 1
-						WHEN @CompressionType = 'ROW' AND @ScanPercent >= @MinimumScanPercentForRow AND @UpdatePercent <= @MaximumUpdatePercentForRow THEN 1
-						WHEN ISNULL(@ScanPercent,0) = 0 AND ISNULL(@UpdatePercent,0) = 0 THEN 1
+						WHEN @CompressionType = 'PAGE' AND @ScanPercent >= @MinimumScanPercentToConsider AND @ScanPercent >= @MinimumScanPercentForPage AND @UpdatePercent BETWEEN @MinimumUpdatePercentToConsider AND @MaximumUpdatePercentForPage THEN 1
+						WHEN @CompressionType = 'ROW' AND @ScanPercent >= @MinimumScanPercentToConsider AND @ScanPercent >= @MinimumScanPercentForRow AND @UpdatePercent BETWEEN @MinimumUpdatePercentToConsider AND @MaximumUpdatePercentForRow THEN 1
+						WHEN ISNULL(@ScanPercent,0) <= @MinimumScanPercentToConsider AND ISNULL(@UpdatePercent,0) <= @MinimumUpdatePercentToConsider THEN 1
 						ELSE 0
 					END
 
