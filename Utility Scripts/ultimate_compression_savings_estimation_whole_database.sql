@@ -3,7 +3,7 @@
 ----------------------------------------------------------------
 -- Author: Eitan Blumin | https://www.eitanblumin.com
 -- Create Date: 2019-12-08
--- Last Update: 2020-12-01
+-- Last Update: 2020-12-06
 -- Source: http://bit.ly/SQLCompressionEstimation
 -- Full Link: https://gist.github.com/EitanBlumin/85cf620f7267b234d677f9c3027fb7ce
 ----------------------------------------------------------------
@@ -23,6 +23,7 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2020-12-06 - reduced default minimum scan percent
 -- 2020-12-01 - output remediation script is now idempotent; fixed recommendations in resultset to match actual remediation script
 -- 2020-09-30 - added @MaxDOP parameter
 -- 2020-09-06 - added support for readable secondaries; added MAXDOP 1 for the query from operational stats to avoid access violation bug
@@ -72,7 +73,7 @@ DECLARE
 	-- Threshold parameters controlling recommendation algorithms based on partition stats:
 	,@MinimumCompressibleDataPercent	INT		= 45		-- Minimum percent of compressible in-row data, in order to consider any compression
 	,@MinimumScanPercentForPage		INT		= 0		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem PAGE compression preferable
-	,@MinimumScanPercentForRow		INT		= 0		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem ROW compression preferable
+	,@MinimumScanPercentForRow		INT		= 10		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem ROW compression preferable
 	,@MaximumUpdatePercentForPage		INT		= 30		-- Maximum percent of updates, in order to deem PAGE compression preferable
 	,@MaximumUpdatePercentForRow		INT		= 50		-- Maximum percent of updates, in order to deem ROW compression preferable
 
