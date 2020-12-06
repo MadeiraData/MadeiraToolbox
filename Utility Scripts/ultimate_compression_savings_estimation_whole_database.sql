@@ -71,8 +71,8 @@ DECLARE
 	 
 	-- Threshold parameters controlling recommendation algorithms based on partition stats:
 	,@MinimumCompressibleDataPercent	INT		= 45		-- Minimum percent of compressible in-row data, in order to consider any compression
-	,@MinimumScanPercentForPage		INT		= 65		-- Minimum percent of range scans, in order to deem PAGE compression preferable
-	,@MinimumScanPercentForRow		INT		= 45		-- Minimum percent of range scans, in order to deem ROW compression preferable
+	,@MinimumScanPercentForPage		INT		= 0		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem PAGE compression preferable
+	,@MinimumScanPercentForRow		INT		= 0		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem ROW compression preferable
 	,@MaximumUpdatePercentForPage		INT		= 30		-- Maximum percent of updates, in order to deem PAGE compression preferable
 	,@MaximumUpdatePercentForRow		INT		= 50		-- Maximum percent of updates, in order to deem ROW compression preferable
 
