@@ -327,16 +327,19 @@ Process
 
     foreach($name in $outputsList.keys)
     {
-        $sqlFileName = $name + "_align_jobs_$(Get-Date -Format "yyyyMMdd").sql"
-        $sqlFilePath = $outputFolder + $sqlFileName
-        $htmlFilePath = $outputFolder + "jobs_comparison_report_$(Get-Date -Format "yyyyMMdd").html"
+        if ($outputsList[$name] -ne $null -and $outputsList[$name] -ne "")
+        {
+            $sqlFileName = $name + "_align_jobs_$(Get-Date -Format "yyyyMMdd").sql"
+            $sqlFilePath = $outputFolder + $sqlFileName
+            $htmlFilePath = $outputFolder + "jobs_comparison_report_$(Get-Date -Format "yyyyMMdd").html"
         
-        $filesToAttach += $sqlFilePath
+            $filesToAttach += $sqlFilePath
 
-        Write-Host "Output Script: $sqlFilePath"
-        $outputsList[$name] | Out-File $sqlFilePath
+            Write-Host "Output Script: $sqlFilePath"
+            $outputsList[$name] | Out-File $sqlFilePath
 
-        $htmlBody = $htmlBody.Replace("{changescript_$name}",$sqlFileName)
+            $htmlBody = $htmlBody.Replace("{changescript_$name}",$sqlFileName)
+        }
     }
     
     # If discrepancies found, generate report
