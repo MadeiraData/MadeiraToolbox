@@ -446,7 +446,7 @@ BEGIN
 						WHEN @InRowPercent < @MinimumCompressibleDataPercent THEN 0
 						WHEN @CompressionType = 'PAGE' AND @ScanPercent >= @MinimumScanPercentToConsider AND @ScanPercent >= @MinimumScanPercentForPage AND @UpdatePercent BETWEEN @MinimumUpdatePercentToConsider AND @MaximumUpdatePercentForPage THEN 1
 						WHEN @CompressionType = 'ROW' AND @ScanPercent >= @MinimumScanPercentToConsider AND @ScanPercent >= @MinimumScanPercentForRow AND @UpdatePercent BETWEEN @MinimumUpdatePercentToConsider AND @MaximumUpdatePercentForRow THEN 1
-						WHEN ISNULL(@ScanPercent,0) <= @MinimumScanPercentToConsider AND ISNULL(@UpdatePercent,0) <= @MinimumUpdatePercentToConsider THEN 1
+						WHEN ISNULL(@ScanPercent,0) <= @MinimumScanPercentToConsider OR ISNULL(@UpdatePercent,0) <= @MinimumUpdatePercentToConsider THEN 1
 						ELSE 0
 					END
 
