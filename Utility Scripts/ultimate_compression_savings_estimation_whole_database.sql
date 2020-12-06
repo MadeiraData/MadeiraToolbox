@@ -6,6 +6,7 @@
 -- Last Update: 2020-12-06
 -- Source: http://bit.ly/SQLCompressionEstimation
 -- Full Link: https://gist.github.com/EitanBlumin/85cf620f7267b234d677f9c3027fb7ce
+-- Blog: https://eitanblumin.com/2020/02/18/ultimate-compression-savings-estimation-script-entire-database/
 ----------------------------------------------------------------
 -- Description:
 -- ------------
