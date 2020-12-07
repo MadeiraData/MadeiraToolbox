@@ -1,3 +1,5 @@
+# when creating a scheduled task to run such scripts, use the following structure example:
+# powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Madeira\Powershell_Template_with_Transcript.ps1"
 Param
 (
 [string]$logFileFolderPath = "C:\Madeira\log",
@@ -49,7 +51,28 @@ if ($logFileFolderPath -ne "")
 #endregion initialization
 
 
+#region install-modules
+# replace the array below with any modules that your script depends on
+$modules = @("PSFramework", "PSModuleDevelopment", "dbatools")
+        
+foreach ($module in $modules) {
+    if (Get-Module -ListAvailable -Name $module) {
+        Write-Verbose "$(Get-TimeStamp) $module already installed"
+    } 
+    else {
+        Write-Information "$(Get-TimeStamp) Installing $module"
+        Install-Module $module -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop
+        Import-Module $module -Force -Scope Local
+    }
+}
+#endregion install-modules
+
+
+#region main
+
 Write-Output "$(Get-TimeStamp) Replace this code with your actual script body"
+
+#endregion main
 
 
 #region finalization
