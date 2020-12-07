@@ -64,20 +64,6 @@ IF EXISTS (SELECT * FROM sys.databases WHERE database_id > 4 AND name = ''?'' AN
 BEGIN
  USE [?];' + @CMD + N'
 END'
-	
-	EXEC sp_executesql N'IF (SELECT sqlserver_start_time FROM sys.dm_os_sys_info) < DATEADD(dd,-14,GETDATE())
-BEGIN
- INSERT INTO #tmp(DBName, SchemaName, TableName, IndexName, RowsCount, IndexSizeKB, DropCMD, LastStatsDate, TableCreatedDate, UpdatesCount)
- EXEC sp_MSforeachdb @CMD 
-END', N'@CMD nvarchar(max)', @CMD;
-END
-IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) <> 'SQL Azure'
-BEGIN
-	SET @CMD = N'
-IF EXISTS (SELECT * FROM sys.databases WHERE database_id > 4 AND name = ''?'' AND state_desc = ''ONLINE'' AND DATABASEPROPERTYEX([name], ''Updateability'') = ''READ_WRITE'')
-BEGIN
- USE [?];' + @CMD + N'
-END'
 	EXEC sp_executesql N'IF (SELECT sqlserver_start_time FROM sys.dm_os_sys_info) < DATEADD(dd,-14,GETDATE())
 BEGIN
  INSERT INTO #tmp(DBName, SchemaName, TableName, IndexName, RowsCount, IndexSizeKB, DropCMD, LastStatsDate, TableCreatedDate, UpdatesCount)
