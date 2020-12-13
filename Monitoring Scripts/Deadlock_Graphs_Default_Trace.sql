@@ -1,9 +1,11 @@
 declare @filename nvarchar(200)
 
-select @filename = convert(nvarchar(200), value)
+select TOP 1 @filename = convert(nvarchar(200), value)
 from ::fn_trace_getinfo(null)
 where property = 2
-and convert(nvarchar(200), value) LIKE '%deadlocks%'
+and [value] IS NOT NULL
+--and convert(nvarchar(200), value) LIKE '%deadlocks%'
+ORDER BY traceid ASC
 
 PRINT @filename
 
