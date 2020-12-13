@@ -18,6 +18,7 @@ Description:
 	https://docs.microsoft.com/en-us/sql/relational-databases/extended-events/use-the-system-health-session
 
 Change Log:
+	2020-12-13 Added parameter @ForceRingBuffer for better support with Azure SQL servers
 	2020-10-04 Added parameters @ExcludeClean and @MinPendingTasks
 	2020-10-01 Added columns "blockedByNonSession" and "possibleHeadBlockers"
 	2020-09-28 Added detailed explanations for every parameter and some additional info in comments.
@@ -42,6 +43,13 @@ DECLARE
 						NULL
 						--'*_SQLDIAG_*.xel'
 						--'C:\Temp\SQL-PROD-1*_SQLDIAG_*.xel'
+	
+	
+	----------------------------------
+	-- @ForceRingBuffer
+	----------------------------------
+	-- Force querying from the system_health ring buffer, even if it has a file target.
+	,@ForceRingBuffer	BIT		= 0
 
 	----------------------------------
 	-- @Top
@@ -92,7 +100,7 @@ DECLARE
 	-- This could be useful when you want to traverse the same file(s) but filter on a different time range, for example.
 	-- Thus, it would skip the first phase entirely and save you some valuable time.
 	-- However, if you change the value of @FileTargetPath between executions, then #alldata will be recreated regardless.
-	,@PersistAllData	BIT		= 1
+	,@PersistAllData	BIT		= 0
 	
 	----------------------------------
 	-- @Verbose
@@ -122,6 +130,13 @@ DECLARE
 	@UtcDateFrom	DATETIME = NULL,
 	@UtcDateTo	DATETIME = NULL,
 	@CMD		NVARCHAR(MAX);
+
+IF @ForceRingBuffer = 0 AND CONVERT(nvarchar, SERVERPROPERTY('Edition')) = 'SQL Azure'
+BEGIN
+	SET @ForceRingBuffer = 1;
+	SET @FileTargetPath = NULL;
+	RAISERROR(N'This Azure SQL edition only supports ring_buffer targets.',0,1) WITH NOWAIT;
+END
 
 -- If @PersistAllData was enabled and a file target path specified
 IF @PersistAllData = 1
@@ -169,7 +184,7 @@ BEGIN
 END
 
 -- If no @FileTargetPath was provided, try the system_health file target instead
-IF @FileTargetPath IS NULL
+IF @FileTargetPath IS NULL AND @ForceRingBuffer = 0
 BEGIN
 	SELECT @FileTargetPath = REPLACE(c.column_value, '.xel', '*.xel')
 	FROM sys.dm_xe_sessions s
@@ -244,7 +259,7 @@ BEGIN
 END
 
 -- If @FileTargetPath still not found at this point, then query from the system_health ring buffer
-IF @FileTargetPath IS NULL
+IF @FileTargetPath IS NULL OR @ForceRingBuffer = 1
 BEGIN
 	IF @Verbose = 1 RAISERROR(N'Querying from system_health ring buffer...',0,1) WITH NOWAIT;
 
