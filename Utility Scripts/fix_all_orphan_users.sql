@@ -30,9 +30,19 @@ INSERT INTO #tmp
 SELECT ''?'', dp.name AS user_name
 , CASE WHEN dp.name IN (SELECT name COLLATE database_default FROM sys.server_principals) THEN 1 ELSE 0 END AS LoginExists
 , OwnedSchemas = (
-SELECT ''ALTER AUTHORIZATION ON SCHEMA::'' + QUOTENAME(sch.name) + N'' TO [dbo]; ''
+SELECT cmd + N''; ''
+FROM
+(
+SELECT cmd = ''ALTER AUTHORIZATION ON SCHEMA::'' + QUOTENAME(sch.name) + N'' TO [dbo]''
 FROM [?].sys.schemas AS sch
 WHERE sch.principal_id = dp.principal_id
+AND EXISTS (SELECT NULL FROM [?].sys.objects AS obj WHERE obj.schema_id = sch.schema_id)
+UNION ALL
+SELECT ''DROP SCHEMA '' + QUOTENAME(sch.name)
+FROM [?].sys.schemas AS sch
+WHERE sch.principal_id = dp.principal_id
+AND NOT EXISTS (SELECT NULL FROM [?].sys.objects AS obj WHERE obj.schema_id = sch.schema_id)
+) AS s
 FOR XML PATH ('''')
 )
 FROM [?].sys.database_principals AS dp 
