@@ -6,14 +6,17 @@ DECLARE
 	@BatchSize		INT		= 10000,
 	@SleepBetweenBatches	VARCHAR(17)	= '00:00:00.6'
 
-
 SET NOCOUNT ON;
 
 DECLARE @CMD NVARCHAR(MAX), @Executor NVARCHAR(1000);
 SET @DatabaseName = ISNULL(@DatabaseName, DB_NAME());
 
+IF DB_ID(@DatabaseName) IS NULL OR DATABASEPROPERTYEX(@DatabaseName, 'Updateability') <> 'READ_WRITE' OR DATABASEPROPERTYEX(@DatabaseName, 'Status') <> 'ONLINE'
+	RAISERROR(N'Database "%s" is not found or not accessible or not writeable.', 16, 1, @DatabaseName);
+ELSE
+BEGIN
 SET @CMD = N'
-IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE obejct_id = OBJECT_ID(@TableName) AND [name] = @ColumnName)
+IF NOT EXISTS (SELECT NULL FROM sys.columns WHERE object_id = OBJECT_ID(@TableName) AND [name] = @ColumnName)
 	RAISERROR(N''Column "%s" was not found for table "%s"!'',16,1, @ColumnName, @TableName);
 ELSE
 BEGIN
@@ -39,3 +42,4 @@ PRINT @CMD;
 EXEC @Executor @CMD
 	, N'@TableName SYSNAME, @ColumnName SYSNAME, @BatchSize INT, @ThresholdDateTime DATETIME, @SleepBetweenBatches VARCHAR(17)'
 	, @TableName, @DateTimeColumnName,@BatchSize, @ThresholdDateTime, @SleepBetweenBatches
+END
