@@ -3,8 +3,11 @@ Author: Eitan Blumin (t: @EitanBlumin | b: eitanblumin.com)
 More info: https://eitanblumin.com/2018/11/06/find-and-fix-untrusted-foreign-keys-in-all-databases/
 ****************************************************/
 DECLARE
-	@ForeignKeyName SYSNAME = 'FK_MyTable_MyOtherTable'
-	, @PrintOnly		BIT			= 0
+	  @ForeignKeyName	SYSNAME		= 'FK_MyTable_MyOtherTable'
+	, @PrintOnly		BIT		= 0
+	, @Top			INT		= NULL
+	, @CountOnly		BIT		= 0
+	, @OrderBy		NVARCHAR(MAX)	= NULL -- N'ColumnName DESC'
 
 DECLARE
 	@FKId INT,
@@ -27,8 +30,8 @@ BEGIN
 END
 
 SELECT
-	@CMD = ISNULL(@CMD + CHAR(13) + CHAR(10) + N' AND ', N'') + N'ctable.' + QUOTENAME(cc.name) + N' = ptable.' + QUOTENAME(pc.name)
-	, @ColumnNullabilityCheck = @ColumnNullabilityCheck + CHAR(13) + CHAR(10) + N' AND ctable.' + QUOTENAME(cc.name) + N' IS NOT NULL'
+	@CMD = ISNULL(@CMD + CHAR(13) + CHAR(10) + N'AND ', N'') + N'ctable.' + QUOTENAME(cc.name) + N' = ptable.' + QUOTENAME(pc.name)
+	, @ColumnNullabilityCheck = @ColumnNullabilityCheck + CHAR(13) + CHAR(10) + N'AND ctable.' + QUOTENAME(cc.name) + N' IS NOT NULL'
 	--ChildTable = QUOTENAME(OBJECT_SCHEMA_NAME(fkc.parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(fkc.parent_object_id))
 	--, ChildColumn = QUOTENAME(cc.name)
 	--, ParentTable = QUOTENAME(OBJECT_SCHEMA_NAME(fkc.referenced_object_id)) + '.' + QUOTENAME(OBJECT_NAME(fkc.referenced_object_id))
@@ -42,12 +45,19 @@ ON fkc.referenced_object_id = pc.object_id
 AND fkc.referenced_column_id = pc.column_id
 WHERE fkc.constraint_object_id = @FKId
 
-SET @CMD = N'SELECT ctable.*
+SET @CMD = N'SELECT '
++ CASE WHEN @CountOnly = 1 THEN N'COUNT(*)'
+ELSE
+ISNULL(N'TOP (' + CONVERT(nvarchar,@Top) + N')', N'') + N' ctable.*'
+END + N'
+-- DELETE ctable
 FROM ' + QUOTENAME(OBJECT_SCHEMA_NAME(@ChildTableID)) + '.' + QUOTENAME(OBJECT_NAME(@ChildTableID)) + N' AS ctable
 WHERE NOT EXISTS
 (SELECT NULL FROM ' + QUOTENAME(OBJECT_SCHEMA_NAME(@ParentTableID)) + '.' + QUOTENAME(OBJECT_NAME(@ParentTableID)) + N' AS ptable
 WHERE ' + @CMD + N')'
 + ISNULL(@ColumnNullabilityCheck, N'')
++ CASE WHEN @CountOnly = 0 THEN ISNULL(N'
+ORDER BY ' + @OrderBy, N'') ELSE N'' END
 
 PRINT @CMD
 IF @PrintOnly = 0
