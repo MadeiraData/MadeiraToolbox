@@ -2,23 +2,27 @@
 Based on blog post published by Remus Rusanu:
 https://rusanu.com/2010/03/26/using-tables-as-queues/
 
-This variation deletes any fetched items from the table.
+This variation retains queued items by maintaining a status column (IsFetched).
 */
 go
 create table dbo.TableQueue (
   Id bigint not null identity(1,1) constraint PK_TableQueue primary key clustered,
+  IsFetched bit not null constraint DF_TableQueue_IsFetched default (0),
   Payload varbinary(max) not null
 );
+create nonclustered index ix_notfetched on dbo.TableQueue (Id asc)
+include(IsFetched)
+where IsFetched = 0
 go
 
-create procedure dbo.usp_Enqueue
+create procedure dbo.usp_EnqueueRetain
   @payload varbinary(max)
 as
   set nocount on;
   insert into dbo.TableQueue (Payload) values (@Payload);
 go
 
-create procedure dbo.usp_Dequeue
+create procedure dbo.usp_DequeueRetain
 	@timeOutSeconds int = 20,
 	@maxItems int = 1,
 	@delayBetweenAttempts varchar(15) = '00:00:00.1'
@@ -31,10 +35,11 @@ as
   while dateadd(ss, @timeOutSeconds, @StartTime) >= getdate()
   begin
 	;with cte as (
-	    select top(@maxItems) Payload
+	    select top(@maxItems) *
 	      from dbo.TableQueue with (rowlock, readpast)
+	      where IsFetched = 0
 	    order by Id asc)
-	  delete from cte
+	  update cte set IsFetched = 1
 	    output deleted.Payload
 	    into @Output(Payload);
 
