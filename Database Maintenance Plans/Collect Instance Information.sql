@@ -40,7 +40,7 @@ SELECT
 	VirtualizationType			= SystemInfo.virtual_machine_type_desc ,										-- Applies to: SQL Server 2008 R2 and later
 	NumberOfCores				= SystemInfo.cpu_count ,
 	PhysicalMemory_GB			= CAST (ROUND (SystemInfo.physical_memory_kb / 1024.0 / 1024.0 , 0) AS INT) ,	-- Applies to: SQL Server 2012 (11.x) and later
-	LastServiceRestratDateTime	= SystemInfo.sqlserver_start_time
+	LastServiceRestartDateTime	= SystemInfo.sqlserver_start_time
 FROM
 	sys.dm_os_host_info AS HostInfo
 CROSS JOIN
