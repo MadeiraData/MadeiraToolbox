@@ -206,6 +206,8 @@ GROUP BY vs.volume_mount_point, vs.available_bytes
 	END
 	ELSE IF ISNULL(@MaxSizeMBForActualCheck,0) <= 0 -- If @MaxSizeMBForActualCheck was not specified, use available TempDB space instead
 		SET @MaxSizeMBForActualCheck = FLOOR(@AvailableTempDBSpaceMB / 0.05);
+	
+	RAISERROR(N'TempDB Free Disk Space: %d MB, max size for check: %d MB',0,1,@AvailableTempDBSpaceMB, @MaxSizeMBForActualCheck) WITH NOWAIT;
 END
 
 IF @OnlineRebuild = 1 AND ISNULL(CONVERT(int, SERVERPROPERTY('EngineEdition')),0) NOT IN (3,5,8)
@@ -453,7 +455,7 @@ BEGIN
 	RAISERROR(N'--Database [%s], table [%s].[%s], index [%s], partition %d: size: %d MB, in-row data: %d percent, range scans: %d percent, updates: %d percent. Compression type: %s',0,1
 				,@CurrDB,@Schema,@Table,@IndexName,@Partition,@TotalSizeMB,@InRowPercent,@ScanPercent,@UpdatePercent,@CompressionType) WITH NOWAIT;
 
-	IF @FeasibilityCheckOnly = 0 AND @TotalSizeMB <= @MaxSizeMBForActualCheck AND @TotalSizeMB * 0.05 < @AvailableTempDBSpaceMB
+	IF @FeasibilityCheckOnly = 0 AND (@MaxSizeMBForActualCheck IS NULL OR (@TotalSizeMB <= @MaxSizeMBForActualCheck AND @TotalSizeMB * 0.05 < @AvailableTempDBSpaceMB))
 	BEGIN
 		IF @EstimationCheckRecommended = 1
 		BEGIN
