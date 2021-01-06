@@ -24,6 +24,7 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2021-01-05 - added informative message about current TempDB available space
 -- 2020-12-06 - added @MinimumUpdatePercentToConsider and @MinimumScanPercentToConsider parameters
 -- 2020-12-01 - output remediation script is now idempotent; fixed recommendations in resultset to match actual remediation script
 -- 2020-09-30 - added @MaxDOP parameter
@@ -207,7 +208,7 @@ GROUP BY vs.volume_mount_point, vs.available_bytes
 	ELSE IF ISNULL(@MaxSizeMBForActualCheck,0) <= 0 -- If @MaxSizeMBForActualCheck was not specified, use available TempDB space instead
 		SET @MaxSizeMBForActualCheck = FLOOR(@AvailableTempDBSpaceMB / 0.05);
 	
-	RAISERROR(N'TempDB Free Disk Space: %d MB, max size for check: %d MB',0,1,@AvailableTempDBSpaceMB, @MaxSizeMBForActualCheck) WITH NOWAIT;
+	RAISERROR(N'-- TempDB Free Disk Space: %d MB, max size for check: %d MB',0,1,@AvailableTempDBSpaceMB, @MaxSizeMBForActualCheck) WITH NOWAIT;
 END
 
 IF @OnlineRebuild = 1 AND ISNULL(CONVERT(int, SERVERPROPERTY('EngineEdition')),0) NOT IN (3,5,8)
