@@ -50,6 +50,7 @@ SET @qry = N'
      ) AS ps
      ON t.object_id = ps.object_id 
   INNER JOIN sys.stats AS stat ON t.object_id = stat.object_id
+  LEFT JOIN sys.indexes AS ix ON t.object_id = ix.object_id AND stat.stats_id = ix.index_id
   CROSS APPLY
     (
     SELECT modification_counter, last_updated
@@ -67,6 +68,7 @@ SET @qry = N'
   + N') AS sp
   WHERE t.is_ms_shipped = 0
   AND t.[type] = ''U''
+  AND (ix.index_id IS NULL OR ix.is_disabled = 0)
   GROUP BY stat.object_id,stat.name
   OPTION (MAXDOP 1)'
 
