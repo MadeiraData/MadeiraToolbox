@@ -681,7 +681,7 @@ BEGIN
 	SELECT
 	  [database_name]
 	, InsertCmd = N'INSERT INTO #INDEXTABLE VALUES (' 
-			+ QUOTENAME([index_name], N'''') + N', '
+			+ ISNULL(QUOTENAME([index_name], N''''), N'NULL') + N', '
 			+ QUOTENAME(QUOTENAME([schema_name]) + N'.' + QUOTENAME([table_name]), N'''') + N', '
 			+ ISNULL(CONVERT(nvarchar(max), partition_number), N'NULL') + N', '
 			+ QUOTENAME([compression_type], N'''') + N');'
@@ -808,7 +808,7 @@ BEGIN
 	CpuUtilizationCheck:
 		SELECT @AvgCPU = AVG( 100 - record.value(''(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]'', ''int'') )
 		from (
-		SELECT TOP (@SamplesToCheckAvgForCPUPercent) [timestamp], convert(xml, record) as record
+		SELECT TOP (' + CONVERT(nvarchar, @SamplesToCheckAvgForCPUPercent) + N') [timestamp], convert(xml, record) as record
 		FROM sys.dm_os_ring_buffers
 		WHERE ring_buffer_type = N''RING_BUFFER_SCHEDULER_MONITOR''
 		AND record like ''%<SystemHealth>%''
