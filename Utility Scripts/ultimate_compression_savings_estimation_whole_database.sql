@@ -21,11 +21,15 @@
 -- Some of the algorithms in this script were adapted from the following resources:
 -- https://www.sqlservercentral.com/blogs/introducing-what_to_compress-v2
 -- https://github.com/microsoft/tigertoolbox/tree/master/Evaluate-Compression-Gains
+-- https://github.com/microsoft/azure-sql-tips
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2021-01-17 - added cautionary parameters to stop/pause execution if CPU utilization is too high 
+-- 2021-01-17 - added optional cautionary parameters controlling allowed/forbidden execution window
+-- 2021-01-17 - made some changes to threshold parameters based on partition stats (adapted from Azure-SQL-Tips)
 -- 2021-01-05 - added informative message about current TempDB available space
--- 2020-12-06 - added @MinimumUpdatePercentToConsider and @MinimumScanPercentToConsider parameters
+-- 2020-12-06 - added @MaximumUpdatePctAsInfrequent and @MinimumScanPctForComparison parameters
 -- 2020-12-01 - output remediation script is now idempotent; fixed recommendations in resultset to match actual remediation script
 -- 2020-09-30 - added @MaxDOP parameter
 -- 2020-09-06 - added support for readable secondaries; added MAXDOP 1 for the query from operational stats to avoid access violation bug
@@ -71,15 +75,29 @@ DECLARE
 	-- Cautionary thresholds:
 	,@MaxSizeMBForActualCheck		INT		= NULL		-- If a table/partition is bigger than this size (in MB), then sp_estimate_data_compression_savings will NOT be executed for it. If set to NULL, then use available TempDB space instead
 	,@TempDBSpaceUsageThresholdPercent	INT		= 60		-- A percentage number between 1 and 100, representing how much of the disk space available to TempDB is allowed to be used for the estimation checks
+
+	-- Cautionary parameters to stop/pause execution if CPU utilization is too high (this affects both the estimation check and the rebuild script):
+	,@MaximumCPUPercentForRebuild		INT		= 80		-- Maximum average CPU utilization to allow rebuild. Set to NULL to ignore.
+	,@SamplesToCheckAvgForCPUPercent	INT		= 10		-- Number of CPU utilization percent samples to check and average out
+	,@MaximumTimeToWaitForCPU		DATETIME	= '00:10:00'	-- Maximum time to continously wait for CPU utilization to drop below threshold, before cancelling execution (HH:MM:SS.MS format). Set to NULL to wait forever.
+
+	-- Optional cautionary parameters controlling allowed execution window (server clock)
+	-- You can think of this as your "maintenance window" (24hour based. for example, between 0 and 4):
+	,@AllowedRuntimeHourFrom		INT		= NULL		-- If not NULL, will specify minimum hour of day during which rebuilds are allowed
+	,@AllowedRuntimeHourTo			INT		= NULL		-- If not NULL, will specify maximum hour of day during which rebuilds are allowed
+
+	-- Optional cautionary parameters controlling forbidden execution window (server clock)
+	-- You can think of this as your "business hours" (24hour based. for example, between 6 and 22):
+	,@NotAllowedRuntimeHourFrom		INT		= NULL		-- If not NULL, will specify minimum time of day during which rebuilds are forbidden
+	,@NotAllowedRuntimeHourTo		INT		= NULL		-- If not NULL, will specify maximum time of day during which rebuilds are forbidden
 	 
 	-- Threshold parameters controlling recommendation algorithms based on partition stats:
 	,@MinimumCompressibleDataPercent	INT		= 45		-- Minimum percent of compressible in-row data, in order to consider any compression
-	,@MinimumScanPercentForPage		INT		= 10		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem PAGE compression preferable
-	,@MinimumScanPercentForRow		INT		= 5		-- Minimum percent of range scans (when comparing to percent of updates), in order to deem ROW compression preferable
-	,@MaximumUpdatePercentForPage		INT		= 30		-- Maximum percent of updates, in order to deem PAGE compression preferable
-	,@MaximumUpdatePercentForRow		INT		= 50		-- Maximum percent of updates, in order to deem ROW compression preferable
-	,@MinimumUpdatePercentToConsider	INT		= 5		-- Minimum percent of updates before considering to compare between update and scan percentages
-	,@MinimumScanPercentToConsider		INT		= 5		-- Minimum percent of range scans before considering to compare between update and scan percentages
+	,@MaximumUpdatePctAsInfrequent		INT		= 10		-- Maximum percent of updates for all operations to consider as "infrequent updates"
+	,@MinimumScanPctForComparison		INT		= 5		-- Minimum percent of range scans before considering to compare between update and scan percentages
+	,@MinimumScanPctForPage			INT		= 40		-- Minimum percent of scans when comparing to update percent, to deem PAGE compression preferable (otherwise, ROW compression will be preferable)
+	,@MaximumUpdatePctForPage		INT		= 40		-- Maximum percent of updates when comparing to scan percent, to deem PAGE compression preferable
+	,@MaximumUpdatePctForRow		INT		= 60		-- Maximum percent of updates when comparing to scan percent, to deem ROW compression preferable
 
 	-- Threshold parameters controlling recommendation algorithms based on savings estimation check:
 	,@CompressionRatioThreshold		FLOAT		= 45		-- Number between 0 and 100 representing the minimum compressed data ratio, relative to current size, for which a check will pass
@@ -137,17 +155,35 @@ SELECT @ErrMsg = ISNULL(@ErrMsg + CHAR(10), N'Invalid parameter(s): ') + CONVERT
 FROM
 (VALUES
 	 ('@MinimumCompressibleDataPercent',@MinimumCompressibleDataPercent)
-	,('@MinimumScanPercentForPage',@MinimumScanPercentForPage)
-	,('@MinimumScanPercentForRow',@MinimumScanPercentForRow)
-	,('@MaximumUpdatePercentForPage',@MaximumUpdatePercentForPage)
-	,('@MaximumUpdatePercentForRow',@MaximumUpdatePercentForRow)
+	,('@MinimumScanPctForPage',@MinimumScanPctForPage)
+	,('@MaximumUpdatePctForPage',@MaximumUpdatePctForPage)
+	,('@MaximumUpdatePctForRow',@MaximumUpdatePctForRow)
 	,('@TempDBSpaceUsageThresholdPercent',@TempDBSpaceUsageThresholdPercent)
 	,('@CompressionRatioThreshold',@CompressionRatioThreshold)
 	,('@MinimumRatioDifferenceForPage',@MinimumRatioDifferenceForPage)
-	,('@MinimumUpdatePercentToConsider',@MinimumUpdatePercentToConsider)
-	,('@MinimumScanPercentToConsider',@MinimumScanPercentToConsider)
+	,('@MaximumUpdatePctAsInfrequent',@MaximumUpdatePctAsInfrequent)
+	,('@MinimumScanPctForComparison',@MinimumScanPctForComparison)
+	,('@MaximumCPUPercentForRebuild',ISNULL(@MaximumCPUPercentForRebuild,100))
 ) AS v(VarName,VarValue)
 WHERE VarValue NOT BETWEEN 1 AND 100 OR VarValue IS NULL
+OPTION (RECOMPILE);
+
+IF @ErrMsg IS NOT NULL
+BEGIN
+	RAISERROR(@ErrMsg,16,1);
+	GOTO Quit;
+END
+
+-- Validate hour-based parameters
+SELECT @ErrMsg = ISNULL(@ErrMsg + CHAR(10), N'Invalid parameter(s): ') + CONVERT(nvarchar(max), N'' + VarName + N' must be a value between 0 and 23')
+FROM
+(VALUES
+	 ('@AllowedRuntimeHourFrom',@AllowedRuntimeHourFrom)
+	,('@AllowedRuntimeHourTo',@AllowedRuntimeHourTo)
+	,('@NotAllowedRuntimeHourFrom',@NotAllowedRuntimeHourFrom)
+	,('@NotAllowedRuntimeHourTo',@NotAllowedRuntimeHourTo)
+) AS v(VarName,VarValue)
+WHERE VarValue NOT BETWEEN 1 AND 100 AND VarValue IS NOT NULL
 OPTION (RECOMPILE);
 
 IF @ErrMsg IS NOT NULL
@@ -447,9 +483,9 @@ BEGIN
 
 	SET @EstimationCheckRecommended = CASE
 						WHEN @InRowPercent < @MinimumCompressibleDataPercent THEN 0
-						WHEN @CompressionType = 'PAGE' AND @ScanPercent >= @MinimumScanPercentToConsider AND @ScanPercent >= @MinimumScanPercentForPage AND @UpdatePercent BETWEEN @MinimumUpdatePercentToConsider AND @MaximumUpdatePercentForPage THEN 1
-						WHEN @CompressionType = 'ROW' AND @ScanPercent >= @MinimumScanPercentToConsider AND @ScanPercent >= @MinimumScanPercentForRow AND @UpdatePercent BETWEEN @MinimumUpdatePercentToConsider AND @MaximumUpdatePercentForRow THEN 1
-						WHEN ISNULL(@ScanPercent,0) <= @MinimumScanPercentToConsider OR ISNULL(@UpdatePercent,0) <= @MinimumUpdatePercentToConsider THEN 1
+						WHEN ISNULL(@ScanPercent,0) <= @MinimumScanPctForComparison OR ISNULL(@UpdatePercent,0) <= @MaximumUpdatePctAsInfrequent THEN 1
+						WHEN @CompressionType = 'PAGE' AND @ScanPercent >= @MinimumScanPctForPage AND @UpdatePercent <= @MaximumUpdatePctForPage THEN 1
+						WHEN @CompressionType = 'ROW' AND @UpdatePercent <= @MaximumUpdatePctForRow THEN 1
 						ELSE 0
 					END
 
@@ -461,6 +497,44 @@ BEGIN
 		IF @EstimationCheckRecommended = 1
 		BEGIN
 			BEGIN TRY
+			
+			IF @MaximumCPUPercentForRebuild IS NOT NULL
+			BEGIN
+				DECLARE @AvgCPU FLOAT, @WaitForCPUStartTime DATETIME;
+
+				CpuUtilizationCheck:
+					SELECT @AvgCPU = AVG( 100 - record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]', 'int') )
+					FROM (
+					SELECT TOP (@SamplesToCheckAvgForCPUPercent) [timestamp], convert(xml, record) as record
+					FROM sys.dm_os_ring_buffers
+					WHERE ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'
+					AND record like '%<SystemHealth>%'
+					ORDER BY [timestamp] DESC
+					) as RingBufferInfo
+
+					IF @AvgCPU <= @MaximumCPUPercentForRebuild
+					BEGIN
+						SET @WaitForCPUStartTime = NULL;
+						GOTO AfterCpuUtilizationCheck;
+					END
+					ELSE IF @MaximumTimeToWaitForCPU IS NOT NULL
+					BEGIN
+						IF @WaitForCPUStartTime IS NULL
+						BEGIN
+							SET @WaitForCPUStartTime = GETDATE()
+						END
+						ELSE IF @WaitForCPUStartTime + @MaximumTimeToWaitForCPU > GETDATE()
+						BEGIN
+							RAISERROR(N'-- CPU utilization is too high. Aborting check.', 16, 1);
+							GOTO EndOfCursor;
+						END
+					END
+
+					WAITFOR DELAY '00:00:00.5'
+					GOTO CpuUtilizationCheck;
+			END
+			AfterCpuUtilizationCheck:
+
 			-- Calculate compression savings estimation
 			INSERT INTO @Results
 			EXEC @sp_estimate_data_compression_savings
@@ -523,6 +597,8 @@ BEGIN
 	INTO @CurrDB, @Schema, @ObjectId, @Table, @IndexId, @IndexName, @Partition, @CompressionType, @TotalSizeMB, @InRowPercent, @ScanPercent, @UpdatePercent
 END
 
+EndOfCursor:
+
 CLOSE TablesToCheck
 DEALLOCATE TablesToCheck
 
@@ -549,16 +625,17 @@ SELECT
 	,is_compression_candidate	= CASE WHEN is_compression_feasible = 1 THEN 'Yes' ELSE 'No' END
 	,is_compression_recommended 	= CASE
 						WHEN is_compression_recommended IS NULL AND is_compression_feasible = 1 THEN 
-						CASE
+						  CASE
 							WHEN in_row_percent < @MinimumCompressibleDataPercent THEN N'No'
-							WHEN scan_percent >= @MinimumScanPercentForPage AND update_percent <= @MaximumUpdatePercentForPage THEN
+							WHEN compression_type = 'PAGE' AND ISNULL(scan_percent,0) <= @MinimumScanPctForComparison AND ISNULL(update_percent,0) <= @MaximumUpdatePctAsInfrequent THEN 'Yes'
+							WHEN scan_percent >= @MinimumScanPctForPage AND update_percent <= @MaximumUpdatePctForPage THEN
 								CASE WHEN compression_type = 'PAGE' THEN 'Yes' ELSE 'No' END
-							WHEN scan_percent >= @MinimumScanPercentForRow  AND update_percent <= @MaximumUpdatePercentForRow THEN
+							WHEN update_percent <= @MaximumUpdatePctForRow THEN
 								CASE WHEN compression_type = 'ROW' THEN 'Yes' ELSE 'No' END
-							WHEN compression_type = 'PAGE' AND ISNULL(scan_percent,0) = 0 AND ISNULL(update_percent,0) = 0 THEN 'Yes'
 							ELSE 'No'
-						END + ' (best guess)'
-						WHEN is_compression_recommended = 1 AND SavingsRating = 1 THEN 'Yes' ELSE 'No' END
+						  END + ' (best guess)'
+						WHEN is_compression_recommended = 1 AND SavingsRating = 1 THEN 'Yes' ELSE 'No'
+					  END
 	,remediation_command		= 
 					CASE WHEN ISNULL(is_compression_recommended,0) = 0 OR SavingsRating <> 1 THEN N'-- ' ELSE N'' END
 				+ N'USE ' + QUOTENAME([database_name]) + N'; ALTER ' + ISNULL(N'INDEX ' + QUOTENAME(index_name) + N' ON ', N'TABLE ') + QUOTENAME([schema_name]) + '.' + QUOTENAME([table_name]) 
@@ -569,7 +646,7 @@ FROM
 	SELECT 
 	 *, SavingsRating = ROW_NUMBER() OVER (
 		PARTITION BY 
-				[database_name]
+			  [database_name]
 			, table_name
 			, index_name 
 			, partition_number
@@ -685,6 +762,7 @@ DECLARE @WhatIf BIT = 0
 
 DECLARE @DB SYSNAME;
 SET @DB = DB_NAME();
+DECLARE @time VARCHAR(25)
 DECLARE @IndexName SYSNAME, @TableName NVARCHAR(4000), @PartitionNumber INT, @CompressionType SYSNAME, @CMD NVARCHAR(MAX)'
 
 			PRINT N'DECLARE TablesToCheck CURSOR
@@ -698,10 +776,68 @@ FROM #INDEXTABLE
 
 OPEN TablesToCheck
 
-FETCH NEXT FROM TablesToCheck INTO @IndexName, @TableName, @PartitionNumber, @CompressionType, @CMD
-
-WHILE @@FETCH_STATUS = 0
+WHILE 1 = 1
 BEGIN
+	FETCH NEXT FROM TablesToCheck INTO @IndexName, @TableName, @PartitionNumber, @CompressionType, @CMD
+
+	IF @@FETCH_STATUS <> 0
+		BREAK;'
+
+	IF @AllowedRuntimeHourFrom IS NOT NULL AND @AllowedRuntimeHourTo IS NOT NULL
+		PRINT N'
+	IF DATEPART(hour, GETDATE()) NOT BETWEEN ' + CONVERT(nvarchar, @AllowedRuntimeHourFrom) + N' AND ' + CONVERT(nvarchar, @AllowedRuntimeHourTo) + N'
+	BEGIN
+		SET @time = CONVERT(VARCHAR(25), GETDATE(), 121);
+		RAISERROR(N''%s - Reached outside allowed execution time.'', 0, 1, @time);
+		BREAK;
+	END'
+
+	IF @NotAllowedRuntimeHourFrom IS NOT NULL AND @NotAllowedRuntimeHourTo IS NOT NULL
+		PRINT N'
+	IF DATEPART(hour, GETDATE()) BETWEEN ' + CONVERT(nvarchar, @NotAllowedRuntimeHourFrom) + N' AND ' + CONVERT(nvarchar, @NotAllowedRuntimeHourTo) + N'
+	BEGIN
+		SET @time = CONVERT(VARCHAR(25), GETDATE(), 121);
+		RAISERROR(N''%s - Reached outside allowed execution time.'', 0, 1, @time);
+		BREAK;
+	END'
+
+	IF @MaximumCPUPercentForRebuild IS NOT NULL
+	PRINT N'
+	DECLARE @AvgCPU FLOAT, @WaitForCPUStartTime DATETIME;
+
+	CpuUtilizationCheck:
+		SELECT @AvgCPU = AVG( 100 - record.value(''(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]'', ''int'') )
+		from (
+		SELECT TOP (@SamplesToCheckAvgForCPUPercent) [timestamp], convert(xml, record) as record
+		FROM sys.dm_os_ring_buffers
+		WHERE ring_buffer_type = N''RING_BUFFER_SCHEDULER_MONITOR''
+		AND record like ''%<SystemHealth>%''
+		ORDER BY [timestamp] DESC
+		) as RingBufferInfo
+
+		IF @AvgCPU <= ' + CONVERT(nvarchar, @MaximumCPUPercentForRebuild) + N'
+		BEGIN
+			SET @WaitForCPUStartTime = NULL;
+		END' + CASE WHEN @MaximumTimeToWaitForCPU IS NOT NULL THEN N'
+		ELSE IF @WaitForCPUStartTime IS NULL
+		BEGIN
+			SET @WaitForCPUStartTime = GETDATE()
+			GOTO CpuUtilizationCheck;
+		END
+		ELSE IF @WaitForCPUStartTime + ' + QUOTENAME(CONVERT(nvarchar(max), @MaximumTimeToWaitForCPU, 121), N'''') + N' > GETDATE()
+		BEGIN
+			SET @time = CONVERT(VARCHAR(25), GETDATE(), 121);
+			RAISERROR(N''%s - CPU utilization is too high.'', 0, 1, @time);
+			BREAK;
+		END' END +  N'
+		ELSE
+		BEGIN
+			WAITFOR DELAY ''00:00:00.5''
+			GOTO CpuUtilizationCheck;
+		END'
+
+	PRINT N'
+
 	-- Check if index has no Compression
 	IF EXISTS (
 	SELECT NULL
@@ -715,13 +851,12 @@ BEGIN
 	AND (@PartitionNumber IS NULL OR p.partition_number = @PartitionNumber)
 	)
 	BEGIN
-		DECLARE @time VARCHAR(25) = CONVERT(VARCHAR(25), GETDATE(), 121);
+		SET @time = CONVERT(VARCHAR(25), GETDATE(), 121);
 		RAISERROR (N''%s - [%s]: INDEX [%s] ON %s PARTITION = %s, DATA_COMPRESSION = %s'', 0, 1, @time, @DB, @IndexName, @TableName, @PartitionNumber, @CompressionType) WITH NOWAIT;
 		PRINT @CMD;
 		IF @WhatIf = 0 EXEC sp_executesql @CMD;
 	END
 
-	FETCH NEXT FROM TablesToCheck INTO @IndexName, @TableName, @PartitionNumber, @CompressionType, @CMD
 END
 
 CLOSE TablesToCheck
@@ -760,5 +895,7 @@ BEGIN
 	PRINT N'----------- No Candidates for Compression Found -----------------------'
 	PRINT N'-----------------------------------------------------------------------'
 END
-	
+
+PRINT N'GO'
+
 Quit:
