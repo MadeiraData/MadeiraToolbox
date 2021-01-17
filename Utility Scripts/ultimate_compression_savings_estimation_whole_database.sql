@@ -88,8 +88,8 @@ DECLARE
 
 	-- Optional cautionary parameters controlling forbidden execution window (server clock)
 	-- You can think of this as your "business hours" (24hour based. for example, between 6 and 22):
-	,@NotAllowedRuntimeHourFrom		INT		= NULL		-- If not NULL, will specify minimum time of day during which rebuilds are forbidden
-	,@NotAllowedRuntimeHourTo		INT		= NULL		-- If not NULL, will specify maximum time of day during which rebuilds are forbidden
+	,@NotAllowedRuntimeHourFrom		INT		= 6		-- If not NULL, will specify minimum time of day during which rebuilds are forbidden
+	,@NotAllowedRuntimeHourTo		INT		= 22		-- If not NULL, will specify maximum time of day during which rebuilds are forbidden
 	 
 	-- Threshold parameters controlling recommendation algorithms based on partition stats:
 	,@MinimumCompressibleDataPercent	INT		= 45		-- Minimum percent of compressible in-row data, in order to consider any compression
