@@ -1,8 +1,9 @@
 ﻿param
 (
-[string]$Subscription = "Your subcription name here",
+[string]$Subscription = "Your subscription name here",
 [int]$maxBlobCountToCheck = 10000
 )
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Bypass
 
 # install AZ modules
  Find-Module -Name Az -Repository PSGallery | Install-Module -Verbose -Force -Scope CurrentUser | Out-Null
