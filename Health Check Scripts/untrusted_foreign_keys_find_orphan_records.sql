@@ -4,9 +4,9 @@ More info: https://eitanblumin.com/2018/11/06/find-and-fix-untrusted-foreign-key
 ****************************************************/
 DECLARE
 	  @ForeignKeyName	SYSNAME		= 'FK_MyTable_MyOtherTable'
+	, @CountOnly		BIT		= 0
 	, @PrintOnly		BIT		= 0
 	, @Top			INT		= NULL
-	, @CountOnly		BIT		= 0
 	, @OrderBy		NVARCHAR(MAX)	= NULL -- N'ColumnName DESC'
 
 DECLARE
@@ -14,6 +14,7 @@ DECLARE
 	@ChildTableID INT,
 	@ParentTableID INT,
 	@CMD NVARCHAR(MAX),
+	@ColumnsSetNull NVARCHAR(MAX),
 	@ColumnNullabilityCheck NVARCHAR(MAX) = N''
 
 SELECT
@@ -32,6 +33,7 @@ END
 SELECT
 	@CMD = ISNULL(@CMD + CHAR(13) + CHAR(10) + N'AND ', N'') + N'ctable.' + QUOTENAME(cc.name) + N' = ptable.' + QUOTENAME(pc.name)
 	, @ColumnNullabilityCheck = @ColumnNullabilityCheck + CHAR(13) + CHAR(10) + N'AND ctable.' + QUOTENAME(cc.name) + N' IS NOT NULL'
+	, @ColumnsSetNull = ISNULL(@ColumnsSetNull + N', ', N'') + QUOTENAME(cc.name) + N' = NULL'
 	--ChildTable = QUOTENAME(OBJECT_SCHEMA_NAME(fkc.parent_object_id)) + '.' + QUOTENAME(OBJECT_NAME(fkc.parent_object_id))
 	--, ChildColumn = QUOTENAME(cc.name)
 	--, ParentTable = QUOTENAME(OBJECT_SCHEMA_NAME(fkc.referenced_object_id)) + '.' + QUOTENAME(OBJECT_NAME(fkc.referenced_object_id))
@@ -50,7 +52,11 @@ SET @CMD = N'SELECT '
 ELSE
 ISNULL(N'TOP (' + CONVERT(nvarchar,@Top) + N')', N'') + N' ctable.*'
 END + N'
--- DELETE ctable
+
+-- DELETE ' + ISNULL(N'TOP (' + CONVERT(nvarchar,@Top) + N')', N'') + N' ctable
+
+-- UPDATE ' + ISNULL(N'TOP (' + CONVERT(nvarchar,@Top) + N')', N'') + N' ctable SET ' + @ColumnsSetNull + N'
+
 FROM ' + QUOTENAME(OBJECT_SCHEMA_NAME(@ChildTableID)) + '.' + QUOTENAME(OBJECT_NAME(@ChildTableID)) + N' AS ctable
 WHERE NOT EXISTS
 (SELECT NULL FROM ' + QUOTENAME(OBJECT_SCHEMA_NAME(@ParentTableID)) + '.' + QUOTENAME(OBJECT_NAME(@ParentTableID)) + N' AS ptable
