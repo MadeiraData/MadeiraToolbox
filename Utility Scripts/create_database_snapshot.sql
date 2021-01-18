@@ -1,5 +1,6 @@
-
-DECLARE @CurrDB SYSNAME = 'MyDBName'
+DECLARE
+	 @CurrDB		SYSNAME = DB_NAME()
+	,@WhatIf		BIT = 1
 
 DECLARE @CMD NVARCHAR(MAX);
 
@@ -13,12 +14,14 @@ WHERE type <> 1
 AND database_id = DB_ID(@CurrDB)
 
 SELECT
-@CMD = N'CREATE DATABASE ' + QUOTENAME(SnapshotName) + N'
-ON ' + @CMD + N'
+@CMD = N'CREATE DATABASE ' + QUOTENAME(SnapshotName) 
++ ISNULL(N'
+ON ' + @CMD, N'') 
++ N'
 AS SNAPSHOT OF ' + QUOTENAME(@CurrDB)
 , @CurrDB = SnapshotName
 FROM
-(VALUES (@CurrDB + '_snapshot_' + CONVERT(nvarchar,ABS(CHECKSUM(NEWID()))))) AS v(SnapshotName)
+(VALUES (@CurrDB + '_snapshot_' + CONVERT(nvarchar, GETDATE(), 112) + REPLACE(CONVERT(nvarchar, GETDATE(), 114),':',''))) AS v(SnapshotName)
 
 PRINT @CMD
-EXEC(@CMD)
+IF @WhatIf = 0 EXEC(@CMD)
