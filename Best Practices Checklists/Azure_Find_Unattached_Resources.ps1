@@ -1,14 +1,20 @@
 ﻿param
 (
-[string]$Subscription = "Your subscription name here",
+[string]$Subscription = "Guy's MVP Extended Sandbox",
 [int]$maxBlobCountToCheck = 10000
 )
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Bypass
 
 # install AZ modules
- Find-Module -Name Az -Repository PSGallery | Install-Module -Verbose -Force -Scope CurrentUser | Out-Null
- Set-ExecutionPolicy Unrestricted
- Import-Module -Name Az -Scope Local | Out-Null
+$module = "Az"
+if (Get-Module -ListAvailable -Name $module) {
+    Write-Verbose "$module already installed"
+} 
+else {
+    Write-Information "Installing $module"
+    #Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Unrestricted -Confirm:$false
+    Install-Module $module -Force -SkipPublisherCheck -Scope CurrentUser | Out-Null
+    Import-Module $module -Force -PassThru -Scope Local | Out-Null
+}
 
 # connect to Azure Subscription
  Connect-Azaccount
@@ -19,16 +25,16 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Bypass
     Select-AzSubscription -TenantId $_.TenantId -SubscriptionId $SubscriptionId | Out-Null
 }
 
-# find unattached managed disks
+Write-Output "finding unattached managed disks"
  Get-AzDisk | Where-Object {$_.ManagedBy -eq $null} | Select Id
 
-# find unattached NIC cards
+Write-Output "finding unattached NIC cards"
  Get-AzNetworkInterface | Where-Object {$_.VirtualMachine -eq $null } | Select Id
 
-# find unattached public-ips
+Write-Output "finding unattached public-ips"
  Get-AzPublicIpAddress | Where-Object {$_.IpConfiguration -eq $null } | Select Id
 
-# find unattached unmanaged disks
+Write-Output "finding unattached unmanaged disks"
  $storageAccounts = Get-AzStorageAccount
  foreach($storageAccount in $storageAccounts){
      $storageKey = (Get-AzStorageAccountKey -ResourceGroupName $storageAccount.ResourceGroupName -Name $storageAccount.StorageAccountName)[0].Value
