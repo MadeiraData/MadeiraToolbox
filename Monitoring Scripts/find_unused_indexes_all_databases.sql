@@ -68,7 +68,7 @@ END'
 BEGIN
  INSERT INTO #tmp(DBName, SchemaName, TableName, IndexName, RowsCount, IndexSizeKB, DropCMD, LastStatsDate, TableCreatedDate, UpdatesCount)
  EXEC sp_MSforeachdb @CMD 
-END', '@CMD nvarchar(max)', @CMD;
+END', N'@CMD nvarchar(max)', @CMD;
 END
 ELSE
 BEGIN
