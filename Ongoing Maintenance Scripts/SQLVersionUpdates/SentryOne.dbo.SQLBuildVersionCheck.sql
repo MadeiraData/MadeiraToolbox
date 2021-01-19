@@ -20,7 +20,7 @@ FROM [SentryOne].dbo.vwSqlServer S
 INNER JOIN [SentryOne].dbo.[vwServerList] Sl ON S.ObjectID = Sl.ObjectID
 CROSS APPLY (
  SELECT TOP (1) Al.*
- FROM [DBSmartMgmt].[dbo].[SQLVersions] AS Al
+ FROM [dbo].[SQLVersions] AS Al
  WHERE  Al.MajorVersionNumber = S.MajorVersionNumber
  and Al.MinorVersionNumber = S.MinorVersionNumber
  and S.BuildVersionNumber < Al.BuildVersionNumber 
