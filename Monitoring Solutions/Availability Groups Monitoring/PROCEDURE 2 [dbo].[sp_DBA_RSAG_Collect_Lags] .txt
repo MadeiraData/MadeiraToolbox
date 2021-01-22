@@ -1,0 +1,94 @@
+
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+/*
+Author:		Sagi Amichai @ Madeira
+Date:		Dec 2020
+Desc:		This procedure should be executed from a job with a while loop to collect Lags.
+*/
+CREATE PROCEDURE [dbo].[sp_DBA_RSAG_Collect_Lags] 
+AS
+
+DECLARE @i tinyint = 1
+
+WHILE @i<=600
+BEGIN	
+	
+	DROP TABLE IF EXISTS #Pri_CommitTime
+	DROP TABLE IF EXISTS #Sec_CommitTime
+	SELECT
+		AR.replica_server_name,
+		HARS.role_desc, 
+		Db_name(DRS.database_id) [DBName], 
+		DRS.last_commit_time,
+		synchronization_state_desc
+	into #Pri_CommitTime
+	FROM   sys.dm_hadr_database_replica_states DRS 
+	INNER JOIN sys.availability_replicas AR
+	ON	DRS.replica_id = AR.replica_id 
+	INNER JOIN sys.dm_hadr_availability_replica_states HARS 
+	ON AR.group_id = HARS.group_id AND AR.replica_id = HARS.replica_id 
+	WHERE	role_desc = 'PRIMARY'
+	
+	waitfor delay '00:00:02'
+
+	SELECT
+		AR.replica_server_name,			
+		Db_name(DRS.database_id) [DBName], 
+		DRS.last_commit_time,
+		synchronization_state_desc
+	into #Sec_CommitTime
+	FROM   sys.dm_hadr_database_replica_states DRS 
+	INNER JOIN sys.availability_replicas AR
+	ON	DRS.replica_id = AR.replica_id 
+	INNER JOIN sys.dm_hadr_availability_replica_states HARS 
+	ON AR.group_id = HARS.group_id AND AR.replica_id = HARS.replica_id 
+	WHERE	role_desc = 'SECONDARY'
+
+	
+	INSERT INTO [dbo].[DBA_RSAG_Monitoring_Lag] 
+	([TimeStamp], [DatabaseName], [primary_replica], [secondary_replica], [PrimaryState], [SecondaryState], [sync_lag_Sec],Plast_commit_time, Slast_commit_time)
+
+	SELECT	getdate()  as timestamp
+			,p.[DBName] AS [DatabaseName]
+			,p.replica_server_name [primary_replica]
+			,s.replica_server_name [secondary_replica]
+			,p.synchronization_state_desc as PrimaryState
+			,s.synchronization_state_desc as SecondaryState
+			,DATEDIFF(
+				ss,				
+
+
+				CASE	WHEN DATEADD(ss,-2,s.last_commit_time )>= p.last_commit_time THEN p.last_commit_time
+						WHEN DATEADD(ss,-2,s.last_commit_time )>= mx.Time THEN DATEADD(ss,-2,s.last_commit_time )
+						WHEN DATEADD(ss,-2,s.last_commit_time )<= mx.Time THEN mx.Time						
+						ELSE	p.last_commit_time
+				END	
+						
+				,
+				p.last_commit_time)				AS [Sync_Lag_Sec]	
+			,p.last_commit_time					as Plast_commit_time			
+			,DATEADD(ss,-2,s.last_commit_time ) as Slast_commit_time			
+	FROM 
+		#Pri_CommitTime p
+	LEFT JOIN 
+		#Sec_CommitTime s 
+	ON [s].[DBName] = [p].[DBName] 	
+	LEFT JOIN 
+	(		
+		SELECT DatabaseName, MAX(Slast_commit_time) Time 
+		FROM [dbo].[DBA_RSAG_Monitoring_Lag]  
+		GROUP BY DatabaseName		
+	) mx
+	ON mx.DatabaseName = S.DBName and s.last_commit_time >= mx.Time
+
+	
+	DROP TABLE IF EXISTS #Pri_CommitTime
+	DROP TABLE IF EXISTS #Sec_CommitTime
+	waitfor delay '00:00:02'
+	SET @i+=1
+
+END

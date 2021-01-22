@@ -15,12 +15,14 @@ Arguments:
 @TableName		- Table name used as the initial "point of entry". Hierarchy tree will extend from this "root" table.
 @MaxLevel		- Used for avoiding exaggerated recursion depth.
 @AvoidInfiniteRecurse	- Uses the hierarchyid data type to avoid infinite recursion loop.
+@CascadeOnly		- Set to 1 to only see hierarchy paths with either CASCADE or SET NULL options.
 ===================================
 */
 DECLARE
 	@TableName		SYSNAME	= 'dbo.Catalog',
 	@MaxLevel		INT	= 100,
-	@AvoidInfiniteRecurse	BIT	= 0
+	@AvoidInfiniteRecurse	BIT	= 0,
+	@CascadeOnly		BIT	= 0
 
 SET NOCOUNT ON;
 WITH Tree
@@ -32,6 +34,7 @@ SELECT 1 AS lvl, fk.[name], fk.[object_id], fk.[parent_object_id], fk.[reference
 , hid = CAST('/' + CONVERT(varchar, fk.[referenced_object_id]) + '/' + CONVERT(varchar, fk.[parent_object_id]) + '/' AS hierarchyid)
 FROM sys.foreign_keys AS fk
 WHERE fk.referenced_object_id = OBJECT_ID(@TableName)
+AND (ISNULL(@CascadeOnly,0) = 0 OR fk.delete_referential_action > 0 OR fk.update_referential_action > 0)
 
 UNION ALL
 
@@ -44,6 +47,7 @@ INNER JOIN Tree ON fk.referenced_object_id = Tree.parent_object_id
 WHERE Tree.parent_object_id <> Tree.referenced_object_id
 AND (@AvoidInfiniteRecurse = 0 OR Tree.hid.ToString() NOT LIKE '%/' + CONVERT(varchar,fk.[parent_object_id]) + '/%')
 AND (@MaxLevel IS NULL OR Tree.lvl < @MaxLevel)
+AND (ISNULL(@CascadeOnly,0) = 0 OR fk.delete_referential_action > 0 OR fk.update_referential_action > 0)
 )
 SELECT
   lvl = MIN(lvl)

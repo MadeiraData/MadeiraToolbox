@@ -1,0 +1,80 @@
+
+CREATE  PROCEDURE [dbo].[sp_DBA_RSAG_SyncLagAlert]
+AS
+
+/*
+Author:		Sagi Amichai @Madeira
+Date:		Dec 2020
+Desc:
+This SP alerts when the lag between the relicas surpasses a 15 seconds threshold. 
+That basically means there is a lag of 15 seconds between the replicas of the AG.
+*/
+
+	DECLARE
+		@Messge NVARCHAR(4000)='',
+		@Subject NVARCHAR(500) = '',
+		@i tinyint = 1
+	
+	WHILE @i<=600
+	BEGIN				
+				
+		IF EXISTS
+		(			
+			SELECT DatabaseName, SUM(sync_Lag_Sec) SumLag3Samples
+			FROM [dbo].[DBA_RSAG_Monitoring_Lag] 
+			WHERE TimeStamp in 
+			(
+				SELECT DISTINCT TOP 3 TimeStamp 
+				FROM [dbo].[DBA_RSAG_Monitoring_Lag] 
+				ORDER BY TimeStamp DESC
+			)
+			GROUP BY DatabaseName
+			HAVING SUM(sync_Lag_Sec) > 45		
+		)
+		BEGIN
+		
+			exec sp_DBA_RSAG_CollectMonitoring_Requests  'SyncLagAlert'
+
+
+			SET @Subject ='RSAG Synchronization Lag Higher Than 15 Seconds at server '+ @@SERVERNAME
+			SELECT @Messge = 
+			N'RSAG Synchronization time seems  to increase, resulting in synchronization lag > 15 seconds at server '	+ @@SERVERNAME+''+ CHAR(10)+ 
+			N'This may be a result of overall pressure/general networking issues/ RSAG nodes comunication issues.'		+ CHAR(10)+ 
+			N'Follow table [DBA].[dbo].[DBA_RSAG_Monitoring_Lag].'			+ CHAR(10)+ CHAR(13)
+			
+			
+			EXEC msdb.dbo.sp_send_dbmail
+			@profile_name = '<MAIL PROFILE>',
+			@recipients = '<MAIL ACCOUNTS>',	
+			@body = @Messge,
+			@subject = @Subject		
+					   			
+
+			WHILE EXISTS
+			(			
+				SELECT DatabaseName, SUM(sync_Lag_Sec) SumLag3Samples
+				FROM [dbo].[DBA_RSAG_Monitoring_Lag] 
+				WHERE TimeStamp in 
+				(
+					SELECT DISTINCT TOP 3 TimeStamp 
+					FROM [dbo].[DBA_RSAG_Monitoring_Lag] 
+					ORDER BY TimeStamp DESC
+				)
+				GROUP BY DatabaseName
+				HAVING SUM(sync_Lag_Sec) > 45		
+			)
+			BEGIN			
+				exec sp_DBA_RSAG_CollectMonitoring_Requests  'SyncLagAlert'
+
+				
+
+				waitfor delay '00:00:05'
+			END		
+		END				
+
+		SET @i+=1
+		waitfor delay '00:00:05'
+
+	END
+	
+GO
