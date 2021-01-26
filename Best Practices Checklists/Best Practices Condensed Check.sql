@@ -729,6 +729,9 @@ WHERE PercentUsed >= 80
  
 DROP TABLE #IdentityColumns;
 
+IF OBJECT_ID('sys.sequences') IS NOT NULL
+BEGIN
+
 PRINT 'Checking: Sequence Overflow';
 IF OBJECT_ID ('tempdb..#Sequences') IS NOT NULL DROP TABLE #Sequences;
 CREATE TABLE #Sequences
@@ -740,16 +743,16 @@ CREATE TABLE #Sequences
  MaxValue	SQL_VARIANT NULL,
  PercentUsed	FLOAT NULL
 );
- 
+
 INSERT INTO #Sequences(DatabaseName,SchemaName,SequenceName,LastValue,MaxValue,PercentUsed) 
 exec sp_MSforeachdb 'IF EXISTS (SELECT * FROM sys.databases WHERE name = ''?'' AND state_desc = ''ONLINE'' AND DATABASEPROPERTYEX([name],''Updateability'') = ''READ_WRITE''
 AND OBJECT_ID(''[?].sys.sequences'') IS NOT NULL)
 SELECT ''?'' AS DatabaseName,
 OBJECT_SCHEMA_NAME(sequences.object_id, DB_ID(''?'')) COLLATE database_default SchemaName, 
 OBJECT_NAME(sequences.object_id, DB_ID(''?'')) COLLATE database_default SequenceName, 
-Last_used_Value LastValue, 
+current_value LastValue, 
 MaxValue = sequences.maximum_value, 
-CAST(CAST(sequences.last_used_value AS FLOAT)/CAST(sequences.maximum_value AS FLOAT) *100.0 AS DECIMAL(10, 2))
+CAST(CAST(sequences.current_value AS FLOAT)/CAST(sequences.maximum_value AS FLOAT) *100.0 AS DECIMAL(10, 2))
 
 FROM [?].sys.sequences WITH (NOLOCK)
 WHERE is_cycling = 0' 
@@ -761,6 +764,9 @@ FROM #Sequences
 WHERE PercentUsed > 80
 
 DROP TABLE #Sequences;
+
+END
+
 
 PRINT 'Checking: Invalid Job Owner';
 INSERT INTO @Alerts
