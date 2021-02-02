@@ -25,6 +25,7 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2021-02-02 - added SET NOCOUNT, QUOTED_IDENTIFIER, ARITHABORT, XACT_ABORT ON settings
 -- 2021-01-17 - added cautionary parameters to stop/pause execution if CPU utilization is too high 
 -- 2021-01-17 - added optional cautionary parameters controlling allowed/forbidden execution window
 -- 2021-01-17 - made some changes to threshold parameters based on partition stats (adapted from Azure-SQL-Tips)
@@ -735,7 +736,7 @@ SET @DB = DB_NAME();
 
 RAISERROR(N''Space used for data in "%s" BEFORE compression: %d MB'', 0, 1, @DB, @Size) WITH NOWAIT;
 GO
-SET NOCOUNT ON;
+SET NOCOUNT, QUOTED_IDENTIFIER, ARITHABORT, XACT_ABORT ON;
 IF OBJECT_ID(''tempdb..#INDEXTABLE'') IS NOT NULL DROP TABLE #INDEXTABLE;
 CREATE TABLE #INDEXTABLE (
 	IndexName SYSNAME NULL, 
@@ -760,6 +761,7 @@ USE ' + QUOTENAME(@PrevDB) + N';
 
 DECLARE @WhatIf BIT = 0
 
+SET NOCOUNT, QUOTED_IDENTIFIER, ARITHABORT, XACT_ABORT ON;
 DECLARE @DB SYSNAME;
 SET @DB = DB_NAME();
 DECLARE @time VARCHAR(25)
@@ -838,7 +840,7 @@ BEGIN
 
 	PRINT N'
 
-	-- Check if index has no Compression
+	-- Check if index has no compression
 	IF EXISTS (
 	SELECT NULL
 	FROM sys.partitions AS p WITH (NOLOCK)
