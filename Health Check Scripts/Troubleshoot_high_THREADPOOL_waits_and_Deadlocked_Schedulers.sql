@@ -100,7 +100,7 @@ DECLARE
 	-- This could be useful when you want to traverse the same file(s) but filter on a different time range, for example.
 	-- Thus, it would skip the first phase entirely and save you some valuable time.
 	-- However, if you change the value of @FileTargetPath between executions, then #alldata will be recreated regardless.
-	,@PersistAllData	BIT		= 0
+	,@PersistAllData	BIT		= 1
 	
 	----------------------------------
 	-- @Verbose
