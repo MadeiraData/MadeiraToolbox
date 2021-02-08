@@ -5,9 +5,9 @@ Description: Create a Linked Server to a remote SQL Server, but give it a differ
 DECLARE
 	@ServerAddress 		[nvarchar](255) = 'MyRemoteServerAddress\SomeNamedInstanceIfYouWant,1433',
 	@NewServerName 		[nvarchar](255) = 'MyRemoteServerName',
-	@RemoteUser 		[nvarchar](128) = 'remote_user',
+	@RemoteUser 		[nvarchar](128) = 'remote_user', -- login name of remote mapped user. If NULL, will not create a mapped login.
 	@RemotePassword		[nvarchar](128) = 'remote_user_password',
-	@MapLocalLogin 		[nvarchar](255) = NULL -- name a local login to map to the remote login. If NULL, will map current login
+	@MapLocalLogin 		[nvarchar](255) = NULL -- name a local login to map to the remote login. If NULL, will map current login.
 
 SET @MapLocalLogin = ISNULL(@MapLocalLogin, SUSER_NAME())
 
@@ -29,4 +29,6 @@ EXEC master.dbo.sp_serveroption @server=@NewServerName, @optname=N'collation nam
 EXEC master.dbo.sp_serveroption @server=@NewServerName, @optname=N'query timeout', @optvalue=N'0'
 EXEC master.dbo.sp_serveroption @server=@NewServerName, @optname=N'use remote collation', @optvalue=N'true'
 EXEC master.dbo.sp_serveroption @server=@NewServerName, @optname=N'remote proc transaction promotion', @optvalue=N'false'
-EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @NewServerName, @locallogin = @MapLocalLogin , @useself = N'False', @rmtuser = @RemoteUser, @rmtpassword = @RemotePassword
+
+IF @RemoteUser IS NOT NULL
+	EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @NewServerName, @locallogin = @MapLocalLogin , @useself = N'False', @rmtuser = @RemoteUser, @rmtpassword = @RemotePassword
