@@ -7,6 +7,7 @@ Description:
 	If the role owns schemas, and these schemas don't contain objects, then these schemas will be dropped.
 
 More info: https://eitanblumin.com/sql-vulnerability-assessment-tool-rules-reference-list/#Rule_VA1282
+
 */
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
