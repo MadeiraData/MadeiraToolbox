@@ -9,6 +9,7 @@ Desc:
 This SP alerts when Lag increases over 3 samples.
 */
 
+
 	DECLARE
 		@Messge NVARCHAR(4000)='',
 		@Subject NVARCHAR(500) = '',
@@ -27,21 +28,22 @@ This SP alerts when Lag increases over 3 samples.
 					TimeStamp 
 					,DatabaseName
 					,sync_Lag_Sec	
-					,sync_lag_Sec - (LAG(sync_Lag_Sec) OVER(ORDER BY DatabaseName,TimeStamp asc) )	 as PrevLagDiff
-					,sync_lag_Sec - (LAG(sync_Lag_Sec, 2) OVER(ORDER BY DatabaseName,TimeStamp asc) )	 as PrevLagDiff2
-					,sync_lag_Sec - (LAG(sync_Lag_Sec, 3) OVER(ORDER BY DatabaseName,TimeStamp asc) )	 as PrevLagDiff3
-					,DATEDIFF(second, (LAG(TimeStamp ) OVER(ORDER BY DatabaseName,TimeStamp asc) ), TimeStamp) TimeDiff
+					,sync_lag_Sec - (LAG(sync_Lag_Sec) OVER(PARTITION BY DatabaseName ORDER BY TimeStamp asc) )	 as PrevLagDiff
+					,sync_lag_Sec - (LAG(sync_Lag_Sec, 2) OVER(PARTITION BY DatabaseName ORDER BY TimeStamp asc) )	 as PrevLagDiff2
+					,sync_lag_Sec - (LAG(sync_Lag_Sec, 3) OVER(PARTITION BY DatabaseName ORDER BY TimeStamp asc) )	 as PrevLagDiff3
+					,DATEDIFF(second, (LAG(TimeStamp ) OVER(PARTITION BY DatabaseName ORDER BY TimeStamp asc ) ), TimeStamp) TimeDiff
 				FROM [dbo].[DBA_RSAG_Monitoring_Lag] 
 				WHERE 1=1
 				and TimeStamp in 	
-					(SELECT DISTINCT TOP 4 TimeStamp FROM [DBA_RSAG_Monitoring_Lag] ORDER BY TimeStamp DESC)
-				
+					(SELECT DISTINCT TOP 4 TimeStamp FROM [DBA_RSAG_Monitoring_Lag] ORDER BY TimeStamp DESC)				
 			) tbl
-			where 
-				sync_Lag_Sec > PrevLagDiff3
+			
+			where 			
+				sync_Lag_Sec > 15 
 			and
 				(PrevLagDiff3 > PrevLagDiff2 and PrevLagDiff2 > PrevLagDiff)	
-			and PrevLagDiff> 0			
+				
+			
 		)
 		BEGIN
 		
@@ -59,7 +61,7 @@ This SP alerts when Lag increases over 3 samples.
 			@profile_name = '<MAIL PROFILE>',
 			@recipients = '<MAIL ACCOUNTS>',
 			@body = @Messge,
-			@subject = @Subject		
+			@subject = @Subject	
 			
 
 			WHILE EXISTS
@@ -67,24 +69,26 @@ This SP alerts when Lag increases over 3 samples.
 				select 	1
 				from
 				(
-					SELECT 
+					 SELECT 
 						TimeStamp 
 						,DatabaseName
 						,sync_Lag_Sec	
-						,sync_lag_Sec - (LAG(sync_Lag_Sec) OVER(ORDER BY DatabaseName,TimeStamp asc) )	 as PrevLagDiff
-						,sync_lag_Sec - (LAG(sync_Lag_Sec, 2) OVER(ORDER BY DatabaseName,TimeStamp asc) )	 as PrevLagDiff2
-						,sync_lag_Sec - (LAG(sync_Lag_Sec, 3) OVER(ORDER BY DatabaseName,TimeStamp asc) )	 as PrevLagDiff3
-						,DATEDIFF(second, (LAG(TimeStamp ) OVER(ORDER BY DatabaseName,TimeStamp asc) ), TimeStamp) TimeDiff
+						,sync_lag_Sec - (LAG(sync_Lag_Sec) OVER(PARTITION BY DatabaseName ORDER BY TimeStamp asc) )	 as PrevLagDiff
+						,sync_lag_Sec - (LAG(sync_Lag_Sec, 2) OVER(PARTITION BY DatabaseName ORDER BY TimeStamp asc) )	 as PrevLagDiff2
+						,sync_lag_Sec - (LAG(sync_Lag_Sec, 3) OVER(PARTITION BY DatabaseName ORDER BY TimeStamp asc) )	 as PrevLagDiff3
+						,DATEDIFF(second, (LAG(TimeStamp ) OVER(PARTITION BY DatabaseName ORDER BY TimeStamp asc ) ), TimeStamp) TimeDiff
 					FROM [dbo].[DBA_RSAG_Monitoring_Lag] 
 					WHERE 1=1
 					and TimeStamp in 	
 						(SELECT DISTINCT TOP 4 TimeStamp FROM [DBA_RSAG_Monitoring_Lag] ORDER BY TimeStamp DESC)						
 				) tbl
 				where 
-					sync_Lag_Sec > PrevLagDiff3
-				and
-					(PrevLagDiff3 > PrevLagDiff2 and PrevLagDiff2 > PrevLagDiff)	
-				and PrevLagDiff> 0	
+			
+				sync_Lag_Sec > 15 
+			and
+				(PrevLagDiff3 > PrevLagDiff2 and PrevLagDiff2 > PrevLagDiff)	
+				
+			
 				
 			)
 			BEGIN			
@@ -99,4 +103,3 @@ This SP alerts when Lag increases over 3 samples.
 
 	END
 	
-GO
