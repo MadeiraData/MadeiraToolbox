@@ -8,7 +8,7 @@ FROM (SELECT CAST(target_data AS XML) target_data FROM sys.dm_xe_sessions s
 JOIN sys.dm_xe_session_targets t ON s.address = t.event_session_address
 WHERE s.name = N'AlwaysOn_health') ft
 
-DROP TABLE IF EXISTS #event_xml;
+IF OBJECT_ID('tempdb..#event_xml') IS NOT NULL DROP TABLE #event_xml;
 CREATE TABLE #event_xml ( object_name nvarchar(255), event_timestamp datetime2(3), XEData XML );
 INSERT INTO #event_xml
 SELECT object_name, XEData.value('(event/@timestamp)[1]','datetime2(3)') as event_timestamp, XEData
