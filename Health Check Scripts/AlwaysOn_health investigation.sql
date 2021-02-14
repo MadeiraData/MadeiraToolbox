@@ -56,11 +56,11 @@ FROM
 	, XEData.query('event') AS event_data
 	FROM #event_xml
 ) AS a
-OUTER APPLY
+CROSS APPLY
 (
 SELECT
 	  ObjectName = N'Availability Group ' + QUOTENAME(availability_group_name) + N' Replica ' + QUOTENAME(ISNULL(database_replica_name, availability_replica_name))
-	, Report = CONVERT(nvarchar,event_timestamp,121) + N' - Replica state changed from "' + previous_state + N'" to "' + current_state + N'"'
+	, Report = CONVERT(nvarchar,event_timestamp,121) + N' ' + QUOTENAME(object_name) + N' - Replica state changed from "' + previous_state + N'" to "' + current_state + N'"'
 WHERE object_name = 'availability_replica_state_change'
 AND current_state NOT IN ('RESOLVING_PENDING_FAILOVER', 'NOT_AVAILABLE')
  
@@ -68,7 +68,7 @@ UNION ALL
  
 SELECT
 	  ObjectName = N'Availability Group ' + QUOTENAME(availability_group_name) + N' Replica ' + QUOTENAME(ISNULL(database_replica_name, availability_replica_name))
-	, Report = CONVERT(nvarchar,event_timestamp,121) + N' - Data Movement is ' + suspend_status + ISNULL(' (' + suspend_source + N')', N'') + N': ' + ISNULL(suspend_reason, N'Reason unknown')
+	, Report = CONVERT(nvarchar,event_timestamp,121) + N' ' + QUOTENAME(object_name) + N' - Data Movement is ' + suspend_status + ISNULL(' (' + suspend_source + N')', N'') + N': ' + ISNULL(suspend_reason, N'Reason unknown')
 WHERE object_name = 'data_movement_suspend_resume'
 AND suspend_status <> 'RESUMED'
 
@@ -76,7 +76,7 @@ UNION ALL
 
 SELECT
 	  ObjectName = N'Availability Group ' + QUOTENAME(availability_group_name) + N' Replica ' + QUOTENAME(availability_replica_name)
-	, Report = CONVERT(nvarchar,event_timestamp,121) + N' - Replica state changed from "' + previous_state + N'" to "' + current_state + N'"'
+	, Report = CONVERT(nvarchar,event_timestamp,121) + N' ' + QUOTENAME(object_name) + N' - Replica state changed from "' + previous_state + N'" to "' + current_state + N'"'
 WHERE object_name = 'availability_replica_state_change'
 AND current_state = 'RESOLVING_PENDING_FAILOVER'
  
@@ -84,14 +84,14 @@ UNION ALL
  
 SELECT
 	  ObjectName = N'Availability Group ' + QUOTENAME(availability_group_name)
-	, Report = CONVERT(nvarchar,event_timestamp,121) + N' - AG lease expired (connectivity between the AG and the underlying WSFC cluster is broken)'
+	, Report = CONVERT(nvarchar,event_timestamp,121) + N' ' + QUOTENAME(object_name) + N' - AG lease expired (connectivity between the AG and the underlying WSFC cluster is broken)'
 WHERE object_name = 'availability_group_lease_expired'
 
 UNION ALL
 
 SELECT
 	  ObjectName = N'Availability Replica Manager'
-	, Report = CONVERT(nvarchar,event_timestamp,121) + N' - Manager State is OFFLINE'
+	, Report = CONVERT(nvarchar,event_timestamp,121) + N' ' + QUOTENAME(object_name) + N' - Manager State is OFFLINE'
 WHERE object_name = 'availability_replica_manager_state_change'
 AND current_state = 'Offline'
 
@@ -99,7 +99,7 @@ UNION ALL
 
 SELECT
 	  ObjectName = N'Availability Group ' + QUOTENAME(availability_group_name) + N' Replica ' + QUOTENAME(availability_replica_name)
-	, Report = CONVERT(nvarchar,event_timestamp,121) + N' - Replica state changed from "' + previous_state + N'" to "' + current_state + N'"'
+	, Report = CONVERT(nvarchar,event_timestamp,121) + N' ' + QUOTENAME(object_name) + N' - Replica state changed from "' + previous_state + N'" to "' + current_state + N'"'
 WHERE object_name = 'availability_replica_state_change'
 AND current_state ='NOT_AVAILABLE'
  
@@ -107,7 +107,7 @@ UNION ALL
  
 SELECT
 	  ObjectName = N'Availability Group ' + QUOTENAME(availability_group_name) + N' Replica ' + QUOTENAME(availability_replica_name)
-	, Report = CONVERT(nvarchar,event_timestamp,121) + N' - Failover Validation Failed:'
+	, Report = CONVERT(nvarchar,event_timestamp,121) + N' ' + QUOTENAME(object_name) + N' - Failover Validation Failed:'
 		+ CASE WHEN forced_quorum = 'TRUE' THEN N' Forced Quorum;' ELSE N'' END
 		+ CASE WHEN joined_and_synchronized = 'FALSE' THEN N' Not joined and synchronized;' ELSE N'' END
 		+ CASE WHEN previous_primary_or_automatic_failover_target = 'FALSE' THEN N' Not previous Primary or Automatic Failover Target;' ELSE N'' END
@@ -123,9 +123,10 @@ UNION ALL
  
 SELECT
 	  ObjectName = N'Availability Group Error'
-	, Report = CONVERT(nvarchar,event_timestamp,121) + N' - Error ' + CONVERT(nvarchar, errnumber) + N': ' + errmessage
+	, Report = CONVERT(nvarchar,event_timestamp,121) + N' ' + QUOTENAME(object_name) + N' - Error ' + CONVERT(nvarchar, errnumber) + N', Severity ' + CONVERT(nvarchar,errseverity) + N': ' + errmessage
 WHERE object_name = 'error_reported'
 AND errseverity >= 10
+AND errnumber NOT IN (35202)
 
 UNION ALL
  
