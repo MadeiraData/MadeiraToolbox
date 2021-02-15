@@ -4,7 +4,7 @@ Description:	Display general information about the SQL Server instance and the h
 Scope:			Instance
 Author:			Guy Glantser
 Created:		09/09/2020
-Last Updated:	29/12/2020
+Last Updated:	15/02/2021
 Notes:			N/A
 
 =========================================================================================================================*/
@@ -30,11 +30,15 @@ SELECT
 	IsClustered					= SERVERPROPERTY ('IsClustered') ,
 	IsHadrEnabled				= SERVERPROPERTY ('IsHadrEnabled') ,											-- Applies to: SQL Server 2012 (11.x) and later
 	HadrManagerStatus			=																				-- Applies to: SQL Server 2012 (11.x) and later
-		CASE SERVERPROPERTY ('HadrManagerStatus')
-			WHEN 0	THEN N'Not Started, Pending Communication'
-			WHEN 1	THEN N'Started and Running'
-			WHEN 2	THEN N'Not Started and Failed'
-			ELSE N'Not Applicable'
+		CASE WHEN SERVERPROPERTY ('IsHadrEnabled') = 0
+			THEN N'Not Applicable'
+			ELSE
+			CASE SERVERPROPERTY ('HadrManagerStatus')
+				WHEN 0	THEN N'Not Started, Pending Communication'
+				WHEN 1	THEN N'Started and Running'
+				WHEN 2	THEN N'Not Started and Failed'
+				ELSE N'Not Applicable'
+			END
 		END ,
 	HostPlatform				= HostInfo.host_distribution ,													-- Applies to: SQL Server 2017 (14.x) and later
 	VirtualizationType			= SystemInfo.virtual_machine_type_desc ,										-- Applies to: SQL Server 2008 R2 and later
