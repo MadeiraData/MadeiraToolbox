@@ -21,6 +21,7 @@
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2021-02-15	Added details and logic based on index used pages count
 -- 2020-11-25	Various improvements:
 --			- Changed recommendations prioritization - gave higher priority to most SELECTIVE column
 --			- Added parameter @RetainHighestCompression to retain DATA_COMPRESSION settings in scripts
@@ -78,8 +79,10 @@ CREATE TABLE #temp_heap
         table_name NVARCHAR(MAX),
         full_table_name NVARCHAR(MAX),
 	num_of_rows INT NULL,
+	heap_used_pages INT NULL,
 	[object_id] INT,
         candidate_index SYSNAME NULL,
+	candidate_index_used_pages INT NULL,
 	candidate_columns_from_existing_index NVARCHAR(MAX) NULL,
 	include_columns_from_existing_index NVARCHAR(MAX) NULL,
 	candidate_columns_from_missing_index NVARCHAR(MAX) NULL,
@@ -96,27 +99,43 @@ CREATE TABLE #temp_heap
 
 SET @CMD = N'
  SELECT DB_NAME() as DatabaseName, t.object_id, OBJECT_NAME(t.object_id) AS table_name, QUOTENAME(OBJECT_SCHEMA_NAME(t.object_id)) + ''.'' + QUOTENAME(OBJECT_NAME(t.object_id)) AS FullTableName
- , SUM(p.rows)
+ , p.total_rows
+ , p.total_used_page_count
  , QUOTENAME(ix.name) AS CandidateIndexName
+ , ix.total_used_page_count
  , ix_columns
  , inc_columns
  , ix.is_unique
- , data_compression_type = MAX(p.data_compression)
+ , p.max_data_compression
  FROM sys.tables t
- INNER JOIN sys.partitions p
- ON t.object_id = p.OBJECT_ID
+ CROSS APPLY
+ (
+	SELECT SUM(p.rows) AS total_rows, MAX(p.data_compression) AS max_data_compression, SUM(ps.used_page_count) AS total_used_page_count
+	FROM sys.partitions AS p
+	INNER JOIN sys.dm_db_partition_stats AS ps
+	ON ps.index_id = p.index_id AND ps.object_id = p.object_id AND p.partition_id = ps.partition_id
+	WHERE t.object_id = p.OBJECT_ID
+	AND p.index_id = 0
+	' + ISNULL(N'HAVING SUM(p.rows) >= ' + CONVERT(nvarchar,@MinimumRowsInTable), N'') + N'
+ ) AS p
  OUTER APPLY
  (
-	SELECT TOP 1 us.index_id, ix.[name], ix.is_unique
+	SELECT TOP 1 us.index_id, ix.[name], ix.is_unique, pstat.total_used_page_count
 	FROM sys.dm_db_index_usage_stats AS us
 	INNER JOIN sys.indexes AS ix
 	ON us.index_id = ix.index_id AND us.object_id = ix.object_id
+	CROSS APPLY
+	(
+		SELECT SUM(used_page_count) AS total_used_page_count
+		FROM sys.dm_db_partition_stats AS ps
+		WHERE ps.index_id = ix.index_id AND ps.object_id = ix.object_id
+	) AS pstat
 	WHERE us.database_id = DB_ID()
 	AND us.object_id = t.object_id
 	AND ix.index_id > 1
 	AND ix.is_hypothetical = 0
 	AND ix.type <= 2
-	ORDER BY CONVERT(tinyint, ix.is_unique) DESC, us.user_updates DESC, us.user_scans DESC, us.user_seeks DESC
+	ORDER BY CONVERT(tinyint, ix.is_unique) DESC, pstat.total_used_page_count ASC, us.user_updates DESC, us.user_scans DESC, us.user_seeks DESC
  ) AS ix
  OUTER APPLY
  (SELECT ix_columns = STUFF((
@@ -134,19 +153,16 @@ SET @CMD = N'
 				FOR XML PATH('''')
 			), 1, 2, '''')
 ) AS ixcolumns
- WHERE p.index_id = 0
- AND t.is_ms_shipped = 0
+ WHERE t.is_ms_shipped = 0
  AND t.OBJECT_ID > 255'
  -- Ignore memory-optimized tables in SQL Server versions 2014 and newer
  + CASE WHEN CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 12 THEN N'
  AND t.is_memory_optimized = 0'
- ELSE N'' END + N'
- GROUP BY t.object_id, ix.name, ix.is_unique, ix_columns, inc_columns
- ' + ISNULL(N'HAVING SUM(p.rows) >= ' + CONVERT(nvarchar,@MinimumRowsInTable), N'')
+ ELSE N'' END
  
 IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) = 'SQL Azure'
 BEGIN
-	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, data_compression_type)
+	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, heap_used_pages, candidate_index, candidate_index_used_pages, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, data_compression_type)
 	exec (@CMD)
 END
 ELSE
@@ -168,7 +184,7 @@ BEGIN
 	BEGIN
 		SET @Executor = QUOTENAME(@CurrDB) + N'..sp_executesql'
 
-		INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, candidate_index, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, data_compression_type)
+		INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, heap_used_pages, candidate_index, candidate_index_used_pages, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, data_compression_type)
 		EXEC @Executor @CMD
 
 		FETCH NEXT FROM DBs INTO @CurrDB
