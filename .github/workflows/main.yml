@@ -34,7 +34,7 @@ jobs:
           done
       # Send e-mail about changed files
       - name: Announcerr
-        uses: singhkshitij/announcerr@v2
+        uses: singhkshitij/announcerr@v2.0
         if: ${{ steps.files.outputs.added != null && steps.files.outputs.added != '' }}
         with:
           server_address: ${{secrets.MAIL_SERVER}}
