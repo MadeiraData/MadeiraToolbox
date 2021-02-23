@@ -21,13 +21,31 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
-      # Runs a single command using the runners shell
+      # Get list of changed files
       - id: files
         uses: InfraWay/get-changed-files@v2.0
         with:
           format: 'csv'
+      # Use a simple runner to output added files
       - run: |
           mapfile -d ',' -t added_files < <(printf '%s,' '${{ steps.files.outputs.added }}')
           for added_file in "${added_files[@]}"; do
             echo "New file: ${added_file}."
           done
+      # Send e-mail about changed files
+      - name: Announcerr
+        uses: singhkshitij/announcerr@v2
+        if: ${{ steps.files.outputs.added != null && steps.files.outputs.added != '' }}
+        with:
+          server_address: ${{secrets.MAIL_SERVER}}
+          server_port: ${{secrets.MAIL_PORT}}
+          username: ${{secrets.MAIL_USER}}
+          password: ${{secrets.MAIL_PASSWORD}}
+          to: ${{secrets.MAIL_RECIPIENTS}}
+          from: ${{secrets.MAIL_FROM}}
+          subject: New push to MadeiraToolbox
+          body: New commit(s) were pushed into repository ${{github.repository}} ! <br/> Added files below<br/>${{ steps.files.outputs.added }}<br/><br/>All files below<br/>${{ steps.files.outputs.all }}
+          # Optional content type (defaults to text/plain):
+          content_type: text/html
+          # Optional attachments:
+          # attachments: attachments.zip,git.diff,./dist/static/main.js
