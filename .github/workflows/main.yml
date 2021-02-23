@@ -27,7 +27,9 @@ jobs:
         with:
           format: 'csv'
       # Use a simple runner to output added files
-      - run: |
+      - id: added_files_list
+        run: |
+          ::set-output name=addedfiles::
           mapfile -d ',' -t added_files < <(printf '%s,' '${{ steps.files.outputs.added }}')
           for added_file in "${added_files[@]}"; do
             echo "New file: ${added_file}."
@@ -44,7 +46,7 @@ jobs:
           to: ${{secrets.MAIL_RECIPIENTS}}
           from: ${{secrets.MAIL_FROM}}
           subject: New push to MadeiraToolbox
-          body: New commit(s) were pushed into repository ${{github.repository}} ! <br/> Added files below<br/>${{ steps.files.outputs.added }}<br/><br/>All files below<br/>${{ steps.files.outputs.all }}
+          body: New commit(s) were pushed into repository ${{github.repository}} ! <br/> Added files below<br/>${{ steps.files.outputs.added }}<br/><br/>All files below<br/>${{ steps.files.outputs.all }}<br/>Test output:${{ steps.added_files_list.outputs.addedfiles }}
           # Optional content type (defaults to text/plain):
           content_type: text/html
           # Optional attachments:
