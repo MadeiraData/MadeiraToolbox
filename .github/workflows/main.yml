@@ -29,10 +29,10 @@ jobs:
       # Use a simple runner to output added files
       - id: added_files_list
         run: |
-          ::set-output name=addedfiles::
+          echo "::set-output name=addedfiles::"
           mapfile -d ',' -t added_files < <(printf '%s,' '${{ steps.files.outputs.added }}')
           for added_file in "${added_files[@]}"; do
-            echo "New file: ${added_file}."
+            echo "<br/>New file: <b>${added_file}</b>"
           done
       # Send e-mail about changed files
       - name: Announcerr
