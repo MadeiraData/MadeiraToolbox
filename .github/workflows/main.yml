@@ -24,9 +24,6 @@ jobs:
       # Runs a single command using the runners shell
       - name: Get Git Changed Files
         uses: InfraWay/get-changed-files@v2.0
-        
-      - id: files
-        uses: jitterbit/get-changed-files@v1
         with:
           format: 'csv'
       - run: |
