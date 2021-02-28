@@ -23,6 +23,8 @@ FETCH NEXT FROM Cur INTO @CurrTable, @CurrCol, @LastValue
 
 WHILE @@FETCH_STATUS = 0
 BEGIN
+	SET @Result = NULL;
+	
 	SET @CMD = N'
 	SELECT @pResult = N''DBCC CHECKIDENT(''''' + @CurrTable + N''''', RESEED, '' + CONVERT(nvarchar(max), MAX(' + QUOTENAME(@CurrCol) + N')) + N'') -- ' + CONVERT(nvarchar(max), @LastValue) + N'''
 	FROM ' + @CurrTable + N'
