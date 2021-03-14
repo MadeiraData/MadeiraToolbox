@@ -6,6 +6,4 @@ This folder contains the following documents:
 - [Server Configuration Checklist](Server%20Configuration%20Checklist.md)
 - [Tuning Checklist](Tuning%20Checklist.md)
 
-And the following script(s):
-
-- [Max Memory Recommendation.sql](Max%20Memory%20Recommendation.sql)
+And an assortment of best-practice checks for SQL Server instances.
