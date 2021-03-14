@@ -1,0 +1,1178 @@
+
+/****** Object:  Table [dbo].[DBA_AG_Configurations] ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+SET ANSI_PADDING ON
+GO
+CREATE TABLE [dbo].[DBA_AG_Configurations](
+	[SPName] [sysname] NOT NULL,
+	[ConfigName] [varchar](100) NULL,
+	[Threshold] [varchar](20) NULL
+) ON [PRIMARY]
+GO
+SET ANSI_PADDING OFF
+GO
+/****** Object:  Table [dbo].[DBA_AG_Monitoring_Lag]   ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[DBA_AG_Monitoring_Lag](
+	[TimeStamp] [datetime2](7) NULL,
+	[DatabaseName] [nvarchar](128) NULL,
+	[primary_replica] [nvarchar](256) NULL,
+	[secondary_replica] [nvarchar](256) NULL,
+	[PrimaryState] [nvarchar](60) NULL,
+	[SecondaryState] [nvarchar](60) NULL,
+	[Plast_commit_time] [datetime2](3) NULL,
+	[Slast_commit_time] [datetime2](3) NULL,
+	[sync_lag_Sec] [int] NULL
+) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_CL_TimeStamp]******/
+CREATE CLUSTERED INDEX [IX_CL_TimeStamp] ON [dbo].[DBA_AG_Monitoring_Lag]
+(
+	[TimeStamp] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[DBA_AG_Monitoring_State] ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+SET ANSI_PADDING ON
+GO
+CREATE TABLE [dbo].[DBA_AG_Monitoring_State](
+	[TimeStamp] [datetime2](7) NULL,
+	[SourceMonitor] [varchar](50) NULL,
+	[replica_server_name] [nvarchar](256) NULL,
+	[ag_name] [sysname] NOT NULL,
+	[database_name] [sysname] NOT NULL,
+	[is_local] [bit] NULL,
+	[is_primary_replica] [bit] NULL,
+	[synchronization_state_desc] [nvarchar](60) NULL,
+	[is_commit_participant] [bit] NULL,
+	[synchronization_health_desc] [nvarchar](60) NULL,
+	[is_suspended] [bit] NULL,
+	[recovery_lsn] [numeric](25, 0) NULL,
+	[truncation_lsn] [numeric](25, 0) NULL
+) ON [PRIMARY]
+GO
+SET ANSI_PADDING OFF
+GO
+/****** Object:  Index [IX_CL_TimeStamp] ******/
+CREATE CLUSTERED INDEX [IX_CL_TimeStamp] ON [dbo].[DBA_AG_Monitoring_State]
+(
+	[TimeStamp] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[DBA_AG_Monitoring_SyncRate] ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[DBA_AG_Monitoring_SyncRate](
+	[TimeStamp] [datetime2](7) NULL,
+	[replica_server_name] [nvarchar](256) NULL,
+	[role_desc] [nvarchar](60) NULL,
+	[DBName] [nvarchar](128) NULL,
+	[log_send_queue_size_KB] [decimal](19, 2) NULL,
+	[log_KB_flushed_One_Sec] [int] NULL
+) ON [PRIMARY]
+GO
+/****** Object:  Index [IX_CL_TimeStamp]  ******/
+CREATE CLUSTERED INDEX [IX_CL_TimeStamp] ON [dbo].[DBA_AG_Monitoring_SyncRate]
+(
+	[TimeStamp] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[DBA_AG_RequestsMonitor]  ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+SET ANSI_PADDING ON
+GO
+CREATE TABLE [dbo].[DBA_AG_RequestsMonitor](
+	[Timestamp] [datetime] NULL,
+	[SourceMonitor] [varchar](20) NULL,
+	[SourceTbl] [varchar](8) NULL,
+	[session_id] [smallint] NULL,
+	[blocking_session_id] [smallint] NULL,
+	[database_name] [nvarchar](128) NULL,
+	[status] [nvarchar](30) NULL,
+	[start_time] [datetime] NULL,
+	[last_request_end_time] [datetime] NULL,
+	[Duration] [int] NULL,
+	[cpu_time] [int] NULL,
+	[command] [nvarchar](32) NULL,
+	[open_transaction_count] [int] NULL,
+	[logical_reads] [bigint] NULL,
+	[reads] [bigint] NULL,
+	[writes] [bigint] NULL,
+	[percent_complete] [real] NULL,
+	[wait_type] [nvarchar](60) NULL,
+	[last_wait_type] [nvarchar](60) NULL,
+	[login_name] [nvarchar](128) NULL,
+	[program_name] [nvarchar](128) NULL,
+	[InnerText] [nvarchar](max) NULL,
+	[text] [nvarchar](max) NULL
+) ON [PRIMARY] 
+GO
+SET ANSI_PADDING OFF
+GO
+/****** Object:  Index [IX_CL_TimeStamp] ******/
+CREATE CLUSTERED INDEX [IX_CL_TimeStamp] ON [dbo].[DBA_AG_RequestsMonitor]
+(
+	[Timestamp] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[DBA_AG_RequestsMonitor] ADD  DEFAULT (getdate()) FOR [Timestamp]
+GO
+
+
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_CleanMonitoring', N'@DaysToKeep', N'14')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_CleanMonitoring', N'@BatchSize', N'20000')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_Collect_Lags', N'@WhileLoop', N'360')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_CleanMonitoring', N'@WaitFor', N'00:00:02')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_CollectMonitoring_SyncRate', N'@WhileLoop', N'360')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_CollectMonitoring_SyncRate', N'@WaitRate', N'00:00:01')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_CollectMonitoring_SyncRate', N'@WaitIteration', N'00:00:04')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_IncreasingLagAlert', N'@WhileLoop', N'360')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_IncreasingLagAlert', N'@WaitLag', N'00:00:05')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_StateChangeAlert', N'@WhileLoop', N'360')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_StateChangeAlert', N'@WaitState1', N'00:00:01')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_StateChangeAlert', N'@WaitState2', N'00:00:10')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_StateChangeAlert', N'@WaitStateCycle', N'00:00:05')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_StateChangeAlert', N'@PrimaryDBName', N'Main_DB_Name')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_SyncLagAlert', N'@WhileLoop', N'360')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_SyncLagAlert', N'@Lag', N'45')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_SyncLagAlert', N'@WaitFor', N'00:00:05')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_SyncLagAlert', N'@PrimaryDBName', N'Main_DB_Name')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'sp_DBA_AG_IncreasingLagAlert', N'@PrimaryDBName', N'Main_DB_Name')
+GO
+INSERT [dbo].[DBA_AG_Configurations] ([SPName], [ConfigName], [Threshold]) VALUES (N'GeneralBreakLoop', N'@LoopTimeoutSeconds', N'600')
+GO
+
+
+
+
+
+
+/****** Object:  UserDefinedFunction [dbo].[fn_DBA_AG_isMainenanceNow]  ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE FUNCTION [dbo].[fn_DBA_AG_isMainenanceNow]
+()
+RETURNS BIT
+AS 
+BEGIN
+    RETURN 	
+	(SELECT MAX(cmd) AS bool
+	FROM
+	(
+		SELECT 1 cmd FROM sys.dm_exec_requests WHERE command  like 'ALTER INDEX' OR command LIKE 'UPDATE STATISTICS'
+		UNION ALL
+		SELECT 0 cmd
+	)tbl )
+END;
+GO
+/****** Object:  StoredProcedure [dbo].[sp_DBA_AG_CleanMonitoring]  ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+/*
+Author:		Reut & Sagi @Madeira
+Date:		Dec 2020
+Desc:		
+*/
+CREATE       PROCEDURE [dbo].[sp_DBA_AG_CleanMonitoring]
+
+AS
+	
+	SET NOCOUNT ON;
+
+	DECLARE @BatchSize INT,
+			@DaysToKeep SMALLINT
+	
+	SELECT	@BatchSize =	CAST(Threshold AS INT) 	FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_CleanMonitoring' AND ConfigName='@BatchSize'
+	SELECT	@DaysToKeep =	CAST(Threshold AS INT) 	FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_CleanMonitoring' AND ConfigName='@DaysToKeep'
+
+	
+	IF @DaysToKeep IS NULL
+	BEGIN
+		RAISERROR ('Must declare number of days to keep in table dbo.DBA_AG_Configurations', 16,1)
+		
+	END
+
+	
+	DECLARE @Rows INT,	@CutOffDate DATETIME		
+	SELECT @CutOffDate = DATEADD(DAY,-@DaysToKeep,GETDATE())
+
+
+	IF NOT EXISTS 
+	(	
+		SELECT 1 FROM dbo.DBA_AG_Monitoring_State 
+		WHERE TimeStamp <= DATEADD(DAY,-(@DaysToKeep),GETDATE())
+	)
+	BEGIN
+		RAISERROR ('DBA_AG_Monitoring_State - No records to delete', 1,1)	
+		
+	END
+	ELSE
+	BEGIN			
+		SET @Rows = 1	
+				
+		WHILE @Rows > 0
+		BEGIN
+					
+				DELETE TOP (@BatchSize)
+				FROM dbo.DBA_AG_Monitoring_State
+				WHERE TimeStamp <= @CutOffDate		
+				SET @Rows = @@ROWCOUNT;
+			
+		END
+	END
+
+
+
+	IF NOT EXISTS 
+	(	
+		SELECT 1 FROM dbo.DBA_AG_Monitoring_SyncRate 
+		WHERE TimeStamp <= DATEADD(DAY,-(@DaysToKeep),GETDATE())
+	)
+	BEGIN
+		RAISERROR ('DBA_AG_Monitoring_SyncRate - No records to delete', 1,1)	
+		
+	END
+	ELSE
+	BEGIN			
+		SET @Rows = 1		
+				
+		WHILE @Rows > 0
+		BEGIN
+					
+				DELETE TOP (@BatchSize)
+				FROM dbo.DBA_AG_Monitoring_SyncRate 
+				WHERE TimeStamp <= @CutOffDate		
+				SET @Rows = @@ROWCOUNT;
+			
+		END
+	END
+	IF NOT EXISTS 
+	(	
+		SELECT 1 FROM dbo.DBA_AG_Monitoring_Lag 
+		WHERE TimeStamp <= DATEADD(DAY,-(@DaysToKeep),GETDATE())
+	)
+	BEGIN
+		RAISERROR ('DBA_AG_Monitoring_Lag - No records to delete', 1,1)	
+		
+	END
+	ELSE
+	BEGIN			
+		SET @Rows = 1		
+				
+		WHILE @Rows > 0
+		BEGIN
+					
+				DELETE TOP (@BatchSize)
+				FROM dbo.DBA_AG_Monitoring_Lag 
+				WHERE TimeStamp <= @CutOffDate		
+				SET @Rows = @@ROWCOUNT;
+			
+		END
+	END
+	IF NOT EXISTS 
+	(	
+		SELECT 1 FROM dbo.DBA_AG_RequestsMonitor 
+		WHERE TimeStamp <= DATEADD(DAY,-(@DaysToKeep),GETDATE())
+	)
+	BEGIN
+		RAISERROR ('DBA_AG_RequestsMonitor - No records to delete', 1,1)	
+		
+	END
+	ELSE
+	BEGIN			
+		SET @Rows = 1		
+				
+		WHILE @Rows > 0
+		BEGIN
+					
+				DELETE TOP (@BatchSize)
+				FROM dbo.DBA_AG_RequestsMonitor 
+				WHERE TimeStamp <= @CutOffDate		
+				SET @Rows = @@ROWCOUNT;
+			
+		END
+	END
+
+
+
+GO
+/****** Object:  StoredProcedure [dbo].[sp_DBA_AG_Collect_Lags]  ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+/*
+Author:		Sagi Amichai @ Madeira
+Date:		Jan 2021
+Desc:		A procedure used by AG monitoring procedure to document Lags
+*/
+CREATE    PROCEDURE [dbo].[sp_DBA_AG_Collect_Lags] 
+AS
+
+
+
+DECLARE @i			TINYINT = 1,
+		@WhileLoop	INT,
+		@WaitFor	VARCHAR(20)
+
+SELECT	@WhileLoop =	CAST(Threshold AS INT) 	FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_Collect_Lags' AND ConfigName='@WhileLoop'
+SELECT	@WaitFor =		Threshold 				FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_Collect_Lags' AND ConfigName='@WaitFor'
+
+
+
+WHILE @i< = @WhileLoop
+BEGIN	
+	
+	DROP TABLE IF EXISTS #Pri_CommitTime
+	DROP TABLE IF EXISTS #Sec_CommitTime
+	SELECT
+		AR.replica_server_name,
+		HARS.role_desc, 
+		Db_name(DRS.database_id) [DBName], 
+		DRS.last_commit_time,
+		synchronization_state_desc
+	into #Pri_CommitTime
+	FROM   sys.dm_hadr_database_replica_states DRS 
+	INNER JOIN sys.availability_replicas AR
+	ON	DRS.replica_id = AR.replica_id 
+	INNER JOIN sys.dm_hadr_availability_replica_states HARS 
+	ON AR.group_id = HARS.group_id AND AR.replica_id = HARS.replica_id 
+	WHERE	role_desc = 'PRIMARY'
+	
+	WAITFOR DELAY '00:00:02'
+
+	SELECT
+		AR.replica_server_name,			
+		Db_name(DRS.database_id) [DBName], 
+		DRS.last_commit_time,
+		synchronization_state_desc
+	into #Sec_CommitTime
+	FROM   sys.dm_hadr_database_replica_states DRS 
+	INNER JOIN sys.availability_replicas AR
+	ON	DRS.replica_id = AR.replica_id 
+	INNER JOIN sys.dm_hadr_availability_replica_states HARS 
+	ON AR.group_id = HARS.group_id AND AR.replica_id = HARS.replica_id 
+	WHERE	role_desc = 'SECONDARY'
+
+	
+	INSERT INTO [dbo].[DBA_AG_Monitoring_Lag] 
+	([TimeStamp], [DatabaseName], [primary_replica], [secondary_replica], [PrimaryState], [SecondaryState], [sync_lag_Sec],Plast_commit_time, Slast_commit_time)
+
+	SELECT	getdate()  as timestamp
+			,p.[DBName] AS [DatabaseName]
+			,p.replica_server_name [primary_replica]
+			,s.replica_server_name [secondary_replica]
+			,p.synchronization_state_desc as PrimaryState
+			,s.synchronization_state_desc as SecondaryState
+			,DATEDIFF(
+				ss,
+				
+				--CASE	WHEN s.last_commit_time>= mx.Time THEN DATEADD(ss,-1,s.last_commit_time )
+				--		WHEN s.last_commit_time<= mx.Time THEN DATEADD(ss,-1,s.last_commit_time )
+				--		ELSE	p.last_commit_time
+				--END	
+				
+				
+				--DATEADD(ss, -2,
+				--		(CASE	WHEN s.last_commit_time>= mx.Time	THEN s.last_commit_time
+				--				WHEN s.last_commit_time < mx.Time	THEN s.last_commit_time 
+				--		ELSE /*when its null*/						DATEADD(ss, +2, p.last_commit_time) END)
+				--		)
+
+
+				CASE	WHEN DATEADD(ss,-2,s.last_commit_time )>= p.last_commit_time THEN p.last_commit_time
+						WHEN DATEADD(ss,-2,s.last_commit_time )>= mx.Time THEN DATEADD(ss,-2,s.last_commit_time )
+						WHEN DATEADD(ss,-2,s.last_commit_time )<= mx.Time THEN mx.Time						
+						ELSE	p.last_commit_time
+				END	
+						
+				,
+				p.last_commit_time)				AS [Sync_Lag_Sec]	
+			,p.last_commit_time					as Plast_commit_time			
+			,DATEADD(ss,-2,s.last_commit_time ) as Slast_commit_time			
+	FROM 
+		#Pri_CommitTime p
+	LEFT JOIN 
+		#Sec_CommitTime s 
+	ON [s].[DBName] = [p].[DBName] 	
+	LEFT JOIN 
+	(		
+		SELECT DatabaseName, MAX(Slast_commit_time) Time 
+		FROM [dbo].[DBA_AG_Monitoring_Lag]  
+		GROUP BY DatabaseName		
+	) mx
+	ON mx.DatabaseName = S.DBName and s.last_commit_time >= mx.Time
+
+	
+	DROP TABLE IF EXISTS #Pri_CommitTime
+	DROP TABLE IF EXISTS #Sec_CommitTime
+
+	WAITFOR DELAY @WaitFor
+
+	SET @i+=1
+
+END
+GO
+/****** Object:  StoredProcedure [dbo].[sp_DBA_AG_CollectMonitoring_Requests]  ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+/*
+Author:		Sagi Amichai @ Madeira
+Date:		Dec 2020
+Desc:		A procedure used by AG monitoring procedure to document requests and sessions current status
+*/
+CREATE   PROCEDURE [dbo].[sp_DBA_AG_CollectMonitoring_Requests] 
+	(@SourceMonitor varchar(50))
+AS
+BEGIN
+
+	INSERT INTO [dbo].[DBA_AG_RequestsMonitor] 
+		([SourceTbl], [session_id], [blocking_session_id], [database_name], [status], [start_time], [last_request_end_time], [Duration], 
+		[cpu_time], [command], [open_transaction_count], [logical_reads], [reads], [writes], [percent_complete], [wait_type], [last_wait_type], 
+		[login_name], [program_name], [InnerText], [text], [SourceMonitor])			
+	SELECT 
+		'REQUESTS' SourceTbl,	der.session_id,		der.blocking_session_id,		db_name(der.database_id) as database_name,
+		der.status,				der.start_time,		des.last_request_end_time,		DATEDIFF(second, der.start_time, getdate()) Duration,	
+		des.cpu_time,			der.command,		des.open_transaction_count,	der.logical_reads,
+		der.reads,				der.writes,			der.percent_complete,			der.wait_type,
+		der.last_wait_type,		des.login_name,	des.program_name,
+		SUBSTRING(t.text, der.statement_start_offset / 2, CASE WHEN der.statement_end_offset > 0 THEN (der.statement_end_offset - der.statement_start_offset) / 2 ELSE LEN(t.text) END) InnerText,
+		t.text,					@SourceMonitor
+	FROM 
+		sys.dm_exec_requests der
+	INNER JOIN 
+		sys.dm_Exec_sessions des
+	ON 
+		der.session_id=des.session_id
+	CROSS APPLY 
+		sys.dm_exec_sql_text(der.sql_handle) t
+	where der.session_id>50			
+		
+		UNION ALL	
+		
+	SELECT 
+		'SESSIONS' SourceTbl,	session_id,			NULL,							db_name(database_id) as database_name,
+		status,					login_time,			last_request_end_time,			DATEDIFF(second, login_time, getdate()) Duration,	
+		cpu_time,				NULL,				open_transaction_count,			logical_reads,
+		reads,					writes,				NULL,							NULL,
+		NULL,					login_name,			program_name,					NULL,
+		NULL,					@SourceMonitor
+	FROM 
+		sys.dm_exec_sessions 
+	WHERE 
+		session_id not in (select session_id from sys.dm_exec_requests)
+	AND 
+		session_id>50	
+	ORDER BY SourceTbl, session_id
+	
+END		
+GO
+/****** Object:  StoredProcedure [dbo].[sp_DBA_AG_CollectMonitoring_SyncRate]******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+/*
+Author:	Sagi Amichai @Madeira
+Date:	Dec 2020
+Desc:	A monitoring made for AG, measuring syncing rate.
+
+*/
+
+CREATE      PROCEDURE [dbo].[sp_DBA_AG_CollectMonitoring_SyncRate]
+AS
+
+
+	--#######################################--
+	--### MONITORING SYNCING RATE PER SEC ###--
+	--#######################################--
+	
+declare @iteration int = 0
+
+WHILE @iteration  < 600
+BEGIN
+	
+	DROP TABLE IF EXISTS #FirstSample
+	
+	
+	SELECT 
+		AR.replica_server_name,
+		HARS.role_desc, 
+		Db_name(DRS.database_id) [DBName], 
+		CAST(DRS.log_send_queue_size AS DECIMAL(19,2)) log_send_queue_size_KB, 		  
+		CAST(perf.cntr_value AS DECIMAL(19,2)) log_KB_flushed
+	
+	into #FirstSample
+	
+	FROM   
+		sys.dm_hadr_database_replica_states DRS 
+	INNER JOIN 
+		sys.availability_replicas AR 
+	ON	DRS.replica_id = AR.replica_id 
+	INNER JOIN 
+		sys.dm_hadr_availability_replica_states HARS 
+	ON	AR.group_id = HARS.group_id 
+		AND AR.replica_id = HARS.replica_id 	
+	INNER JOIN 
+		sys.dm_os_performance_counters perf 
+	ON	perf.instance_name = Db_name(DRS.database_id) AND perf.counter_name like 'Log Bytes Flushed/sec%'
+	
+	waitfor delay '00:00:01'
+	
+	INSERT INTO [dbo].[DBA_AG_Monitoring_SyncRate] 
+	([TimeStamp], [replica_server_name], [role_desc], [DBName], [log_send_queue_size_KB], [log_KB_flushed_One_Sec])
+	Select 
+		SYSDATETIME() as TimeStamp,
+		SecondSample.replica_server_name, 
+		SecondSample.role_desc, SecondSample.DBName, 
+		SecondSample.log_send_queue_size_KB , 
+		cast(CAST((SecondSample.log_KB_flushed - t.log_KB_flushed)AS DECIMAL(19,2))/ CAST(1024 AS DECIMAL(19,2)) as int)as log_KB_flushed_One_Sec
+	from 
+	(
+		SELECT 
+			AR.replica_server_name,
+			HARS.role_desc, 
+			Db_name(DRS.database_id) [DBName], 
+			CAST(DRS.log_send_queue_size AS DECIMAL(19,2)) log_send_queue_size_KB, 	   
+			CAST(perf.cntr_value AS DECIMAL(19,2)) log_KB_flushed
+		FROM   
+			sys.dm_hadr_database_replica_states DRS 
+		INNER JOIN 
+			sys.availability_replicas AR 
+		ON	DRS.replica_id = AR.replica_id 
+		INNER JOIN 
+			sys.dm_hadr_availability_replica_states HARS 
+		ON	AR.group_id = HARS.group_id AND AR.replica_id = HARS.replica_id 	
+		INNER JOIN 
+			sys.dm_os_performance_counters perf 
+		ON	perf.instance_name = Db_name(DRS.database_id) AND perf.counter_name like 'Log Bytes Flushed/sec%'
+	) SecondSample
+	INNER JOIN 
+		#FirstSample t 
+	ON	SecondSample.replica_server_name = t.replica_server_name and SecondSample.role_desc = t.role_desc and SecondSample.DBName = t.DBName
+	
+	
+	DROP TABLE IF EXISTS #FirstSample
+	
+	waitfor delay '00:00:03'
+	SET @iteration = @iteration +1
+END
+GO
+/****** Object:  StoredProcedure [dbo].[sp_DBA_AG_IncreasingLagAlert]  ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE    PROCEDURE [dbo].[sp_DBA_AG_IncreasingLagAlert]
+AS
+
+/*
+Author:		Sagi Amichai @Madeira
+Date:		Dec 2020
+Desc:
+This SP alerts Lag increases over 3 samples.
+*/
+
+	DECLARE
+		@Messge				NVARCHAR(4000)='',
+		@Subject			NVARCHAR(500) ='AG Synchronization Lag is increasing over more than 3 samples '+ @@SERVERNAME,
+		@i					TINYINT = 1,
+		@bit				BIT = 1,
+		@WhileLoop			INT,
+		@WaitLag			VARCHAR(20),
+		@PrimaryDBName		SYSNAME,
+		@LoopTimeoutSeconds	INT,
+		@LoopTimeoutTime	datetime2(3)
+
+
+	SELECT	@WhileLoop =		CAST(Threshold AS INT)	FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_IncreasingLagAlert'	AND ConfigName='@WhileLoop'
+	SELECT	@WaitLag =			Threshold 				FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_IncreasingLagAlert'	AND ConfigName='@WaitLag'
+	SELECT  @PrimaryDBName=		Threshold 				FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_IncreasingLagAlert'	AND ConfigName='@PrimaryDBName'
+	SELECT  @LoopTimeoutSeconds=CAST(Threshold AS INT)	FROM dbo.DBA_AG_Configurations WHERE SPName = 'GeneralBreakLoop'					AND ConfigName='@LoopTimeoutSeconds'
+	
+	
+	WHILE 	@i<= @WhileLoop
+		
+	BEGIN	
+		IF (SELECT sys.fn_hadr_is_primary_replica (@PrimaryDBName)) > 0
+		BEGIN
+			IF EXISTS
+			(			
+				SELECT 	1
+				from
+				(
+					SELECT 
+						TimeStamp 
+						,DatabaseName
+						,sync_Lag_Sec	
+						,sync_lag_Sec - (LAG(sync_Lag_Sec) OVER(ORDER BY DatabaseName,TimeStamp asc) )	 as PrevLagDiff
+						,sync_lag_Sec - (LAG(sync_Lag_Sec, 2) OVER(ORDER BY DatabaseName,TimeStamp asc) )	 as PrevLagDiff2
+						,sync_lag_Sec - (LAG(sync_Lag_Sec, 3) OVER(ORDER BY DatabaseName,TimeStamp asc) )	 as PrevLagDiff3
+						,DATEDIFF(second, (LAG(TimeStamp, 3) OVER(ORDER BY DatabaseName,TimeStamp asc) ), TimeStamp) TimeDiff
+					FROM [dbo].[DBA_AG_Monitoring_Lag] 
+					WHERE 1=1
+					AND TimeStamp IN 	
+						(SELECT DISTINCT TOP 4 TimeStamp FROM [DBA_AG_Monitoring_Lag] ORDER BY TimeStamp DESC)	
+				) tbl
+				WHERE 
+					sync_Lag_Sec >= TimeDiff
+				AND
+					(PrevLagDiff3 > PrevLagDiff2 and PrevLagDiff2 > PrevLagDiff)	
+				AND 
+					PrevLagDiff> 0			
+			)
+			BEGIN
+			
+				EXEC sp_DBA_AG_CollectMonitoring_Requests  'IncreasingLagAlert'
+
+				IF (SELECT dbo.fn_DBA_AG_isMainenanceNow() ) = 0
+				BEGIN
+					SET @Subject ='AG Synchronization Lag is increasing over more than 3 samples '+ @@SERVERNAME
+					SELECT @Messge = 
+					N'AG Synchronization time lag seems  to increase at server '	+ @@SERVERNAME+''+ CHAR(10)+ 
+					N'This may be a result of overall pressure/general networking issues/ AG nodes comunication issues.'		+ CHAR(10)+ 
+					N'Follow table [dbo].[DBA_AG_Monitoring_Lag] .'			+ CHAR(10)+ CHAR(13)
+					
+					
+					EXEC msdb.dbo.sp_send_dbmail
+						@profile_name = '<mailprofile>',
+						@recipients = '<mailbox>;<mailbox>',
+						@body = @Messge,
+						@subject = @Subject	
+				END
+				ELSE 
+					SET @LoopTimeoutSeconds = '60'
+
+				SET @LoopTimeoutTime = DATEADD(SECOND, @LoopTimeoutSeconds , GETDATE())
+
+				WHILE 
+					@bit = 1
+				AND GETDATE() < @LoopTimeoutSeconds		
+				BEGIN
+
+					EXEC sp_DBA_AG_CollectMonitoring_Requests  'IncreasingLagAlert'				
+
+					WAITFOR DELAY @WaitLag
+				
+					IF EXISTS
+					(			
+						SELECT 	1
+						FROM
+						(
+							SELECT 
+								TimeStamp 
+								,DatabaseName
+								,sync_Lag_Sec	
+								,sync_lag_Sec - (LAG(sync_Lag_Sec) OVER(ORDER BY DatabaseName,TimeStamp ASC) )				AS PrevLagDiff
+								,sync_lag_Sec - (LAG(sync_Lag_Sec, 2) OVER(ORDER BY DatabaseName,TimeStamp ASC) )			AS PrevLagDiff2
+								,sync_lag_Sec - (LAG(sync_Lag_Sec, 3) OVER(ORDER BY DatabaseName,TimeStamp ASC) )			AS PrevLagDiff3
+								,DATEDIFF(second, (LAG(TimeStamp ) OVER(ORDER BY DatabaseName,TimeStamp ASC) ), TimeStamp)	AS TimeDiff
+							FROM [dbo].[DBA_AG_Monitoring_Lag] 
+							WHERE 1=1
+							AND TimeStamp IN
+								(SELECT DISTINCT TOP 4 TimeStamp FROM [DBA_AG_Monitoring_Lag] ORDER BY TimeStamp DESC)						
+						) tbl
+						WHERE 
+							sync_Lag_Sec > PrevLagDiff3
+						AND
+							(PrevLagDiff3 > PrevLagDiff2 AND PrevLagDiff2 > PrevLagDiff)	
+						AND PrevLagDiff> 0					
+					) 	
+					BEGIN
+							SET @bit = 0
+
+							SELECT @Messge = 
+							N'Lag has decreased back to a *HEALTHY STATE NOW*. '	+ CHAR(10)+ 					
+							N'Currently it is fine. No action is needed.'		+ CHAR(10)+ CHAR(13)
+
+							EXEC msdb.dbo.sp_send_dbmail
+								@profile_name = '<mailprofile>',
+								@recipients = '<mailbox>;<mailbox>',
+								@body = @Messge,
+								@subject = @Subject
+					END			
+					
+				END		
+			END				
+		END
+		SET @i+=1
+		WAITFOR DELAY @WaitLag
+
+	END
+	
+GO
+/****** Object:  StoredProcedure [dbo].[sp_DBA_AG_StateChangeAlert]  ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+/*
+Author:	Sagi Amichai @madeira
+Date:	Dec 2020
+Desc: monitor state change of AG by sampling states and comparing samples. In case of a state chnage, enters an inner loop of 
+documenting requests and sessions and repeating the checkof state change compared to original sample.
+
+*/
+
+CREATE PROCEDURE [dbo].[sp_DBA_AG_StateChangeAlert]
+AS
+
+	DECLARE
+		@Messge				NVARCHAR(4000),
+		@Subject			NVARCHAR(500) = 'DATABASE AG STATE CHANGE EVENT - '+ @@SERVERNAME,
+		@i					TINYINT = 1,
+		@bit				SMALLINT= 1,
+		@inserts			VARCHAR(max)='',
+		@WhileLoop			INT,
+		@WaitState1			VARCHAR(20),
+		@WaitState2			VARCHAR(20),
+		@WaitStateCycle		VARCHAR(20),
+		@PrimaryDBName		SYSNAME,		
+		@LoopTimeoutSeconds	INT,
+		@LoopTimeoutTime	DATETIME2(3)
+
+
+	SELECT	@WhileLoop =			CAST(Threshold AS INT)	FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_StateChangeAlert' AND ConfigName='@WhileLoop'
+	SELECT	@WaitState1 =			Threshold 				FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_StateChangeAlert' AND ConfigName='@WaitState1'
+	SELECT	@WaitState2 =			Threshold 				FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_StateChangeAlert' AND ConfigName='@WaitState2'
+	SELECT	@WaitStateCycle =		Threshold 				FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_StateChangeAlert' AND ConfigName='@WaitStateCycle'
+	SELECT  @PrimaryDBName=			Threshold 				FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_StateChangeAlert' AND ConfigName='@PrimaryDBName'
+	SELECT  @LoopTimeoutSeconds=CAST(Threshold AS INT)	FROM dbo.DBA_AG_Configurations WHERE SPName = 'GeneralBreakLoop'					AND ConfigName='@LoopTimeoutSeconds'
+	
+
+	WHILE 
+		@i <= @WhileLoop
+		AND
+		(SELECT sys.fn_hadr_is_primary_replica (@PrimaryDBName)) > 0
+	BEGIN
+			
+		DROP TABLE IF EXISTS #FirstSample
+		DROP TABLE IF EXISTS #dbs
+		------------------------------------------------------------------------------------------------------------------------
+		-- FIRST SAMPLE COLLECTING CURRENT STATE OF SYNCHRONIZATION
+		------------------------------------------------------------------------------------------------------------------------
+		SELECT
+			GETDATE() AS log_date_time,			ar.replica_server_name,
+			ag.name AS ag_name, 				adc.database_name, 
+			drs.is_local, 						drs.is_primary_replica, 
+			drs.synchronization_state_desc,		drs.is_commit_participant, 
+			drs.synchronization_health_desc,	drs.is_suspended,
+			drs.recovery_lsn, 					drs.truncation_lsn
+		INTO #FirstSample
+		FROM sys.dm_hadr_database_replica_states AS drs
+		INNER JOIN sys.availability_databases_cluster AS adc ON drs.group_id = adc.group_id AND drs.group_database_id = adc.group_database_id
+		INNER JOIN sys.availability_groups AS ag ON ag.group_id = drs.group_id
+		INNER JOIN sys.availability_replicas AS ar ON drs.group_id = ar.group_id AND drs.replica_id = ar.replica_id
+		
+		
+
+		------------------------------------------------------------------------------------------------------------------------
+		-- WAIT ONE SECOND AND INITIATE A SECOND SAMPLE, TO CATCH SYNCHRONIZATION STATE CHANGES 
+		------------------------------------------------------------------------------------------------------------------------
+		WAITFOR DELAY 	@WaitState1
+
+		-- IF EXISTS - CHANGE IN SYNCHRONIZATION STATE CHANGE
+		IF EXISTS
+		(	------------------------------------------------------------------------------------------------------------------------
+			-- SECOND SAMPLE (SAME QUERY OF FIRST SAMPLE)
+			------------------------------------------------------------------------------------------------------------------------
+			SELECT				
+				ar.replica_server_name,			ag.name AS ag_name, 
+				adc.database_name, 				drs.is_local, 
+				drs.is_primary_replica, 		drs.synchronization_state_desc, 
+				drs.is_commit_participant, 		drs.synchronization_health_desc, 
+				drs.is_suspended		
+			FROM sys.dm_hadr_database_replica_states AS drs
+			INNER JOIN sys.availability_databases_cluster AS adc ON drs.group_id = adc.group_id AND drs.group_database_id = adc.group_database_id
+			INNER JOIN sys.availability_groups AS ag ON ag.group_id = drs.group_id
+			INNER JOIN sys.availability_replicas AS ar ON drs.group_id = ar.group_id AND drs.replica_id = ar.replica_id
+			WHERE drs.synchronization_state_desc!='SYNCHRONIZING' 
+			-- COMPARED TO 
+			EXCEPT	
+			-- FIRST SAMPLE
+			SELECT		
+				replica_server_name, ag_name, database_name, is_local, is_primary_replica, 
+				synchronization_state_desc, is_commit_participant, synchronization_health_desc, is_suspended
+			FROM #FirstSample
+
+		)
+		BEGIN
+			INSERT INTO [dbo].[DBA_AG_Monitoring_State]
+			SELECT
+				GETDATE() AS [TimeStamp],		'StateChangeAlert - Second sample',
+				ar.replica_server_name,			ag.name AS ag_name, 
+				adc.database_name, 				drs.is_local, 
+				drs.is_primary_replica, 		drs.synchronization_state_desc, 
+				drs.is_commit_participant, 		drs.synchronization_health_desc, 
+				drs.is_suspended,				drs.recovery_lsn, 
+				drs.truncation_lsn
+			FROM sys.dm_hadr_database_replica_states AS drs
+			INNER JOIN sys.availability_databases_cluster AS adc ON drs.group_id = adc.group_id AND drs.group_database_id = adc.group_database_id
+			INNER JOIN sys.availability_groups AS ag ON ag.group_id = drs.group_id
+			INNER JOIN sys.availability_replicas AS ar ON drs.group_id = ar.group_id AND drs.replica_id = ar.replica_id
+			ORDER BY 
+				ag.name, 
+				ar.replica_server_name, 
+				adc.database_name;			
+							   				 
+			------------------------------------------------------------------------------------------------------------------------
+			-- INSERT INTO [dbo].[DBA_AG_RequestsMonitor]  CURRENT REQUESTS AND SESSIONS FOR FUTURE INVESTIGATION
+			------------------------------------------------------------------------------------------------------------------------					
+			EXEC sp_DBA_AG_CollectMonitoring_Requests 'StateChangeAlert'
+
+
+			
+			------------------------------------------------------------------------------------------------------------------------
+			-- "SENDING A PACKET" IMITATING WORK AGAINST THE SUSPECTED -NOT SYNCHRONIZING -DATABASE
+			------------------------------------------------------------------------------------------------------------------------
+			IF (SELECT sys.fn_hadr_is_primary_replica ( @PrimaryDBName ) ) =1
+			BEGIN
+				SELECT database_name
+				INTO #dbs
+				FROM
+				(
+					SELECT				
+						ar.replica_server_name,			ag.name AS ag_name, 
+						adc.database_name, 				drs.is_local, 
+						drs.is_primary_replica, 		drs.synchronization_state_desc, 
+						drs.is_commit_participant, 		drs.synchronization_health_desc, 
+						drs.is_suspended		
+					FROM sys.dm_hadr_database_replica_states AS drs
+					INNER JOIN sys.availability_databases_cluster AS adc ON drs.group_id = adc.group_id AND drs.group_database_id = adc.group_database_id
+					INNER JOIN sys.availability_groups AS ag ON ag.group_id = drs.group_id
+					INNER JOIN sys.availability_replicas AS ar ON drs.group_id = ar.group_id AND drs.replica_id = ar.replica_id
+					WHERE drs.synchronization_state_desc!='SYNCHRONIZING' 
+					-- COMPARED TO 
+					EXCEPT	
+					-- FIRST SAMPLE
+					SELECT		
+						replica_server_name, ag_name, database_name, is_local, is_primary_replica, 
+						synchronization_state_desc, is_commit_participant, synchronization_health_desc, is_suspended
+					FROM #FirstSample	
+				) TBL				
+				 
+				SELECT	@inserts +='INSERT INTO ['+database_name+'].[dbo].[DBA_CheckAGSync](tmstmp)	VALUES(GETDATE())' + CHAR(13)+CHAR(10)
+				FROM #dbs				
+				
+				EXEC (@inserts)
+				
+			END	
+
+
+			------------------------------------------------------------------------------------------------------------------------
+			-- WAIT AGAIN, AND SAMPLE AGAIN - THIS IS TO ACT DIFFERENTLY FOR SHORT CHANGES THAT MIGHT
+			-- RESULT FROM SHORT NETWORK ISSUES
+			------------------------------------------------------------------------------------------------------------------------		
+			
+			WAITFOR DELAY 	@WaitState2
+			
+			
+			------------------------------------------------------------------------------------------------------------------------
+			-- IF STATE IS STILL DIFFERENT THAN FIRST SAMPLE - HIGH ALERT 
+			------------------------------------------------------------------------------------------------------------------------
+			IF EXISTS
+			(					
+				SELECT				
+					ar.replica_server_name,			ag.name AS ag_name, 
+					adc.database_name, 				drs.is_local, 
+					drs.is_primary_replica, 		drs.synchronization_state_desc, 
+					drs.is_commit_participant, 		drs.synchronization_health_desc, 
+					drs.is_suspended			
+				FROM sys.dm_hadr_database_replica_states AS drs
+				INNER JOIN sys.availability_databases_cluster AS adc ON drs.group_id = adc.group_id AND drs.group_database_id = adc.group_database_id
+				INNER JOIN sys.availability_groups AS ag ON ag.group_id = drs.group_id
+				INNER JOIN sys.availability_replicas AS ar ON drs.group_id = ar.group_id AND drs.replica_id = ar.replica_id
+				WHERE drs.synchronization_state_desc!='SYNCHRONIZED' 
+				EXCEPT
+				SELECT		
+					replica_server_name, ag_name, database_name, is_local, is_primary_replica, 
+					synchronization_state_desc, is_commit_participant, synchronization_health_desc, is_suspended
+				FROM #FirstSample
+			)
+			BEGIN
+				
+				INSERT INTO [dbo].[DBA_AG_Monitoring_State]
+				SELECT
+					GETDATE() AS [TimeStamp],	'StateChangeAlert - Third sample',
+					ar.replica_server_name,		ag.name AS ag_name, 
+					adc.database_name,			drs.is_local, 
+					drs.is_primary_replica, 	drs.synchronization_state_desc, 
+					drs.is_commit_participant, 	drs.synchronization_health_desc, 
+					drs.is_suspended,			drs.recovery_lsn, 
+					drs.truncation_lsn
+				FROM sys.dm_hadr_database_replica_states AS drs
+				INNER JOIN sys.availability_databases_cluster AS adc ON drs.group_id = adc.group_id AND drs.group_database_id = adc.group_database_id
+				INNER JOIN sys.availability_groups AS ag ON ag.group_id = drs.group_id
+				INNER JOIN sys.availability_replicas AS ar ON drs.group_id = ar.group_id AND drs.replica_id = ar.replica_id
+				ORDER BY 
+					ag.name, 
+					ar.replica_server_name, 
+					adc.database_name;
+				
+				IF (SELECT dbo.fn_DBA_AG_isMainenanceNow() ) = 0
+				BEGIN
+					SELECT @Messge = 
+					N'Database Availability Groups Status has changed on one or more of the databases, for over more than 10 seconds, at server '	+@@SERVERNAME
+					
+
+					EXEC msdb.dbo.sp_send_dbmail
+						@profile_name = '<mailprofile>',
+						@recipients = '<mailbox>;<mailbox>',
+						@body = @Messge,
+						@subject = @Subject
+				END
+				ELSE 
+					SET @LoopTimeoutSeconds = '60'
+
+				SET @LoopTimeoutTime = DATEADD(SECOND, @LoopTimeoutSeconds , GETDATE())
+
+				SET @bit =1
+
+				WHILE 
+					@bit = 1	AND GETDATE() < @LoopTimeoutSeconds	
+				--BEGIN INNER WHILE
+				BEGIN 
+					------------------------------------------------------------------------------------------------------------------------
+					-- INSERT INTO [dbo].[DBA_AG_RequestsMonitor]  CURRENT REQUESTS AND SESSIONS FOR FUTURE INVESTIGATION
+					------------------------------------------------------------------------------------------------------------------------					
+					EXEC sp_DBA_AG_CollectMonitoring_Requests 'StateChangeAlert'
+					
+					WAITFOR DELAY @WaitStateCycle
+					------------------------------------------------------------------------------------------------------------------------
+					-- BREAK THE LOOP OF DIFFERENT STATE/S FROM FIRST SAMPLE
+					------------------------------------------------------------------------------------------------------------------------
+					IF NOT EXISTS
+					(					
+						SELECT				
+							ar.replica_server_name,			ag.name AS ag_name, 
+							adc.database_name, 				drs.is_local, 
+							drs.is_primary_replica, 		drs.synchronization_state_desc, 
+							drs.is_commit_participant, 		drs.synchronization_health_desc, 
+							drs.is_suspended					
+						FROM sys.dm_hadr_database_replica_states AS drs
+						INNER JOIN sys.availability_databases_cluster AS adc ON drs.group_id = adc.group_id AND drs.group_database_id = adc.group_database_id
+						INNER JOIN sys.availability_groups AS ag ON ag.group_id = drs.group_id
+						INNER JOIN sys.availability_replicas AS ar ON drs.group_id = ar.group_id AND drs.replica_id = ar.replica_id
+						WHERE drs.synchronization_state_desc!='SYNCHRONIZED' 
+						EXCEPT
+						SELECT		
+							replica_server_name, ag_name, database_name, is_local, is_primary_replica, 
+							synchronization_state_desc, is_commit_participant, synchronization_health_desc, is_suspended
+						FROM #FirstSample
+					) 	
+					BEGIN
+						SET @bit = 0
+
+						SELECT @Messge = 
+						N'Database Availability Groups Status IS HEALTHY NOW. '															+ CHAR(10)+ 
+						N' It has changed on one or more of the databases, for over more than 10 seconds, at server '	+@@SERVERNAME	+ CHAR(10)+ 
+						N'But currently is fine. No action is needed.'																	+ CHAR(10)+ CHAR(13)
+
+						EXEC msdb.dbo.sp_send_dbmail
+							@profile_name = '<mailprofile>',
+							@recipients = '<mailbox>;<mailbox>',
+							@body = @Messge,
+							@subject = @Subject
+
+					END
+				-- END INNER WHILE		
+				END
+
+			END --END CASE OF THIRD STATE DIFFERENT FROM FIRST SAMPLE
+			------------------------------------------------------------------------------------------------------------------------
+			-- IF STATE GOT BACK TO WHAT IT WAS AT FIRST SAMPLE - JUST SEND MAIL
+			------------------------------------------------------------------------------------------------------------------------
+			ELSE 
+			BEGIN
+				SELECT @Messge = 
+				N'Database Availability Groups Status has changed on one or more of the databases, for 1 second, at server '	+@@SERVERNAME	+ CHAR(10)+ 
+				N'The next check (9 seconds later) returned the original status'																+ CHAR(10)+ 
+				N'Investigate networking and table [dbo].[DBA_AG_Monitoring_State]'														+ CHAR(10)+ CHAR(13)
+
+				EXEC msdb.dbo.sp_send_dbmail
+					@profile_name = '<mailprofile>',
+					@recipients = '<mailbox>;<mailbox>',
+					@body = @Messge,
+					@subject = @Subject		
+				
+			END
+
+		END -- END CASE SECOND SAMPLE DIFFERENT FROM FIRST SAMPLE
+
+				
+		
+		DROP TABLE IF EXISTS  #FirstSample
+		DROP TABLE IF EXISTS #dbs
+
+		SET @i+=1
+	END --while @i
+
+GO
+/****** Object:  StoredProcedure [dbo].[sp_DBA_AG_SyncLagAlert]  ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE  PROCEDURE [dbo].[sp_DBA_AG_SyncLagAlert]
+AS
+
+/*
+Author:		Sagi Amichai @Madeira
+Date:		Dec 2020
+Desc:
+This SP alerts when the lag between the relicas surpasses a 15 seconds threshold. 
+That basically means there is a lag of 15 seconds between the replicas of the AG.
+*/
+
+	DECLARE
+		@Messge				NVARCHAR(4000)='',
+		@Subject			NVARCHAR(500) = 'AG Synchronization Lag Higher Than 15 Seconds at server '+ @@SERVERNAME,
+		@i					TINYINT	= 1,
+		@bit				BIT = 1,
+		@WhileLoop			INT,
+		@Lag				INT,
+		@WaitFor			VARCHAR(20),
+		@PrimaryDBName		SYSNAME,
+		@LoopTimeoutSeconds	INT,
+		@LoopTimeoutTime	datetime2(3)
+		
+
+
+	SELECT	@WhileLoop = CAST(Threshold AS INT)			FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_SyncLagAlert' AND ConfigName='@WhileLoop'
+	SELECT	@Lag =		 CAST(Threshold AS INT)			FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_SyncLagAlert' AND ConfigName='@Lag'
+	SELECT  @WaitFor =			Threshold 				FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_SyncLagAlert' AND ConfigName='@WaitFor'
+	SELECT  @PrimaryDBName=		Threshold 				FROM dbo.DBA_AG_Configurations WHERE SPName = 'sp_DBA_AG_SyncLagAlert' AND ConfigName='@PrimaryDBName'
+	SELECT  @LoopTimeoutSeconds= CAST(Threshold AS INT)	FROM dbo.DBA_AG_Configurations WHERE SPName = 'GeneralBreakLoop' AND ConfigName='@LoopTimeoutSeconds'
+	
+	
+
+	WHILE 
+		@i <= @WhileLoop	
+		
+	BEGIN		
+		IF (SELECT sys.fn_hadr_is_primary_replica (@PrimaryDBName)) > 0	
+		BEGIN
+			IF EXISTS
+			(			
+				SELECT DatabaseName, SUM(sync_Lag_Sec) SumLag3Samples
+				FROM [dbo].[DBA_AG_Monitoring_Lag] 
+				WHERE TimeStamp IN 
+				(
+					SELECT DISTINCT TOP 3 TimeStamp 
+					FROM [dbo].[DBA_AG_Monitoring_Lag] 
+					ORDER BY TimeStamp DESC
+				)
+				GROUP BY DatabaseName
+				HAVING SUM(sync_Lag_Sec) > 	@Lag	
+			)	
+	
+			BEGIN
+			
+				EXEC sp_DBA_AG_CollectMonitoring_Requests  'SyncLagAlert'			
+				
+				IF (SELECT dbo.fn_DBA_AG_isMainenanceNow() ) = 0
+				BEGIN
+					
+					SET @Subject ='AG Synchronization Lag Higher Than 15 Seconds at server '+ @@SERVERNAME
+					SELECT @Messge = 
+					N'AG Synchronization time seems  to increase, resulting in synchronization lag > 15 seconds at server '	+ @@SERVERNAME
+
+					EXEC msdb.dbo.sp_send_dbmail
+					@profile_name = '<mailprofile>',
+					@recipients = '<mailbox>;<mailbox>',
+					@body = @Messge,
+					@subject = @Subject
+
+				END
+				ELSE 
+					SET @LoopTimeoutSeconds = '60'			
+
+				SET @LoopTimeoutTime = DATEADD(SECOND, @LoopTimeoutSeconds , GETDATE())
+
+				WHILE 
+					@bit = 1
+				AND GETDATE() < @LoopTimeoutTime			
+				BEGIN		
+					
+					EXEC sp_DBA_AG_CollectMonitoring_Requests  'SyncLagAlert'
+
+					WAITFOR DELAY @WaitFor
+
+					IF NOT EXISTS				
+					(			
+						SELECT DatabaseName, SUM(sync_Lag_Sec) SumLag3Samples
+						FROM [dbo].[DBA_AG_Monitoring_Lag] 
+						WHERE TimeStamp in 
+						(
+							SELECT DISTINCT TOP 3 TimeStamp 
+							FROM [dbo].[DBA_AG_Monitoring_Lag] 
+							ORDER BY TimeStamp DESC
+						)
+						GROUP BY DatabaseName
+						HAVING SUM(sync_Lag_Sec) > @Lag		
+					) 
+					BEGIN
+						SET @bit = 0
+
+						SELECT @Messge = 
+						N'Lag has decreased back to a *HEALTHY STATE NOW*. '	+ CHAR(10)+ 					
+						N'Currently it is fine. No action is needed.'		+ CHAR(10)+ CHAR(13)
+
+						EXEC msdb.dbo.sp_send_dbmail
+						@profile_name = '<mailprofile>',
+						@recipients = '<mailbox>;<mailbox>',
+						@body = @Messge,
+						@subject = @Subject
+					END
+
+				END		
+			END				
+		END
+		SET @i+=1
+		WAITFOR DELAY @WaitFor
+
+	END
+	
+GO
