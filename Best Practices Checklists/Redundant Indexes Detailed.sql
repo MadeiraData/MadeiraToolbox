@@ -9,7 +9,8 @@ sets.table_o_id,
 sets.key_column_list,
 sets.include_column_list,
 sets.is_unique,
-sets.index_number
+sets.index_number,
+sets.filter_definition
 from
 (
 SELECT
@@ -41,7 +42,8 @@ AND INDEX_DATA.index_id = idxINC.index_id
 AND keyColINC.is_included_column = 1
 ORDER BY keyColINC.column_id
 FOR XML PATH('')
-) AS include_column_list
+) AS include_column_list ,
+INDEX_DATA.filter_definition
 FROM sys.indexes INDEX_DATA
 INNER JOIN sys.tables TABLE_DATA ON TABLE_DATA.object_id = INDEX_DATA.object_id
 INNER JOIN sys.schemas SCHEMA_DATA ON SCHEMA_DATA.schema_id = TABLE_DATA.schema_id
@@ -53,7 +55,7 @@ AND INDEX_DATA.data_space_id > 0
 LEFT JOIN sys.partitions p
 ON sets.table_o_id = p.OBJECT_ID AND sets.index_number = p.index_id
 where key_column_list is not null
-GROUP BY sets.schema_id, sets.table_o_id, sets.index_number, sets.is_unique, sets.key_column_list, sets.include_column_list
+GROUP BY sets.schema_id, sets.table_o_id, sets.index_number, sets.is_unique, sets.key_column_list, sets.include_column_list, sets.filter_definition
 HAVING sum(p.rows) >= @MinimumRowsInTable
 )
 SELECT
@@ -62,6 +64,8 @@ DUPE1.schema_id as schema_id,
 DUPE1.table_o_id as table_object_id,
 DUPE1.index_number as redundant_index_id ,
 DUPE2.index_number as containing_index_id ,
+DUPE1.filter_definition as redundant_index_filter,
+DUPE2.filter_definition as containing_index_filter,
 DUPE1.key_column_list, DUPE1.include_column_list
 into #FindOnThisDB
 FROM Indexes DUPE1
@@ -82,6 +86,7 @@ DUPE1.include_column_list = LEFT(DUPE2.include_column_list, LEN(DUPE1.include_co
 )
 )
 AND DUPE1.index_number <> DUPE2.index_number
+AND ISNULL(DUPE1.filter_definition, '') = ISNULL(DUPE2.filter_definition, '')
 ;
 
 SELECT
@@ -112,6 +117,7 @@ AND ind1.index_id = keyCol.index_id
 AND keyCol.is_included_column = 1
 ORDER BY keyCol.key_ordinal
 FOR XML PATH('')), 1, 2, ''),
+tbl.redundant_index_filter,
 redundant_index_seeks = us1.user_seeks,
 redundant_index_scans = us1.user_scans,
 redundant_index_updates = us1.user_updates,
@@ -136,6 +142,7 @@ AND ind2.index_id = keyCol.index_id
 AND keyCol.is_included_column = 1
 ORDER BY keyCol.key_ordinal
 FOR XML PATH('')), 1, 2, ''),
+tbl.containing_index_filter,
 containing_index_seeks = us2.user_seeks,
 containing_index_scans = us2.user_scans,
 containing_index_updates = us2.user_updates,
