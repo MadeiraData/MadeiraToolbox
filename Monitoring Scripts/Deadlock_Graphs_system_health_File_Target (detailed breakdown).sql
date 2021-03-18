@@ -38,7 +38,7 @@ SELECT @@ROWCOUNT AS DeadlockCountInFile
 ; WITH AllDeadlocks AS (
 
 SELECT	
-		ROW_NUMBER() OVER ( ORDER BY event_data.value('(event/@timestamp)[1]','DATETIME')) AS ID,
+		ROW_NUMBER() OVER ( ORDER BY event_data.value('(event/@timestamp)[1]','DATETIME')) AS id,
 		event_data.value('(event/@timestamp)[1]','DATETIME') AS deadlock_time,
 		event_data.value('(event/data/value/deadlock/process-list/process/executionStack/frame/@procname)[1]','SYSNAME') AS deadlock_procedure,
 		event_data.query('(event/data[@name="xml_report"]/value/deadlock)[1]') AS deadlock_graph,
@@ -48,7 +48,7 @@ SELECT
 
 FROM #XMLDATA
 
-),Resources AS(
+),resources AS(
  
 SELECT id,deadlock_time,
 	d.deadlock_resources.value('@objectname','NVARCHAR(200)') AS resource_objectname,
