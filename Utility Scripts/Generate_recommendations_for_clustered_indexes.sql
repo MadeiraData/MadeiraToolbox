@@ -143,7 +143,7 @@ SET @CMD = N'
 	WHERE us.database_id = DB_ID()
 	AND us.object_id = t.object_id
 	AND ix.index_id > 1
-	AND ix.is_hypothetical = 0
+	AND ix.is_hypothetical = 0 AND ix.has_filter = 0
 	AND ix.type <= 2
 	ORDER BY CONVERT(tinyint, ix.is_unique) DESC, pstat.total_used_page_count ASC, us.user_updates DESC, us.user_scans DESC, us.user_seeks DESC
  ) AS ix
@@ -260,7 +260,7 @@ BEGIN
 	OUTER APPLY (SELECT SUM(CASE WHEN is_included_column = 1 THEN 1 ELSE 0 END) AS included_columns, COUNT(*) AS indexed_columns 
 			FROM ' + QUOTENAME(@CurrDB) + N'.sys.index_columns AS ic WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id) AS st  
 	WHERE object_id = @ObjId AND index_id > 0
-	AND is_hypothetical = 0
+	AND is_hypothetical = 0 AND ix.has_filter = 0
 	AND type <= 2 -- ignore special index types
 	ORDER BY ix.is_unique DESC, included_columns DESC, indexed_columns ASC, index_id ASC;
 	
