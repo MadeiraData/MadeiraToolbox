@@ -73,31 +73,29 @@ GO
 IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE object_id = OBJECT_ID('$(SourceTableName)') AND [name] = '$(SourceTableMaterializedDefault)')
 	ALTER TABLE $(SourceTableName) ADD CONSTRAINT $(SourceTableMaterializedDefault) DEFAULT (1) FOR $(IsMaterializedColumnName);
 GO
-SET QUOTED_IDENTIFIER ON;
 
 -- Create a nonclustered view on the source table for all the non-migrated data.
 -- This is a heavy operation which can take a very long time.
 -- But, it can be done ONLINE.
 -- You should probably schedule this as part of a SQL Agent job, to run during off-peak hours.
+SET QUOTED_IDENTIFIER ON;
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID('$(SourceTableName)') AND [name] = 'IX_NotMaterialized')
 	CREATE NONCLUSTERED INDEX IX_NotMaterialized ON $(SourceTableName) ($(SourceTableGroupByColumns)) INCLUDE($(IsMaterializedColumnName))
 	WHERE $(IsMaterializedColumnName) IS NULL
 	$(NotMaterializedIndexOptions);
 GO
-SET QUOTED_IDENTIFIER ON;
 
 -- This will gradually migrate the data into the indexed view.
 -- This can take a long time, but it's a fully ONLINE operation.
 -- You should probably schedule this as part of a SQL Agent job, to run during off-peak hours.
-DECLARE
-	@BatchSize INT = $(MigrationBatchSize),
-	@SleepBetweenBatches VARCHAR(17) = '$(MigrationBatchDelay)'
+SET QUOTED_IDENTIFIER ON;
+DECLARE @SleepBetweenBatches VARCHAR(17) = '$(MigrationBatchDelay)'
 
 SET NOCOUNT ON;
 
 WHILE 1=1
 BEGIN
-	UPDATE TOP (@BatchSize) $(SourceTableName)
+	UPDATE TOP ($(MigrationBatchSize)) $(SourceTableName)
 		SET $(IsMaterializedColumnName) = 1
 	WHERE $(IsMaterializedColumnName) IS NULL
 
