@@ -349,7 +349,7 @@ AS
 
 
 
-DECLARE @i			TINYINT = 1,
+DECLARE @i			INT = 1,
 		@WhileLoop	INT,
 		@WaitFor	VARCHAR(20)
 
@@ -617,7 +617,7 @@ This SP alerts Lag increases over 3 samples.
 	DECLARE
 		@Messge				NVARCHAR(4000)='',
 		@Subject			NVARCHAR(500) ='AG Synchronization Lag is increasing over more than 3 samples '+ @@SERVERNAME,
-		@i					TINYINT = 1,
+		@i					INT = 1,
 		@bit				BIT = 1,
 		@WhileLoop			INT,
 		@WaitLag			VARCHAR(20),
@@ -761,7 +761,7 @@ AS
 	DECLARE
 		@Messge				NVARCHAR(4000),
 		@Subject			NVARCHAR(500) = 'DATABASE AG STATE CHANGE EVENT - '+ @@SERVERNAME,
-		@i					TINYINT = 1,
+		@i					INT = 1,
 		@bit				SMALLINT= 1,
 		@inserts			VARCHAR(max)='',
 		@WhileLoop			INT,
@@ -1069,7 +1069,7 @@ That basically means there is a lag of 15 seconds between the replicas of the AG
 	DECLARE
 		@Messge				NVARCHAR(4000)='',
 		@Subject			NVARCHAR(500) = 'AG Synchronization Lag Higher Than 15 Seconds at server '+ @@SERVERNAME,
-		@i					TINYINT	= 1,
+		@i					INT	= 1,
 		@bit				BIT = 1,
 		@WhileLoop			INT,
 		@Lag				INT,
