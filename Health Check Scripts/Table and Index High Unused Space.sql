@@ -2,7 +2,7 @@ DECLARE
 	@TopPerDB		INT		= 100,
 	@MinimumRowCount	INT		= 1000,
 	@MinimumUnusedSizeMB	INT		= 1024,
-	@MinimumUnusedSpacePct	INT		= 60,
+	@MinimumUnusedSpacePct	INT		= 50,
 	@RebuildIndexOptions	VARCHAR(MAX)	= 'ONLINE = ON, MAXDOP = 1'
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
@@ -19,8 +19,8 @@ BEGIN
 USE [?];
 SELECT TOP (' + CONVERT(nvarchar(max), @TopPerDB) + N')
 	DB_NAME() AS DatabaseName,
-	s.name AS SchemaName,
-	t.name AS TableName,
+	OBJECT_SCHEMA_NAME(i.object_id) AS SchemaName,
+	OBJECT_NAME(i.object_id) AS TableName,
 	i.name AS IndexName,
 	DB_ID(), i.object_id, i.index_id,
 	MAX(p.data_compression) AS CompressionType,
@@ -33,28 +33,23 @@ SELECT TOP (' + CONVERT(nvarchar(max), @TopPerDB) + N')
 	MAX(us.user_lookups) AS user_lookups,
 	MAX(us.user_updates) AS user_updates
 FROM 
-	sys.tables t
-INNER JOIN 
-	sys.schemas s ON t.schema_id = s.schema_id
-INNER JOIN      
-	sys.indexes i ON t.object_id = i.object_id
+	sys.indexes i
 INNER JOIN 
 	sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
 INNER JOIN 
 	sys.allocation_units a ON p.partition_id = a.container_id
 LEFT JOIN
-	sys.dm_db_index_usage_stats AS us ON us.database_id = DB_ID() AND us.object_id = t.object_id AND us.index_id = i.index_id
+	sys.dm_db_index_usage_stats AS us ON us.database_id = DB_ID() AND us.object_id = i.object_id AND us.index_id = i.index_id
 WHERE 
-	t.name NOT LIKE ''dt%''
-	AND s.name <> ''sys''
-	AND t.is_ms_shipped = 0
+	OBJECT_NAME(i.object_id) NOT LIKE ''dt%''
+	AND OBJECT_SCHEMA_NAME(i.object_id) <> ''sys''
 	AND i.object_id > 255 
-	and p.rows >= ' + CONVERT(nvarchar(max), @MinimumRowCount) + N'
+	and p.rows >= 1
 GROUP BY 
-	t.Name, s.Name, i.name,
-	i.object_id, i.index_id
+	i.object_id, i.name, i.index_id
 HAVING
-	ROUND((SUM(a.total_pages) - SUM(a.used_pages)) / 128.0, 2) >= ' + CONVERT(nvarchar(max), @MinimumUnusedSizeMB) + N'
+	SUM(p.rows) >= ' + CONVERT(nvarchar(max), @MinimumRowCount) + N'
+	AND (SUM(a.total_pages) - SUM(a.used_pages)) / 128 >= ' + CONVERT(nvarchar(max), @MinimumUnusedSizeMB) + N'
 	AND (SUM(a.used_pages) * 1.0) / SUM(a.total_pages) <= 1 - (' + CONVERT(nvarchar(max), @MinimumUnusedSpacePct) + ' / 100.0)
 ORDER BY TotalSpaceMB DESC
 END'
@@ -64,10 +59,10 @@ EXEC sp_MSforeachdb @command
 
 SELECT r.*
 , UnusedSpacePercent = UnusedSpaceMB * 1.0 / TotalSpaceMB * 100.0
-, frg.avg_fragmentation_in_percent
-, frg.page_count
+--, frg.avg_fragmentation_in_percent
+--, frg.page_count
 , RebuildCommand = 'ALTER INDEX ' + QUOTENAME(IndexName) + ' ON ' + QUOTENAME(SChemaName) + '.' + QUOTENAME(TableName) + ' REBUILD' + ISNULL(N' WITH(' + NULLIF(@RebuildIndexOptions,N'') + N')', N'')
 FROM @TempResult AS r
-OUTER APPLY sys.dm_db_index_physical_stats(DatabaseID, ObjectId, IndexId, NULL, 'LIMITED') AS frg
+--OUTER APPLY sys.dm_db_index_physical_stats(DatabaseID, ObjectId, IndexId, NULL, 'LIMITED') AS frg
 ORDER BY UnusedSpaceMB DESC
 OPTION (MAXDOP 1)
