@@ -1,15 +1,15 @@
 DECLARE
-    @TopPerDB INT = 100,
-    @MinimumRowCount INT = 1000,
-    @MinimumUnusedSizeMB INT = 1024,
-    @MinimumUnusedSpacePct INT = 50
+    @TopPerDB int = 100,
+    @MinimumRowCount int = 1000,
+    @MinimumUnusedSizeMB int = 1024,
+    @MinimumUnusedSpacePct int = 50
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 DECLARE @command NVARCHAR(MAX);
 DECLARE @TempResult AS TABLE (
 DatabaseName sysname, SchemaName sysname NULL, TableName sysname NULL, IndexName sysname NULL
-, TotalSpaceMB MONEY NULL, UnusedSpaceMB MONEY NULL);
+, TotalSpaceMB money NULL, UnusedSpaceMB money NULL);
 
 SELECT @command = 'IF EXISTS (SELECT * FROM sys.databases WHERE state = 0 AND is_read_only = 0 AND database_id > 4 AND is_distributor = 0 AND DATABASEPROPERTYEX([name], ''Updateability'') = ''READ_WRITE'')
 BEGIN
