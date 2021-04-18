@@ -21,6 +21,7 @@
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2021-04-18	Added enhancements for replacing primary key, and added parameter @DefaultClusteredIndexName
 -- 2021-03-21	Fixed DROP command for unique or primary key constraints; added check for deprecated data types; some other minor fixes
 -- 2021-02-15	Added details and logic based on index used pages count
 -- 2020-11-25	Various improvements:
@@ -51,6 +52,7 @@ DECLARE
 	,@SortInTempDB			BIT	= 1	-- If 1, will generate CREATE INDEX commands with the SORT_IN_TEMPDB option turned on.
 	,@MaxDOP			INT	= NULL	-- If not NULL, will generate CREATE INDEX commands with the MAXDOP option. Set to 1 to prevent parallelism and reduce workload.
 	,@RetainHighestCompression	BIT	= 1	-- If 1, will retain the highest data compression setting when replacing existing indexes
+	,@DefaultClusteredIndexName SYSNAME = N'IX_clust_{TableName}_{KeyColumns}' -- Default name for entirely new indexes. Supported placeholders: {TableName} , {KeyColumns}
 -------------------------------------------------------
 
 
@@ -94,6 +96,7 @@ CREATE TABLE #temp_heap
 	first_integer_column_type SYSNAME NULL,
 	first_non_nullable_column SYSNAME NULL,
 	is_unique BIT NULL,
+	is_primary_key BIT NULL,
 	is_constraint BIT NULL,
 	has_non_online_columns BIT NULL,
 	data_compression_type TINYINT NULL,
@@ -109,6 +112,7 @@ SET @CMD = N'
  , ix_columns
  , inc_columns
  , ix.is_unique
+ , ix.is_primary_key
  , ix.is_constraint
  , has_non_online_columns = CASE WHEN EXISTS (
 		SELECT TOP 1 1 FROM sys.columns AS c
@@ -129,7 +133,7 @@ SET @CMD = N'
  ) AS p
  OUTER APPLY
  (
-	SELECT TOP 1 us.index_id, ix.[name], ix.is_unique, pstat.total_used_page_count
+	SELECT TOP 1 us.index_id, ix.[name], ix.is_unique, ix.is_primary_key, pstat.total_used_page_count
 		, is_constraint = CASE WHEN 1 IN (ix.is_primary_key, ix.is_unique_constraint) THEN 1 ELSE 0 END
 	FROM sys.dm_db_index_usage_stats AS us
 	INNER JOIN sys.indexes AS ix
@@ -170,7 +174,7 @@ SET @CMD = N'
  
 IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) = 'SQL Azure'
 BEGIN
-	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, heap_used_pages, candidate_index, candidate_index_used_pages, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, is_constraint, has_non_online_columns, data_compression_type)
+	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, heap_used_pages, candidate_index, candidate_index_used_pages, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, is_primary_key, is_constraint, has_non_online_columns, data_compression_type)
 	exec (@CMD)
 END
 ELSE
@@ -192,7 +196,7 @@ BEGIN
 	BEGIN
 		SET @Executor = QUOTENAME(@CurrDB) + N'..sp_executesql'
 
-		INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, heap_used_pages, candidate_index, candidate_index_used_pages, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, is_constraint, has_non_online_columns, data_compression_type)
+		INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, heap_used_pages, candidate_index, candidate_index_used_pages, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, is_primary_key, is_constraint, has_non_online_columns, data_compression_type)
 		EXEC @Executor @CMD
 
 		FETCH NEXT FROM DBs INTO @CurrDB
@@ -235,12 +239,13 @@ FETCH NEXT FROM Tabs INTO @CurrDB, @CurrObjId, @CurrTable
 WHILE @@FETCH_STATUS = 0
 BEGIN
 	-- Get additional metadata for current table
-	DECLARE @FirstIndex SYSNAME, @IsUnique BIT, @IsConstraint BIT, @HasNonOnlineColumns BIT, @IdentityColumn SYSNAME
+	DECLARE @FirstIndex SYSNAME, @IsUnique BIT, @IsPK BIT, @IsConstraint BIT, @HasNonOnlineColumns BIT, @IdentityColumn SYSNAME
 	, @FirstIndexColumns NVARCHAR(MAX), @FirstIndexIncludeColumns NVARCHAR(MAX)
 	, @FirstDateColumn SYSNAME, @FirstIntColumn SYSNAME, @FirstIntColumnType SYSNAME, @FirstNonNullableColumn SYSNAME;
 	SET @CMD = N'SELECT TOP 1 
 		@FirstIndex = name,
 		@IsUnique = ix.is_unique,
+		@IsPK = ix.is_primary_key,
 		@IsConstraint = CASE WHEN 1 IN (ix.is_primary_key, ix.is_unique_constraint) THEN 1 ELSE 0 END,
 		@FirstIndexColumns = 
 			STUFF((
@@ -309,6 +314,7 @@ BEGIN
 	PRINT @CMD;
 	SET @FirstIndex = NULL;
 	SET @IsUnique = NULL;
+	SET @IsPK = NULL;
 	SET @IsConstraint = NULL;
 	SET @HasNonOnlineColumns = NULL;
 	SET @IdentityColumn = NULL;
@@ -317,8 +323,8 @@ BEGIN
 	SET @FirstIntColumnType = NULL;
 	SET @FirstNonNullableColumn = NULL;
 	EXEC sp_executesql @CMD
-			, N'@ObjId INT, @FirstIndex SYSNAME OUTPUT, @IsUnique BIT OUTPUT, @IsConstraint BIT OUTPUT, @HasNonOnlineColumns BIT OUTPUT, @FirstIndexColumns NVARCHAR(MAX) OUTPUT, @FirstIndexIncludeColumns NVARCHAR(MAX) OUTPUT, @IdentityColumn SYSNAME OUTPUT, @FirstDateColumn SYSNAME OUTPUT, @FirstIntColumn SYSNAME OUTPUT, @FirstIntColumnType SYSNAME OUTPUT, @FirstNonNullableColumn SYSNAME OUTPUT'
-			, @CurrObjId, @FirstIndex OUTPUT, @IsUnique OUTPUT, @IsConstraint OUTPUT, @HasNonOnlineColumns OUTPUT, @FirstIndexColumns OUTPUT, @FirstIndexIncludeColumns OUTPUT, @IdentityColumn OUTPUT, @FirstDateColumn OUTPUT, @FirstIntColumn OUTPUT, @FirstIntColumnType OUTPUT, @FirstNonNullableColumn OUTPUT
+			, N'@ObjId INT, @FirstIndex SYSNAME OUTPUT, @IsUnique BIT OUTPUT, @IsPK BIT OUTPUT, @IsConstraint BIT OUTPUT, @HasNonOnlineColumns BIT OUTPUT, @FirstIndexColumns NVARCHAR(MAX) OUTPUT, @FirstIndexIncludeColumns NVARCHAR(MAX) OUTPUT, @IdentityColumn SYSNAME OUTPUT, @FirstDateColumn SYSNAME OUTPUT, @FirstIntColumn SYSNAME OUTPUT, @FirstIntColumnType SYSNAME OUTPUT, @FirstNonNullableColumn SYSNAME OUTPUT'
+			, @CurrObjId, @FirstIndex OUTPUT, @IsUnique OUTPUT, @IsPK OUTPUT, @IsConstraint OUTPUT, @HasNonOnlineColumns OUTPUT, @FirstIndexColumns OUTPUT, @FirstIndexIncludeColumns OUTPUT, @IdentityColumn OUTPUT, @FirstDateColumn OUTPUT, @FirstIntColumn OUTPUT, @FirstIntColumnType OUTPUT, @FirstNonNullableColumn OUTPUT
 
 	IF @FirstIndex IS NOT NULL
 	BEGIN
@@ -329,6 +335,7 @@ BEGIN
 		, candidate_columns_from_existing_index = @FirstIndexColumns
 		, include_columns_from_existing_index = @FirstIndexIncludeColumns
 		, is_unique = @IsUnique
+		, is_primary_key = @IsPK
 		, is_constraint = @IsConstraint
 		WHERE database_name = @CurrDB AND object_id = @CurrObjId AND candidate_index IS NULL
 	END
@@ -447,19 +454,17 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 			THEN N'; ALTER TABLE ' + t.full_table_name + N' DROP CONSTRAINT ' + t.candidate_index
 			ELSE N'; DROP INDEX ' + t.candidate_index + ' ON ' + t.full_table_name
 		END
-	+ N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX ' + t.candidate_index + ' ON ' + t.full_table_name 
+	+ N'; '
+	+ CASE WHEN t.is_constraint = 1
+			THEN N'ALTER TABLE ' + t.full_table_name + N' ADD CONSTRAINT ' + t.candidate_index
+				+ CASE WHEN t.is_primary_key = 1 THEN N' PRIMARY KEY ' WHEN t.is_unique = 1 THEN N' UNIQUE ' ELSE N'' END
+			ELSE N'CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX ' + t.candidate_index + ' ON ' + t.full_table_name 
+		END
 	+ N' (' + t.candidate_columns_from_existing_index + N')' + REPLACE(REPLACE(@RebuildOptions, N'{COMPRESSION}', t.data_compression_type_desc), '{ONLINE_ON}', CASE WHEN t.has_non_online_columns = 1 THEN 'OFF' ELSE 'ON' END)
 	ELSE 
-	N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX IX_clust ON ' + t.full_table_name 
+	N'; CREATE ' + CASE WHEN t.is_unique = 1 THEN 'UNIQUE ' ELSE N'' END + N'CLUSTERED INDEX ' + QUOTENAME(NewClusteredIndexName) + N' ON ' + t.full_table_name 
 	+ N' ('
-	+ COALESCE(
-		t.candidate_columns_from_missing_index,
-		t.identity_column,
-		t.most_selective_column_from_stats,
-		t.first_date_column,
-		t.first_integer_column,
-		t.first_non_nullable_column
-		)
+	+ keycolumns.KeyColumnsList
 	+ N')' + REPLACE(REPLACE(@RebuildOptions, N'{COMPRESSION}', t.data_compression_type_desc), '{ONLINE_ON}', CASE WHEN t.has_non_online_columns = 1 THEN 'OFF' ELSE 'ON' END)
 	END
 , Rollback_Script = N'USE ' + QUOTENAME(t.database_name) 
@@ -471,9 +476,32 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 	+ N' (' + t.candidate_columns_from_existing_index + N')' + ISNULL(N' INCLUDE (' + t.include_columns_from_existing_index + N')', N'')
 	+ REPLACE(REPLACE(@RebuildOptions, N'{COMPRESSION}', t.data_compression_type_desc), '{ONLINE_ON}', CASE WHEN t.has_non_online_columns = 1 THEN 'OFF' ELSE 'ON' END)
 	ELSE 
-	N'; DROP INDEX IX_clust ON ' + t.full_table_name
+	N'; DROP INDEX ' + QUOTENAME(NewClusteredIndexName) + N' ON ' + t.full_table_name
 	END
 , *
 FROM #temp_heap AS t
+OUTER APPLY
+(
+SELECT KeyColumnsList = COALESCE(
+		t.candidate_columns_from_missing_index,
+		t.identity_column,
+		t.most_selective_column_from_stats,
+		t.first_date_column,
+		t.first_integer_column,
+		t.first_non_nullable_column
+		)
+) AS keycolumns
+OUTER APPLY
+(
+SELECT NewClusteredIndexName =
+	REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+	@DefaultClusteredIndexName
+	,N'{TableName}', t.table_name)
+	,N'{KeyColumns}', keycolumns.KeyColumnsList)
+	,N' ', N'_')
+	,N',', N'')
+	,N']', N'')
+	,N'[', N'')
+) AS ixname
 
 --DROP TABLE #temp_heap
