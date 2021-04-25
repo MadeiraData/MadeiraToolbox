@@ -1,5 +1,4 @@
 DECLARE @ifi bit
-SET @ifi = 0
 
 IF CAST(SERVERPROPERTY('Edition') AS VARCHAR(255)) NOT LIKE '%Azure%'
 BEGIN
@@ -7,9 +6,16 @@ BEGIN
 	BEGIN
 		DECLARE @cmd nvarchar(max)
 		SET @cmd = N'SELECT @ifi = 1 FROM sys.dm_server_services WHERE instant_file_initialization_enabled = ''Y'''
-		EXEC sp_executesql @cmd, N'@ifi bit OUTPUT', @ifi OUTPUT
+		BEGIN TRY
+			EXEC sp_executesql @cmd, N'@ifi bit OUTPUT', @ifi OUTPUT
+			SET @ifi = ISNULL(@ifi, 0)
+		END TRY
+		BEGIN CATCH
+			PRINT ERROR_MESSAGE()
+		END CATCH
 	END
-	ELSE
+	
+	IF @ifi IS NULL AND IS_SRVROLEMEMBER('sysadmin') = 1
 	BEGIN
 		PRINT 'Checking: Instant File Initialization using xp_cmdshell whoami /priv';
 		DECLARE @xp_cmdshell_output2 TABLE ([Output] VARCHAR (8000));
@@ -56,13 +62,17 @@ BEGIN
 			SET @ifi = 0
 		END
 	END
+	ELSE
+	BEGIN
+		PRINT N'Insufficient permissions to determine whether IFI is enabled.'
+	END
 END
 ELSE
 BEGIN
 	--PRINT N'Instant File Initialization is irrelevant for Azure SQL databases'
 	SET @ifi = 1;
 END
-	
+
 IF @ifi = 1
 BEGIN
 	PRINT N'Instant File Initialization is enabled'
