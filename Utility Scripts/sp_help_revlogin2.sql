@@ -4,9 +4,9 @@ GO
 sp_help_revlogin2 V1.0
 Eitan Blumin
 
-https://eitanblumin.com
-https://madeiradata.com
+https://eitanblumin.com | https://madeiradata.com
 https://gist.github.com/EitanBlumin/1f19b0b3f59a9220641c559653b90f15
+https://github.com/MadeiraData/MadeiraToolbox/blob/master/Utility%20Scripts/sp_help_revlogin2.sql
 
 This is a simpler alternative to sp_help_revlogin.
 
