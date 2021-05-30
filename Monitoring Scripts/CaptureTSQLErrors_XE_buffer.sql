@@ -1,8 +1,10 @@
 -- Author: Eitan Blumin (t: @EitanBlumin | b: eitanblumin.com)
 -- Date: 2020-05-31
--- Last Update: 2020-07-15
+-- Last Update: 2021-05-23
 -- Description: Collect T-SQL Error Events using an Extended Events Buffer
 --		The script automatically detects whether you're in an Azure SQL DB, or a regular SQL Server instance.
+--		This script can support capturing the errors into either ring buffer for short retention, or into a file target for longer retention.
+--		Please see the comments next to each parameter for more info.
 
 SET NOCOUNT ON;
 
@@ -18,6 +20,8 @@ DECLARE
 , @FileTargetPath NVARCHAR(4000)
 , @FlushBuffer BIT
 , @PrintOnly BIT
+, @MinEventsForFlush INT
+, @MaxEventsForFlush INT
 
 DECLARE @ProgramsToIgnore AS TABLE(appname SYSNAME);
 
@@ -31,6 +35,8 @@ SET @UseFileTarget		= 1			-- Set to 1 to use file target, otherwise, the ring bu
 
 /*************** Ring Buffer Configuration ***************/
 SET @FlushBuffer		= 1			-- Set to 1 to flush the ring buffer between executions by recreating the XE session. Otherwise, keep data.
+SET @MinEventsForFlush		= 0			-- Flush the ring buffer only if the number of events collected reaches this rowcount or higher.
+SET @MaxEventsForFlush		= NULL			-- Do not flush the ring buffer if the number of events collected reaches this rowcount or higher. NULL for unlimited. 0 to never flush.
 SET @BufferMaxMemoryMB		= 16			-- Max memory in MB for the ring buffer
 SET @BufferMaxEventsCount	= 50000			-- Max number of events to hold between flushes
 
@@ -42,8 +48,8 @@ SET @FileTargetMaxFileSizeMB	= 20			-- Max size in MB of each file target file
 /****************** Programs to Exclude ******************/
 INSERT INTO @ProgramsToIgnore
 SELECT 'Microsoft SQL Server Management Studio - Transact-SQL IntelliSense'
-UNION ALL SELECT 'Microsoft SQL Server Management Studio - Query'
-UNION ALL SELECT 'Microsoft SQL Server Management Studio'
+UNION ALL SELECT 'Microsoft SQL Server Management Studio - Query'		-- comment this line to capture SSMS query errors as well
+UNION ALL SELECT 'Microsoft SQL Server Management Studio'			-- comment this line to capture SSMS GUI errors as well
 UNION ALL SELECT 'SQLServerCEIP'
 UNION ALL SELECT 'check_mssql_health'
 UNION ALL SELECT 'SQL Server Performance Investigator'
@@ -164,7 +170,10 @@ IF @FlushBuffer = 1
 BEGIN
 SET @CMD = @CMD + N'
 -- Recreate session to flush buffer
-IF EXISTS (SELECT * FROM sys.' + CASE WHEN @IsAzureSQLDB = 1 THEN N'database' ELSE N'server' END + N'_event_sessions WHERE name = ''' + @BufferXESessionName + N''')
+IF '
++ ISNULL(N'@@ROWCOUNT >= ' + CONVERT(nvarchar,@MinEventsForFlush) + N' AND ', N'')
++ ISNULL(N'@@ROWCOUNT <= ' + CONVERT(nvarchar,@MaxEventsForFlush) + N' AND ', N'')
++ N'EXISTS (SELECT * FROM sys.' + CASE WHEN @IsAzureSQLDB = 1 THEN N'database' ELSE N'server' END + N'_event_sessions WHERE name = ''' + @BufferXESessionName + N''')
 BEGIN
 DROP EVENT SESSION ' + QUOTENAME(@BufferXESessionName) + N' ON ' + CASE WHEN @IsAzureSQLDB = 1 THEN N'DATABASE' ELSE N'SERVER' END + N';
 END
