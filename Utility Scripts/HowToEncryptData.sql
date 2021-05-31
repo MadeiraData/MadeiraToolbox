@@ -2,7 +2,7 @@
 -----------------------------HOW TO ENCRYPT SENSISTIVE DATA------------------------------
 
 Written By: Eric Rouach, Madeira Data Solutions
-Date of Creation: March 2021
+Date of Creation: May 2021
 
 This series of scripts is based on the AdventureWorks2014 - [Sales].[CreditCard] Table
 
@@ -31,7 +31,7 @@ We will demonstrate two ways of encrypting data:
 *encrypt and make data decryptable
 **encrypt and make data undecryptable
 
-For both cases, we need to take the following actions first:
+For the first case, we need to take the following actions first:
 
 -Create and backup Master Key
 -Create and backup Certificate
@@ -41,6 +41,10 @@ For both cases, we need to take the following actions first:
 --1) Create Master key:
 CREATE MASTER KEY
 ENCRYPTION BY PASSWORD = '$trongPa$$word'; --choose a strong password and keep it in a safe place!
+GO
+
+--Check the master key has been created:
+SELECT * FROM sys.symmetric_keys
 GO
 
 --2) Backup Master Key:
@@ -86,7 +90,7 @@ DECRYPTION BY CERTIFICATE AW2014Certificate;
 	SET
 	CardNumberEnc = 
 	EncryptByKey(Key_GUID('AW2014SymKey'), CardNumber, 1, CONVERT(VARBINARY, CreditCardID))
-
+	
 	--Check the table
 	SELECT * FROM [Sales].[CreditCard]
 
@@ -145,13 +149,16 @@ DECRYPTION BY CERTIFICATE AW2014Certificate;
 		[Sales].[CreditCard]
 
 CLOSE SYMMETRIC KEY AW2014SymKey;
-
+GO
 
 --=========================================================
 
 --=====================================
 --**encrypt and make data undecryptable
---====================================
+--=====================================
+USE
+AdventureWorks2014;
+GO
 
 --Add a varbinary datatype encrypted column
 ALTER TABLE [Sales].[CreditCard]
@@ -161,40 +168,40 @@ GO
 --Check the table
 SELECT * FROM [Sales].[CreditCard]
 
---Open the symmetric key
-OPEN SYMMETRIC KEY AW2014SymKey
-DECRYPTION BY CERTIFICATE AW2014Certificate;
+--Encrypt existing data
+UPDATE [Sales].[CreditCard]
+SET
+CardNumberEnc = 
+HASHBYTES('SHA2_256', CardNumber) --SHA2_256 is the encryption algorithm
 
-	--Encrypt existing data
-	UPDATE [Sales].[CreditCard]
-	SET
-	CardNumberEnc = 
-	HASHBYTES('SHA2_256', CardNumber) 
+--Encrypt existing data with a salt as an extra security layer:
+UPDATE [Sales].[CreditCard]
+SET
+CardNumberEnc = 
+HASHBYTES('SHA2_256', CardNumber+CAST([CreditCardID] as NVARCHAR(250))) 
 
-	--Check the table
-	SELECT * FROM [Sales].[CreditCard]
 
-	--Make the new column Non-Nullable
-	ALTER TABLE [Sales].[CreditCard]
-	ALTER COLUMN CardNumberEnc VARBINARY(250) NOT NULL
-	GO
+--Check the table
+SELECT * FROM [Sales].[CreditCard]
 
-	--Check the table
-	SELECT * FROM [Sales].[CreditCard]
+--Make the new column Non-Nullable
+ALTER TABLE [Sales].[CreditCard]
+ALTER COLUMN CardNumberEnc VARBINARY(250) NOT NULL
+GO
 
-	--Drop old column
-	DROP INDEX [AK_CreditCard_CardNumber] ON [Sales].[CreditCard]
-	GO
+--Check the table
+SELECT * FROM [Sales].[CreditCard]
 
-	ALTER TABLE [Sales].[CreditCard]
-	DROP COLUMN CardNumber
+--Drop old column
+DROP INDEX [AK_CreditCard_CardNumber] ON [Sales].[CreditCard]
+GO
 
-	EXEC sp_rename
-	'Sales.CreditCard.CardNumberEnc', 'CardNumber', 'COLUMN';  
-	GO
+ALTER TABLE [Sales].[CreditCard]
+DROP COLUMN CardNumber
 
---Close the symmetric key
-CLOSE SYMMETRIC KEY AW2014SymKey;
+EXEC sp_rename
+'Sales.CreditCard.CardNumberEnc', 'CardNumber', 'COLUMN';  
+GO
 
 --Create a NonClustered index on the new column
 CREATE NONCLUSTERED INDEX [AK_CreditCard_CardNumber] ON [Sales].[CreditCard]
@@ -213,3 +220,32 @@ SELECT
 	ModifiedDate
 FROM
 	[Sales].[CreditCard]
+GO
+
+--============CleanUp============
+
+DROP SYMMETRIC KEY AW2014SymKey
+GO
+
+DROP CERTIFICATE AW2014Certificate
+GO
+
+DROP MASTER KEY
+GO
+
+USE master;
+GO
+
+DROP DATABASE [AdventureWorks2014]
+GO
+
+RESTORE DATABASE AdventureWorks2014
+FROM DISK = 'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\Backup\AdventureWorks2014.bak'
+WITH
+MOVE
+'AdventureWorks2014_Data' TO 'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\DATA\AdventureWorks2014.mdf',
+MOVE
+'AdventureWorks2014_Log' TO 'C:\Program Files\Microsoft SQL Server\MSSQL15.MSSQLSERVER\MSSQL\DATA\AdventureWorks2014.ldf'
+GO
+
+
