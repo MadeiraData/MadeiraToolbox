@@ -53,6 +53,17 @@ if ($logFileFolderPath -ne "")
 
 
 #region install-modules
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+if (Get-PSRepository -Name "PSGallery") {
+    Write-Verbose "$(Get-TimeStamp) PSGallery already registered"
+} 
+else {
+    Write-Information "$(Get-TimeStamp) Registering PSGallery"
+    Register-PSRepository -Default
+}
+
 # replace the array below with any modules that your script depends on.
 # you can remove this region if your script doesn't need importing any modules.
 $modules = @("PSFramework", "PSModuleDevelopment", "dbatools")

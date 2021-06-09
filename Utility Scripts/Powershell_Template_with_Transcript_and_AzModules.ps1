@@ -70,7 +70,18 @@ if (Get-Module -ListAvailable -Name "AzureRm*") {
     }
 }
 
-## Install the Azure modules that you need from the PowerShell Gallery
+## Install the modules that you need from the PowerShell Gallery
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+if (Get-PSRepository -Name "PSGallery") {
+    Write-Verbose "$(Get-TimeStamp) PSGallery already registered"
+} 
+else {
+    Write-Information "$(Get-TimeStamp) Registering PSGallery"
+    Register-PSRepository -Default
+}
+
 ## you can add or remove additional modules here as needed
 $modules = @("Az.Accounts", "Az.Compute", "Az.Sql", "dbatools")
         
