@@ -82,7 +82,25 @@ EXECUTE dbo.sp_add_jobstep
 	@retry_interval			= 0 ,
 	@os_run_priority		= 0 ,
 	@subsystem				= N'TSQL' ,
-	@command				= N'EXECUTE dbo.sp_cycle_agent_errorlog;' ,
+	@command				= N'DECLARE @LogSizeThresholdMB BIGINT = 100;
+SET NOCOUNT ON;
+DECLARE @Logs AS TABLE
+(
+ ArchiveNum SMALLINT,
+ LastModified DATETIME,
+ LogSizeBytes BIGINT
+);
+
+INSERT INTO @Logs
+EXEC xp_enumerrorlogs 2
+
+IF EXISTS(
+    SELECT *
+    FROM @Logs
+    WHERE ArchiveNum = 0
+    AND LogSizeBytes >= @LogSizeThresholdMB * 1024 * 1024.0
+    )
+EXEC msdb.dbo.sp_cycle_agent_errorlog;' ,
 	@database_name			= N'msdb' ,
 	@flags					= 0;
 GO
