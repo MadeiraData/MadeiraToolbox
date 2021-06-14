@@ -8,6 +8,22 @@
 Process
 {
 #region initialization
+function Get-TimeStamp {
+    Param(
+    [switch]$NoWrap,
+    [switch]$Utc
+    )
+    $dt = Get-Date
+    if ($Utc -eq $true) {
+        $dt = $dt.ToUniversalTime()
+    }
+    $str = "{0:MM/dd/yy} {0:HH:mm:ss}" -f $dt
+
+    if ($NoWrap -ne $true) {
+        $str = "[$str]"
+    }
+    return $str
+}
 
 ## Uninstall deprecated AzureRm modules
 if (Get-Module -ListAvailable -Name "AzureRm*") {
