@@ -167,6 +167,28 @@ FROM (
 ) AS q
 WHERE Msg IS NOT NULL
 
+UNION ALL
+
+SELECT N'In server: ' + QUOTENAME(@@SERVERNAME) + N' there are unused CPU schedulers found', COUNT(*) AS [value] 
+FROM sys.dm_os_schedulers WITH (NOLOCK)
+WHERE [is_online] = 0
+and scheduler_id < 255
+HAVING COUNT(*) > 0
+
+UNION ALL
+
+SELECT N'In server: ' + QUOTENAME(@@SERVERNAME) + N' there are offline CPU schedulers found', COUNT(*) AS [value] 
+FROM sys.dm_os_schedulers WITH (NOLOCK)
+WHERE [status] = N'VISIBLE OFFLINE'
+and scheduler_id < 255
+HAVING COUNT(*) > 0
+
+UNION ALL
+
+SELECT N'In server: ' + QUOTENAME(@@SERVERNAME) + N' there are CPU schedulers that failed to create workers', COUNT(*) AS [value] 
+FROM sys.dm_os_schedulers WITH (NOLOCK)
+WHERE failed_to_create_worker = 1
+HAVING COUNT(*) > 0
 
 DROP TABLE #Volumes;
 DROP TABLE #Files;
