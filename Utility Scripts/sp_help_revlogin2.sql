@@ -15,16 +15,23 @@ Standard disclaimer: You use scripts off of the web at your own risk.  I fully e
      script to work without issue but I've been known to be wrong before.
     
 Parameters:
+    @login_name
+	Optionally filter for a specific login name. Defaults to NULL (all logins).
+
     @include_system_logins
         If set to 1, will output system principals such as sa, NT SERVICE accounts, and ##... accounts.
 
     @command_separator
         By default equals to 'GO'. Will be used as a separator between each CREATE LOGIN command.
 *********************************************************************************************
+-- V1.1
+-- 23/06/2021 - added new optional parameter @login_name
+
 -- V1.0
 -- 05/05/2021
 *********************************************************************************************/
 CREATE PROCEDURE #sp_help_revlogin2
+	@login_name sysname = NULL,
 	@include_system_logins bit = 0,
 	@command_separator nvarchar(1000) = N'GO'
 AS
@@ -56,6 +63,7 @@ BEGIN
   FROM sys.database_principals AS dp
   WHERE [sid] IS NOT NULL
   AND type IN ( 'S', 'G', 'U' )
+  AND (@login_name IS NULL OR @login_name = [name])
   AND (
       @include_system_logins = 1
       OR ([sid] NOT IN (0x00, 0x01) AND [name] NOT LIKE N'##%##')
@@ -81,6 +89,7 @@ BEGIN
   CROSS APPLY ( SELECT [name] AS login_name ) AS l
   WHERE [sid] IS NOT NULL
   AND type IN ( 'S', 'G', 'U' )
+  AND (@login_name IS NULL OR @login_name = l.login_name)
   AND (
       @include_system_logins = 1
       OR ([sid] NOT IN (0x00, 0x01) AND [name] NOT LIKE N'##%##' AND [name] NOT LIKE N'NT SERVICE\%' AND [name] NOT LIKE N'NT AUTHORITY\%')
