@@ -1,7 +1,7 @@
 /*
 Author: Eitan Blumin | https://eitanblumin.com
 Date Created: 2018-01-02
-Last Update: 2020-03-30
+Last Update: 2021-06-30
 Description:
 	Fix All Orphaned Users Within Current Database, or all databases in the instance.
 	Handles 3 possible use-cases:
@@ -21,12 +21,11 @@ SET NOCOUNT ON;
 DECLARE @user NVARCHAR(MAX), @loginExists BIT, @saName SYSNAME, @ownedSchemas NVARCHAR(MAX);
 
 -- Find the actual name of the "sa" login
-SELECT @saName = [name] FROM sys.server_principals WHERE sid = 0x01;
+SELECT @saName = SUSER_NAME(0x01);
 
-IF OBJECT_ID('tempdb..#tmp') IS NOT NULL DROP TABLE #tmp;
-CREATE TABLE #tmp (DBName SYSNAME NULL, UserName NVARCHAR(MAX), LoginExists BIT, OwnedSchemas NVARCHAR(MAX));
+DECLARE @tmp AS TABLE(DBName SYSNAME NULL, UserName NVARCHAR(MAX), LoginExists BIT, OwnedSchemas NVARCHAR(MAX));
+INSERT INTO @tmp
 exec sp_MSforeachdb 'IF DATABASEPROPERTYEX(''?'', ''Status'') = ''ONLINE'' AND DATABASEPROPERTYEX(''?'', ''Updateability'') = ''READ_WRITE''
-INSERT INTO #tmp
 SELECT ''?'', dp.name AS user_name
 , CASE WHEN dp.name IN (SELECT name COLLATE database_default FROM sys.server_principals) THEN 1 ELSE 0 END AS LoginExists
 , OwnedSchemas = (
@@ -48,14 +47,14 @@ FOR XML PATH ('''')
 FROM [?].sys.database_principals AS dp 
 LEFT JOIN sys.server_principals AS sp ON dp.SID = sp.SID 
 WHERE sp.SID IS NULL 
-AND authentication_type_desc IN (''INSTANCE'',''WINDOWS'')
+AND dp.type IN (''S'',''U'',''G'') AND dp.sid > 0x01
 AND DATABASEPROPERTYEX(''?'',''Updateability'') = ''READ_WRITE'';'
 
-IF EXISTS (SELECT NULL FROM #tmp WHERE DBName = @Database OR @Database IS NULL)
+IF EXISTS (SELECT NULL FROM @tmp WHERE DBName = @Database OR @Database IS NULL)
 BEGIN
 	DECLARE Orphans CURSOR FOR
 	SELECT DBName, UserName, LoginExists, OwnedSchemas
-	FROM #tmp
+	FROM @tmp
 	WHERE DBName = @Database OR @Database IS NULL;
 
 	OPEN Orphans
