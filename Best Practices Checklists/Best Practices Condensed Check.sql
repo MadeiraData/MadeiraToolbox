@@ -427,7 +427,7 @@ DECLARE @DBCC AS TABLE(
 );
  
 INSERT INTO @DBCC
-EXEC sp_MSforeachDb
+EXEC sp_MSforeachdb
 'IF EXISTS (SELECT [name] FROM master.sys.databases WITH (NOLOCK) WHERE database_id NOT IN (2,3) AND is_read_only = 0 AND [state] = 0 AND [name] = ''?'')
 BEGIN
 	USE [?];
@@ -497,7 +497,7 @@ PRINT 'Checking: Orphaned User(s)';
 SET NOCOUNT ON;
 DECLARE @db SYSNAME, @user NVARCHAR(MAX);
 INSERT INTO @Alerts
-exec sp_MsforEachDB '
+exec sp_MSforeachdb '
 IF EXISTS (SELECT * FROM sys.databases WHERE state_desc = ''ONLINE'' AND name = ''?'')
 SELECT ''Security'', ''Orphaned User(s) in [?]'', dp.name
 , CASE WHEN dp.name IN (SELECT name COLLATE database_default FROM sys.server_principals) THEN ''Login with same name already exists'' ELSE ''Login with same name was not found'' END
