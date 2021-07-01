@@ -48,6 +48,7 @@ FROM [?].sys.database_principals AS dp
 LEFT JOIN sys.server_principals AS sp ON dp.SID = sp.SID 
 WHERE sp.SID IS NULL 
 AND dp.type IN (''S'',''U'',''G'') AND dp.sid > 0x01
+AND dp.authentication_type <> 0
 AND DATABASEPROPERTYEX(''?'',''Updateability'') = ''READ_WRITE'';'
 
 IF EXISTS (SELECT NULL FROM @tmp WHERE DBName = @Database OR @Database IS NULL)
