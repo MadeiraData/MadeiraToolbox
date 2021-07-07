@@ -1,18 +1,31 @@
 DECLARE
- @MinimumMBFreeToAlert INT = 400000,
+ @MinimumMBFreeToAlert INT = 540000,
  @PercentAvailableToAlert INT = 80
 
-SET NOCOUNT ON;
-DECLARE @SQLVersion FLOAT, @SQLEdition SMALLINT, @CPUCount SMALLINT, @MemUsedMB BIGINT, @EditionMaxCPU SMALLINT, @EditionMaxMemMB BIGINT;
+SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+DECLARE @SQLVersion FLOAT, @SQLEdition SMALLINT, @CPUCount SMALLINT, @HTRatio INT, @Sockets INT, @MemUsedMB BIGINT, @EditionMaxCPU SMALLINT, @EditionMaxMemMB BIGINT;
 
 SELECT
  @SQLVersion = (CONVERT(VARCHAR, (@@microsoftversion / 0x1000000) & 0xff)),
  @SQLEdition = (CONVERT(INT,SERVERPROPERTY('EngineEdition')))
 
-SELECT @CPUCount = cpu_count       
-FROM sys.dm_os_sys_info WITH (NOLOCK) 
-OPTION (RECOMPILE);
+DECLARE @CMD NVARCHAR(MAX)
+SET @CMD = N'SELECT @CPUCount = cpu_count, @HTRatio = hyperthread_ratio'
+
+IF EXISTS (SELECT * FROM sys.all_columns WHERE object_id = OBJECT_ID('sys.dm_os_sys_info') AND name = 'socket_count')
+	SET @CMD = @CMD + N', @Sockets = socket_count'
   
+SET @CMD = @CMD + N'
+FROM sys.dm_os_sys_info WITH (NOLOCK) 
+OPTION (RECOMPILE);'
+
+EXEC sp_executesql @CMD
+	, N'@CPUCount SMALLINT OUTPUT, @HTRatio INT OUTPUT, @Sockets INT OUTPUT'
+	, @CPUCount OUTPUT, @HTRatio OUTPUT, @Sockets OUTPUT
+
+--SELECT @CPUCount AS [@CPUCount], @HTRatio AS [@HTRatio], @Sockets AS [@Sockets]
+
 SELECT @MemUsedMB = convert(int, value_in_use)
 FROM sys.configurations
 WHERE name = 'max server memory (MB)'
@@ -25,6 +38,7 @@ BEGIN
   @EditionMaxCPU = MaxCPU, @EditionMaxMemMB = MaxMemGB * 1024
  FROM (VALUES
  (10.5, 4, 64),
+ (11, 16, 64),
  (12, 16, 128),
  (99, 24, 128)
  ) AS VersionLimits(MaxVersion, MaxCPU, MaxMemGB)
@@ -69,58 +83,64 @@ CREATE TABLE #Files
 
 IF OBJECT_ID('sys.dm_os_volume_stats') IS NOT NULL
 BEGIN
-	EXEC (N'INSERT INTO #Volumes
-	SELECT DISTINCT vs.volume_mount_point, vs.total_bytes, vs.available_bytes
-	FROM (
-	 SELECT *
-	 FROM sys.master_files AS f WITH(NOLOCK)
-	 WHERE DATABASEPROPERTYEX(DB_NAME(f.database_id), ''Status'') = ''ONLINE''
-	 AND DATABASEPROPERTYEX(DB_NAME(f.database_id), ''Updateability'') = ''READ_WRITE''
-	 AND f.type IN (0,1)
-	 AND f.database_id <> 2
-	) AS f
-	CROSS APPLY sys.dm_os_volume_stats (f.database_id, f.file_id)  AS vs
-	WHERE vs.volume_mount_point <> ''C:\''')
+ EXEC (N'INSERT INTO #Volumes
+ SELECT DISTINCT vs.volume_mount_point, vs.total_bytes, vs.available_bytes
+ FROM (
+  SELECT *
+  FROM sys.master_files AS f WITH(NOLOCK)
+  WHERE DATABASEPROPERTYEX(DB_NAME(f.database_id), ''Status'') = ''ONLINE''
+  AND DATABASEPROPERTYEX(DB_NAME(f.database_id), ''Updateability'') = ''READ_WRITE''
+  AND f.type IN (0,1)
+  AND f.database_id <> 2
+ ) AS f
+ CROSS APPLY sys.dm_os_volume_stats (f.database_id, f.file_id)  AS vs
+ WHERE vs.volume_mount_point <> ''C:\''')
 
-	DECLARE @CMD NVARCHAR(MAX), @Executor NVARCHAR(1000);
-	SET @CMD = N'
-	INSERT INTO #Files
-	SELECT 
-	  DB_ID()
-	, f.file_id
-	, f.name
-	, vs.volume_mount_point
-	, f.max_size
-	, f.size
-	, FILEPROPERTY(f.[name], ''SpaceUsed'')
-	FROM sys.database_files AS f
-	CROSS APPLY sys.dm_os_volume_stats (DB_ID(), f.file_id)  AS vs
-	WHERE f.type IN (0,1)
-	'
+ DECLARE @Executor NVARCHAR(1000);
+ SET @CMD = N'
+ INSERT INTO #Files
+ SELECT 
+   DB_ID()
+ , f.file_id
+ , f.name
+ , vs.volume_mount_point
+ , f.max_size
+ , f.size
+ , FILEPROPERTY(f.[name], ''SpaceUsed'')
+ FROM sys.database_files AS f
+ CROSS APPLY sys.dm_os_volume_stats (DB_ID(), f.file_id)  AS vs
+ WHERE f.type IN (0,1)
+ '
 
-	DECLARE @CurrDBId INT, @CurrDBName SYSNAME
+ DECLARE @CurrDBId INT, @CurrDBName SYSNAME
 
-	DECLARE DBs CURSOR
-	LOCAL FAST_FORWARD
-	FOR
-	SELECT database_id, [name]
-	FROM sys.databases
-	WHERE [state] = 0
-	AND database_id <> 2
-	AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE';
+ DECLARE DBs CURSOR
+ LOCAL FAST_FORWARD
+ FOR
+ SELECT database_id, [name]
+ FROM sys.databases
+ WHERE [state] = 0
+ AND database_id <> 2
+ AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE';
 
-	OPEN DBs
-	WHILE 1=1
-	BEGIN
-	 FETCH NEXT FROM DBs INTO @CurrDBId, @CurrDBName
-	 IF @@FETCH_STATUS <> 0
-	  BREAK;
-	 SET @Executor = QUOTENAME(@CurrDBName) + N'..sp_executesql'
+ OPEN DBs
+ WHILE 1=1
+ BEGIN
+  FETCH NEXT FROM DBs INTO @CurrDBId, @CurrDBName
+  IF @@FETCH_STATUS <> 0
+   BREAK;
+  SET @Executor = QUOTENAME(@CurrDBName) + N'..sp_executesql'
 
-	 EXEC @Executor @CMD, N'@DBId INT', @CurrDBId
-	END
+  BEGIN TRY
+  EXEC @Executor @CMD, N'@DBId INT', @CurrDBId
+  END TRY
+  BEGIN CATCH
+	PRINT N'Error while getting free space details from ' + QUOTENAME(@CurrDBName)
+	PRINT ERROR_MESSAGE()
+  END CATCH
+ END
 
-	CLOSE DBs;
+ CLOSE DBs;
 END
 
 ;WITH DiskData
@@ -157,13 +177,23 @@ SELECT ErrorMSG = N'This ' + CASE @SQLEdition WHEN 2 THEN N'Standard' WHEN 4 THE
 + N' Edition of SQL Server (version ' + CONVERT(nvarchar(max), @SQLVersion) + N') supports ' + Msg
 , @SQLVersion
 FROM (
- SELECT Msg = N'up to ' + CONVERT(nvarchar(max), @EditionMaxCPU) + N' CPU core(s), but ' + QUOTENAME(@@SERVERNAME) + N' has ' + CONVERT(nvarchar(max), @CPUCount) + N' CPU cores.'
- WHERE @EditionMaxCPU < @CPUCount
+ SELECT Msg = N'up to ' + CONVERT(nvarchar(max), @EditionMaxCPU) + N' CPU core(s), but ' + QUOTENAME(@@SERVERNAME) + N' has ' + CONVERT(nvarchar(max), @CPUCount/@HTRatio) + N' physical CPU cores.'
+ WHERE @EditionMaxCPU < @CPUCount/@HTRatio
 
  UNION ALL
 
  SELECT Msg = N'up to ' + CONVERT(nvarchar(max), @EditionMaxMemMB) + N' MB max memory, but ' + QUOTENAME(@@SERVERNAME) + N' has ' + CONVERT(nvarchar(max), @MemUsedMB) + N' MB max memory configured.'
  WHERE @EditionMaxMemMB < @MemUsedMB
+
+ UNION ALL
+
+ SELECT Msg = N'up to 1 processor socket, but ' + QUOTENAME(@@SERVERNAME) + N' has ' + CONVERT(nvarchar(max), @Sockets) + N' processor sockets.'
+ WHERE @SQLEdition = 4 AND @Sockets > 1
+
+ UNION ALL
+
+ SELECT Msg = N'up to 4 processor sockets, but ' + QUOTENAME(@@SERVERNAME) + N' has ' + CONVERT(nvarchar(max), @Sockets) + N' processor sockets.'
+ WHERE @SQLEdition = 2 AND @Sockets > 4
 ) AS q
 WHERE Msg IS NOT NULL
 
