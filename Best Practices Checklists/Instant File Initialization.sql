@@ -1,3 +1,7 @@
+DECLARE @AllowEnablingXpCmdShell bit = 1
+
+SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 DECLARE @ifi bit
 
 IF CAST(SERVERPROPERTY('Edition') AS VARCHAR(255)) NOT LIKE '%Azure%'
@@ -16,6 +20,7 @@ BEGIN
 	END
 	
 	IF @ifi IS NULL AND IS_SRVROLEMEMBER('sysadmin') = 1
+	AND (@AllowEnablingXpCmdShell = 1 OR EXISTS (SELECT * FROM sys.configurations WHERE name = 'xp_cmdshell' AND CONVERT(int, value_in_use) = 1))
 	BEGIN
 		PRINT 'Checking: Instant File Initialization using xp_cmdshell whoami /priv';
 		DECLARE @xp_cmdshell_output2 TABLE ([Output] VARCHAR (8000));
@@ -62,14 +67,14 @@ BEGIN
 			SET @ifi = 0
 		END
 	END
-	ELSE
+	ELSE IF @ifi IS NULL
 	BEGIN
 		PRINT N'Insufficient permissions to determine whether IFI is enabled.'
 	END
 END
 ELSE
 BEGIN
-	--PRINT N'Instant File Initialization is irrelevant for Azure SQL databases'
+	PRINT N'Instant File Initialization is irrelevant for Azure SQL databases'
 	SET @ifi = 1;
 END
 
