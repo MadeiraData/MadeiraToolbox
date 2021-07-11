@@ -17,9 +17,16 @@ DECLARE @Result AS TABLE
  TotalSizeMB decimal(19,2)
 )
 
-DECLARE @CMD NVARCHAR(MAX)
-SET @CMD = N'
-SELECT TOP ' + CONVERT(nvarchar(max), @Top) + N' 
+DECLARE @DBsCount int, @PlanCountThreshold int;
+SELECT @DBsCount = COUNT(*) FROM sys.databases;
+
+IF 50 > @DBsCount
+	SET @PlanCountThreshold = 50;
+ELSE
+	SET @PlanCountThreshold = @DBsCount * 2;
+
+INSERT INTO @Result
+SELECT TOP (@Top)
     qs.query_hash
   , COUNT(DISTINCT plan_handle)
   , CAST(pa.value AS int)
@@ -32,20 +39,11 @@ CROSS APPLY
 	FROM sys.dm_exec_cached_plans AS cp
 	WHERE cp.plan_handle = qs.plan_handle
 ) AS ts
-WHERE pa.attribute = ''dbid''
+WHERE pa.attribute = 'dbid'
 GROUP BY qs.query_hash, pa.value
-HAVING COUNT(DISTINCT plan_handle) > ';
-
-IF 50 > (SELECT COUNT(*) FROM sys.databases)
-	SET @CMD = @CMD + N' 50 ';
-ELSE
-	SELECT @CMD = @CMD + CAST(COUNT(*) * 2 AS NVARCHAR(50)) FROM sys.databases;
-
-SET @CMD = @CMD + N' ORDER BY totalSize DESC OPTION (RECOMPILE);';
-PRINT @CMD
-
-INSERT INTO @Result
-EXEC(@CMD);
+HAVING COUNT(DISTINCT plan_handle) > @PlanCountThreshold
+ORDER BY totalSize DESC
+OPTION (RECOMPILE);
 
 IF @RCA = 1
 BEGIN
@@ -53,7 +51,7 @@ BEGIN
 	, qplan.query_plan AS example_query_plan, qtext.text AS example_sql_batch
 	, MoreDetailsCmd = N'
 	SELECT TOP ' + CONVERT(nvarchar(max), @Top) + N' 
-	qplan.query_plan, txt.text as sql_text, qs.*
+	qplan.query_plan, txt.text, qs.*
 	FROM sys.dm_exec_query_stats AS qs
 	CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qplan
 	CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS txt
