@@ -9,6 +9,7 @@ the disk volume where the TempDB files are located.
 This check only works when TempDB files are isolated from other databases and exist on their own dedicated volume.
 
 Change log:
+2021-07-12 - Added @MaxSizeMBOverride, fixed nvarchar conversions, fixed @InitialSizeMBOverride, added TF details
 2020-10-11 - Added WITH NO_INFOMSGS to shrink command, added ForceShrink parameter
 2020-08-04 - Added @ClearServerCache and @SpaceUsedMaxPercent parameters, updated indentations and comments
 2020-03-08 - Bug fixes, added parameters for more control
@@ -20,7 +21,8 @@ Change log:
 DECLARE @ClearServerCache 		BIT	= 0 -- If shrinking tempdb files doesn't work, you may have to set this to 1 to clear objects from server cache.
 DECLARE @MaxSizeDiskUtilizationPercent 	FLOAT 	= 95 -- Maximum total percentage to be used for MAXSIZE property. Use NULL for UNLIMITED.
 DECLARE @InitSizeDiskUtilizationPercent FLOAT 	= 70 -- Desired total percentage of disk space to be used for SIZE property.
-DECLARE @InitialSizeMBOverride 		INT 	= NULL -- 2048 -- hard-coded size per file for edge cases, overriding the calculation based on disk size.
+DECLARE @InitialSizeMBOverride 		INT 	= NULL -- hard-coded size per file for edge cases, overriding the calculation based on disk size.
+DECLARE @MaxSizeMBOverride 		INT 	= NULL -- hard-coded max size per file for edge cases, overriding the calculation based on disk size.
 DECLARE @FileGrowthMB 			INT 	= 1024 -- Auto-growth increment in MB.
 DECLARE @IncludeTransactionLog 		BIT 	= 0 -- Specify whether to include the transaction log file in the calculations.
 DECLARE @SpaceUsedMaxPercent 		INT 	= 50 -- Maximum percent space used compared to desired file size, if found to be above - a warning will be raised.
@@ -36,17 +38,17 @@ DECLARE @CMDs AS TABLE (CMD nvarchar(max));
 INSERT INTO @CMDs
 SELECT
  Remediation_Script = 
- CASE WHEN current_size_MB > InitSizeMBPerFile OR @ForceShrink = 1 THEN N'USE tempdb; DBCC SHRINKFILE (N' + QUOTENAME(name, '''') + ' , ' + CONVERT(nvarchar,ISNULL(@InitialSizeMBOverride, InitSizeMBPerFile)) + N') WITH NO_INFOMSGS; '
+ CASE WHEN current_size_MB > InitSizeMBPerFile OR @ForceShrink = 1 THEN N'USE tempdb; DBCC SHRINKFILE (N' + QUOTENAME(name, '''') + ' , ' + CONVERT(nvarchar(max),InitSizeMBPerFile) + N') WITH NO_INFOMSGS; '
  ELSE N'' END
-+ 'ALTER DATABASE [tempdb] MODIFY FILE (NAME = ' + QUOTENAME(name, '''') + ', SIZE = ' + CONVERT(nvarchar,ISNULL(@InitialSizeMBOverride, InitSizeMBPerFile)) + N'MB, MAXSIZE = ' + ISNULL(CONVERT(nvarchar,MaxSizeMBPerFile) + 'MB','UNLIMITED') + N', FILEGROWTH = ' + CONVERT(nvarchar, @FileGrowthMB) + N'MB);'
++ 'ALTER DATABASE [tempdb] MODIFY FILE (NAME = ' + QUOTENAME(name, '''') + ', SIZE = ' + CONVERT(nvarchar(max),InitSizeMBPerFile) + N'MB, MAXSIZE = ' + ISNULL(CONVERT(nvarchar(max),MaxSizeMBPerFile) + 'MB','UNLIMITED') + N', FILEGROWTH = ' + CONVERT(nvarchar(max), @FileGrowthMB) + N'MB);'
 + CONCAT('-- Current size: ', current_size_MB, ' MB, Space Used: ', current_spaceused_MB, ' MB (', ROUND(current_spaceused_MB * 1.0 / InitSizeMBPerFile * 100,2), ' % of desired size)')
 + CASE WHEN current_spaceused_MB * 1.0 / InitSizeMBPerFile > @SpaceUsedMaxPercent / 100.0 THEN ' !!WARNING!!' ELSE '' END
 --, *
 FROM
 (
 	SELECT 
-		  MaxSizeMBPerFile = CEILING(@MaxSizeDiskUtilizationPercent / 100.0 * total_MB_ceil / TotalNumOfFiles)
-		, InitSizeMBPerFile = FLOOR(@InitSizeDiskUtilizationPercent / 100.0 * total_MB_floor / TotalNumOfFiles)
+		  MaxSizeMBPerFile = ISNULL(@MaxSizeMBOverride, CEILING(@MaxSizeDiskUtilizationPercent / 100.0 * total_MB_ceil / TotalNumOfFiles))
+		, InitSizeMBPerFile = ISNULL(@InitialSizeMBOverride, FLOOR(@InitSizeDiskUtilizationPercent / 100.0 * total_MB_floor / TotalNumOfFiles))
 		, *
 	FROM
 	(
@@ -64,16 +66,14 @@ FROM
 	, A.is_percent_growth
 	, B.volume_mount_point
 	from sys.master_files A
-	CROSS APPLY
-		sys.dm_os_volume_stats (A.database_id, A.[file_id]) B
+	CROSS APPLY sys.dm_os_volume_stats (A.database_id, A.[file_id]) B
 	WHERE A.database_id = 2
 	AND A.[type] IN (0,1)
 	AND NOT EXISTS
 	(
 		select null
 		from sys.master_files A1
-		CROSS APPLY
-			sys.dm_os_volume_stats (A1.database_id, A1.[file_id]) B1
+		CROSS APPLY sys.dm_os_volume_stats (A1.database_id, A1.[file_id]) B1
 		WHERE A1.database_id <> 2
 		AND B1.volume_mount_point = B.volume_mount_point
 	)
@@ -99,8 +99,7 @@ BEGIN
 
 	IF @@ROWCOUNT > 0
 	INSERT INTO @CMDs
-	SELECT
-		Remediation_Script = N'DBCC TRACEON(' + CONVERT(nvarchar,TF) + N', -1);'
+	SELECT Remediation_Script = N'DBCC TRACEON(' + CONVERT(nvarchar(max),TF) + N', -1); -- Add to startup parameters: -T' + CONVERT(nvarchar(max),TF)
 	FROM @TF WHERE Glob = 0
 
 END
@@ -118,6 +117,9 @@ WHERE @ClearServerCache = 1
 AND EXISTS (SELECT TOP 1 NULL FROM @CMDs WHERE CMD NOT LIKE 'DBCC TRACE%')
 UNION ALL
 SELECT CMD AS Remediation_Script FROM @CMDs
+
+IF EXISTS (SELECT * FROM @CMDs WHERE CMD LIKE 'DBCC TRACEON(%')
+	RAISERROR(N'WARNING! Detected missing trace flag(s). Please remember to add these trace flags to the server startup parameters as well!', 11,1);
 
 IF EXISTS (SELECT * FROM @CMDs WHERE CMD LIKE '%DBCC SHRINKFILE%--% !!WARNING!!')
 	RAISERROR(N'WARNING! One or more files have a high space used compared to the desired file size!
