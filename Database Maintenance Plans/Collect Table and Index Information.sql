@@ -1,15 +1,15 @@
 DECLARE
 	@TopPerDB		INT = 100,
-	@MinimumRowCount	INT = 1,
-	@MinimumSizeMB		INT = 50
+	@MinimumRowCount	BIGINT = 1,
+	@MinimumSizeMB		BIGINT = 50
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 DECLARE @command NVARCHAR(MAX);
 DECLARE @TempResult AS TABLE (DatabaseName sysname, SchemaName sysname NULL, TableName sysname NULL, IndexName sysname NULL
 , CompressionType TINYINT, CompressionType_Desc AS (CASE CompressionType WHEN 0 THEN 'NONE' WHEN 1 THEN 'ROW' WHEN 2 THEN 'PAGE' WHEN 3 THEN 'COLUMNSTORE' WHEN 4 THEN 'COLUMNSTORE_ARCHIVE' ELSE 'UNKNOWN' END)
-, RowCounts int NULL, TotalSpaceMB float NULL, UsedSpaceMB float NULL, UnusedSpaceMB float NULL
-, UserSeeks INT NULL, UserScans INT NULL, UserLookups INT NULL, UserUpdates INT NULL);
+, RowCounts BIGINT NULL, TotalSpaceMB float NULL, UsedSpaceMB float NULL, UnusedSpaceMB float NULL
+, UserSeeks BIGINT NULL, UserScans BIGINT NULL, UserLookups BIGINT NULL, UserUpdates BIGINT NULL);
 
 SELECT @command = 'IF EXISTS (SELECT * FROM sys.databases WHERE state = 0 AND is_read_only = 0 AND database_id > 4 AND is_distributor = 0 AND DATABASEPROPERTYEX([name], ''Updateability'') = ''READ_WRITE'')
 BEGIN
@@ -51,6 +51,7 @@ GROUP BY
 HAVING
 	ROUND(((SUM(a.total_pages) * 8) / 1024.00), 2) >= ' + CONVERT(nvarchar(max), @MinimumSizeMB) + N'
 ORDER BY TotalSpaceMB DESC
+OPTION(RECOMPILE);
 END'
 
 INSERT INTO @TempResult
