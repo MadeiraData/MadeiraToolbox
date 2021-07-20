@@ -41,8 +41,9 @@ df = spark.sql(query)
 
 display(df)
 
-#in this code snippet I am generating a new column pk for compound partitioning key
+#in this code snippet I am generating a new property "pk" for compound partitioning key
 # I will not take all properties from the source document, only subset
+# and writing the entire dataframe to the target container
 df.withColumn("pk",concat_ws("_",col("propertyA"),col("propertyB")))\
       .withColumn("OldDocumentId",col("id"))\
       .withColumn("id",col("u1"))\
