@@ -1,5 +1,5 @@
-# This cope was written for Databricks environment
-# Dependancy: install this package from Maven, coordinates: com.azure.cosmos.spark:azure-cosmos-spark_3-1_2-12:4.2.0
+# This code was written for Databricks Notebook
+# Dependency: install this package from Maven, coordinates: com.azure.cosmos.spark:azure-cosmos-spark_3-1_2-12:4.2.0
 
 #Azure Cosmos DB account -> Settings -> Keys -> URI
 host = 'https://***:443/'
