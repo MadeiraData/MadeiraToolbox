@@ -1,9 +1,9 @@
-from slack_sdk import WebClient
-
+# Pre-requisites:
 #1. create app in Slack
 #2. generate Slack access token
 #3. Add relevant permissions on Slack channel to the new Slack App
 
+from slack_sdk import WebClient
 client = WebClient(token="***")
 
 # the below function will generate message in Slack that utilizes Slack block layout
