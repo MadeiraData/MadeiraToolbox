@@ -2,6 +2,9 @@ Param
 (
 [string] $SourceFolder = "C:\SSRS\My-Reports",
 [string] $TargetReportServerUri = "http://localhost:8081/ReportServer",
+[PSCredential] $Credential,
+[switch] $CustomAuthentication,
+[string] $ApiVersion,
 [string] $TargetFolder = "/My-Reports/Sample-Reports",
 [string] $OverrideDataSourcePathForAll, #= "/My-Reports/Data Sources/ProdDS",
 [string] $logFileFolderPath = "C:\SSRS_deployment_log",
@@ -75,8 +78,12 @@ else {
     Import-Module PowerShellGet -Force -Scope Local | Out-Null
 }
 
-Write-Output "Marking PSGallery as Trusted..."
-Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
+if ((Get-PSRepository -Name "PSGallery").Trusted) {
+    Write-Verbose "$(Get-TimeStamp) PSGallery already Trusted"
+} else {
+    Write-Information "$(Get-TimeStamp) Marking PSGallery as Trusted..."
+    Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
+}
 
 # replace the array below with any modules that your script depends on.
 # you can remove this region if your script doesn't need importing any modules.
@@ -117,12 +124,32 @@ if (!$SourceFolder.EndsWith("\"))
     $SourceFolder = $SourceFolder + "\"
 }
 
+
 Write-Output "====================================================================================="
 Write-Output "                             Deploying SSRS Reports"
 Write-Output "Source Folder: $SourceFolder"
 Write-Output "Target Server: $TargetReportServerUri"
 Write-Output "Target Folder: $TargetFolder"
+
+
+$ProxyParams = @{
+    ReportServerUri = $TargetReportServerUri
+    CustomAuthentication = $CustomAuthentication
+}
+
+if ($Credential -ne $null) {
+    Write-Output "Username: $($Credential.UserName)"
+    $ProxyParams.Credential = $Credential
+}
+
+if ($ApiVersion -ne $null) {
+    Write-Output "ApiVersion: $ApiVersion"
+    $ProxyParams.ApiVersion = $ApiVersion
+}
+
 Write-Output "====================================================================================="
+
+$Proxy = New-RsWebServiceProxy @ProxyParams
 
 
 if ($TargetFolder -ne "/") {
@@ -131,39 +158,39 @@ if ($TargetFolder -ne "/") {
       $TargetFolder = $TargetFolder.Remove(0,1)
   }
   
-  Write-Output "Creating Folder: $TargetFolder"
-  New-RsFolder -ReportServerUri $TargetReportServerUri -Path / -Name $TargetFolder -Verbose -ErrorAction SilentlyContinue
+  Write-Output "$(Get-TimeStamp) Creating Folder: $TargetFolder"
+  New-RsFolder -Proxy $Proxy -Path / -Name $TargetFolder -Verbose -ErrorAction SilentlyContinue
 }
 
 if (!$TargetFolder.StartsWith("/")) {
     $TargetFolder = $TargetFolder.Insert(0, "/")
 }
 
-Write-Output "Deploying Data Source files from: $SourceFolder"
+Write-Output "$(Get-TimeStamp) Deploying Data Source files from: $SourceFolder"
 DIR $SourceFolder -Filter *.rds | % { $_.FullName } |
-    Write-RsCatalogItem -ReportServerUri $TargetReportServerUri -Destination $TargetFolder -Verbose -Overwrite
+    Write-RsCatalogItem -Proxy $Proxy -Destination $TargetFolder -Verbose -Overwrite
 
-Write-Output "Deploying Data Set files from: $SourceFolder"
+Write-Output "$(Get-TimeStamp) Deploying Data Set files from: $SourceFolder"
 DIR $SourceFolder -Filter *.rsd | % { $_.FullName } |
-    Write-RsCatalogItem -ReportServerUri $TargetReportServerUri -Destination $TargetFolder -Verbose -Overwrite
+    Write-RsCatalogItem -Proxy $Proxy -Destination $TargetFolder -Verbose -Overwrite
 
-Write-Output "Deploying Report Definition files from: $SourceFolder"
+Write-Output "$(Get-TimeStamp) Deploying Report Definition files from: $SourceFolder"
 DIR $SourceFolder -Filter *.rdl | % { $_.FullName } |
-    Write-RsCatalogItem -ReportServerUri $TargetReportServerUri -Destination $TargetFolder -Verbose -Overwrite
+    Write-RsCatalogItem -Proxy $Proxy -Destination $TargetFolder -Verbose -Overwrite
     
 if ($OverrideDataSourcePathForAll -ne $null -and $OverrideDataSourcePathForAll -ne "") {
-    Write-Output "Fixing Data Source references to: $OverrideDataSourcePathForAll"
+    Write-Output "$(Get-TimeStamp) Fixing Data Source references to: $OverrideDataSourcePathForAll"
 
-    Get-RsFolderContent -ReportServerUri $TargetReportServerUri -RsFolder $TargetFolder | ForEach {
+    Get-RsFolderContent -Proxy $Proxy -RsFolder $TargetFolder | ForEach {
         $CurrReport = $_
-        Get-RsItemReference -ReportServerUri $TargetReportServerUri -Path $CurrReport.Path | Where ReferenceType -eq "DataSource" | ForEach {
+        Get-RsItemReference -Proxy $Proxy -Path $CurrReport.Path | Where ReferenceType -eq "DataSource" | ForEach {
             $CurrReference = $_
 
             if ($CurrReference.Reference -ne $OverrideDataSourcePathForAll) {
-                Write-Output "UPDATING: Data Source $($CurrReference.Name) in report $($CurrReport.Path)"
-                Set-RsDataSourceReference -ReportServerUri $TargetReportServerUri -Path $CurrReport.Path -DataSourceName $CurrReference.Name -DataSourcePath $OverrideDataSourcePathForAll
+                Write-Output "$(Get-TimeStamp) UPDATING: Data Source $($CurrReference.Name) in report $($CurrReport.Path)"
+                Set-RsDataSourceReference -Proxy $Proxy -Path $CurrReport.Path -DataSourceName $CurrReference.Name -DataSourcePath $OverrideDataSourcePathForAll
             } else {
-                Write-Output "Data Source $($CurrReference.Name) in report $($CurrReport.Path) already set correctly."
+                Write-Output "$(Get-TimeStamp) Data Source $($CurrReference.Name) in report $($CurrReport.Path) already set correctly."
             }
         }
     }
