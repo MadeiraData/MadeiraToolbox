@@ -1,7 +1,7 @@
 /*
 Author: Eitan Blumin | https://eitanblumin.com
 Date Created: 2018-01-02
-Last Update: 2021-06-30
+Last Update: 2021-07-28
 Description:
 	Fix All Orphaned Users Within Current Database, or all databases in the instance.
 	Handles 3 possible use-cases:
@@ -12,8 +12,8 @@ Description:
 More info: https://eitanblumin.com/2018/10/31/t-sql-script-to-fix-orphaned-db-users-easily/
 */
 DECLARE
-	 @Database	SYSNAME		= NULL	-- Filter by a specific database. Leave NULL for all databases.
-
+	    @Database		SYSNAME		= NULL	-- Filter by a specific database. Leave NULL for all databases.
+	 ,  @WriteableDBsOnly	BIT		= 1	-- Ignore read-only databases or not.
 
 SET NOCOUNT ON;
 
@@ -25,7 +25,7 @@ SELECT @saName = SUSER_NAME(0x01);
 
 DECLARE @tmp AS TABLE(DBName SYSNAME NULL, UserName NVARCHAR(MAX), LoginExists BIT, OwnedSchemas NVARCHAR(MAX));
 INSERT INTO @tmp
-exec sp_MSforeachdb 'IF DATABASEPROPERTYEX(''?'', ''Status'') = ''ONLINE'' AND DATABASEPROPERTYEX(''?'', ''Updateability'') = ''READ_WRITE''
+exec sp_MSforeachdb 'IF DATABASEPROPERTYEX(''?'', ''Status'') = ''ONLINE''
 SELECT ''?'', dp.name AS user_name
 , CASE WHEN dp.name IN (SELECT name COLLATE database_default FROM sys.server_principals) THEN 1 ELSE 0 END AS LoginExists
 , OwnedSchemas = (
@@ -48,38 +48,22 @@ FROM [?].sys.database_principals AS dp
 LEFT JOIN sys.server_principals AS sp ON dp.SID = sp.SID 
 WHERE sp.SID IS NULL 
 AND dp.type IN (''S'',''U'',''G'') AND dp.sid > 0x01
-AND dp.authentication_type <> 0
-AND DATABASEPROPERTYEX(''?'',''Updateability'') = ''READ_WRITE'';'
+AND dp.authentication_type <> 0;'
 
-IF EXISTS (SELECT NULL FROM @tmp WHERE DBName = @Database OR @Database IS NULL)
-BEGIN
-	DECLARE Orphans CURSOR FOR
-	SELECT DBName, UserName, LoginExists, OwnedSchemas
-	FROM @tmp
-	WHERE DBName = @Database OR @Database IS NULL;
 
-	OPEN Orphans
-	FETCH NEXT FROM Orphans INTO @Database, @user, @loginExists, @ownedSchemas
-
-	WHILE @@FETCH_STATUS = 0
-	BEGIN
-	 DECLARE @Command NVARCHAR(MAX)
-
-	 IF @user = 'dbo'
-		SET @Command = N'USE ' + QUOTENAME(@Database) + N'; ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME(@Database) + N' TO ' + QUOTENAME(@saName) + N' -- assign orphaned [dbo] to [sa]'
-	 ELSE IF @loginExists = 0
-		SET @Command = N'USE ' + QUOTENAME(@Database) + N'; ' + ISNULL(@ownedSchemas, N'') + N' DROP USER ' + QUOTENAME(@user) + N' -- no existing login found'
-	 ELSE
-		SET @Command = N'USE ' + QUOTENAME(@Database) + N'; ALTER USER ' + QUOTENAME(@user) + N' WITH LOGIN = ' + QUOTENAME(@user) + N' -- existing login found'
- 
-	 PRINT @Command;
-	 --EXEC (@Command);
-
-	FETCH NEXT FROM Orphans INTO @Database, @user, @loginExists, @ownedSchemas
-	END
-
-	CLOSE Orphans
-	DEALLOCATE Orphans
-END
+SELECT DBWriteable = CASE WHEN DATABASEPROPERTYEX(DBName,'Updateability') = 'READ_WRITE' THEN 1 ELSE 0 END
+, DBName, UserName, LoginExists --, OwnedSchemas
+, RemediationCmd =
+CASE WHEN UserName = 'dbo' THEN
+	N'USE ' + QUOTENAME(DBName) + N'; ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME(DBName) + N' TO ' + QUOTENAME(@saName) + N' -- assign orphaned [dbo] to [sa]'
+WHEN LoginExists = 0 THEN
+	N'USE ' + QUOTENAME(DBName) + N'; ' + ISNULL(OwnedSchemas, N'') + N' DROP USER ' + QUOTENAME(UserName) + N' -- no existing login found'
 ELSE
-	PRINT N'No orphan users found!'
+	N'USE ' + QUOTENAME(DBName) + N'; ALTER USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(UserName) + N' -- existing login found'
+END
+FROM @tmp
+WHERE (DBName = @Database OR @Database IS NULL)
+AND (@WriteableDBsOnly = 0 OR DATABASEPROPERTYEX(DBName,'Updateability') = 'READ_WRITE')
+ORDER BY DBWriteable DESC, DBName, UserName
+
+IF @@ROWCOUNT = 0 PRINT N'No orphan users found!'
