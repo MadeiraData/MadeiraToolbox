@@ -4,7 +4,8 @@ Excessive permissions should not be granted to PUBLIC role
 Author: Eitan Blumin | https://madeiradata.com | https://eitanblumin.com
 Date: 2021-08-02
 Description:
-This check is based on SQL Vulnerability Assessment rule VA1095
+This check is based on SQL Vulnerability Assessment rules VA1054 and VA1095
+https://eitanblumin.com/sql-vulnerability-assessment-tool-rules-reference-list/#Rule_VA1054
 https://eitanblumin.com/sql-vulnerability-assessment-tool-rules-reference-list/#Rule_VA1095
 
 The rule check is evaluated against all accessible databases,
@@ -21,7 +22,7 @@ DECLARE @temp AS TABLE
 [object_name] SYSNAME COLLATE database_default NULL
 );
 
-DECLARE @CurrDB sysname, @CMD nvarchar(max), @Executor nvarchar(1000);
+DECLARE @CurrDB sysname, @CMD nvarchar(max), @spExecuteSQL nvarchar(1000);
 
 SET @CMD = N'
 SELECT DISTINCT
@@ -30,22 +31,22 @@ db_name() AS [database_name]
 , perms.permission_name
 , REPLACE(perms.class_desc, ''_'', '' '') AS [object_type]
 ,CASE perms.class
-WHEN 0 THEN db_name() -- database
+WHEN 0 THEN DB_NAME() -- database
+WHEN 1 THEN QUOTENAME(OBJECT_SCHEMA_NAME(major_id)) + N''.'' + QUOTENAME(OBJECT_NAME(major_id)) -- object
 WHEN 3 THEN schema_name(major_id) -- schema
-WHEN 4 THEN printarget.NAME -- principal
-WHEN 5 THEN asm.NAME -- assembly
+WHEN 4 THEN printarget.name -- principal
+WHEN 5 THEN asm.name -- assembly
 WHEN 6 THEN type_name(major_id) -- type
-WHEN 10 THEN xmlsc.NAME -- xml schema
-WHEN 15 THEN msgt.NAME COLLATE DATABASE_DEFAULT -- message types
-WHEN 16 THEN svcc.NAME COLLATE DATABASE_DEFAULT -- service contracts
-WHEN 17 THEN svcs.NAME COLLATE DATABASE_DEFAULT -- services
-WHEN 18 THEN rsb.NAME COLLATE DATABASE_DEFAULT -- remote service bindings
-WHEN 19 THEN rts.NAME COLLATE DATABASE_DEFAULT -- routes
-WHEN 23 THEN ftc.NAME -- full text catalog
-WHEN 24 THEN sym.NAME -- symmetric key
-WHEN 25 THEN crt.NAME -- certificate
-WHEN 26 THEN asym.NAME -- assymetric key
-ELSE N''(unknown object)''
+WHEN 10 THEN xmlsc.name -- xml schema
+WHEN 15 THEN msgt.name COLLATE DATABASE_DEFAULT -- message types
+WHEN 16 THEN svcc.name COLLATE DATABASE_DEFAULT -- service contracts
+WHEN 17 THEN svcs.name COLLATE DATABASE_DEFAULT -- services
+WHEN 18 THEN rsb.name COLLATE DATABASE_DEFAULT -- remote service bindings
+WHEN 19 THEN rts.name COLLATE DATABASE_DEFAULT -- routes
+WHEN 23 THEN ftc.name -- full text catalog
+WHEN 24 THEN sym.name -- symmetric key
+WHEN 25 THEN crt.name -- certificate
+WHEN 26 THEN asym.name -- assymetric key
 END AS [object_name]
 FROM sys.database_permissions AS perms
 LEFT JOIN sys.database_principals AS prin ON perms.grantee_principal_id = prin.principal_id
@@ -62,20 +63,36 @@ LEFT JOIN sys.asymmetric_keys AS asym ON perms.major_id = asym.asymmetric_key_id
 LEFT JOIN sys.certificates AS crt ON perms.major_id = crt.certificate_id
 LEFT JOIN sys.fulltext_catalogs AS ftc ON perms.major_id = ftc.fulltext_catalog_id
 WHERE perms.grantee_principal_id = DATABASE_PRINCIPAL_ID(''public'')
-AND class != 1 -- Object or Columns (class = 1) are handled by VA1054 and have different remediation syntax
 AND [state] IN (''G'',''W'')
+-- ignoring EXECUTE and REFERENCES permissions on user data types:
 AND NOT (
 perms.class = 6
 AND permission_name IN (''EXECUTE'',''REFERENCES'')
 )
+-- ignoring Column Encryption permissions:
 AND NOT (
 perms.class = 0
-AND prin.NAME = ''public''
+AND prin.name = ''public''
 AND perms.major_id = 0
 AND perms.minor_id = 0
 AND permission_name IN (
     ''VIEW ANY COLUMN ENCRYPTION KEY DEFINITION''
     ,''VIEW ANY COLUMN MASTER KEY DEFINITION''
+    )
+)
+-- ignoring built-in object permissions which are too numerous to exclude individually:
+AND NOT (
+perms.class = 1
+AND permission_name IN (''EXECUTE'', ''SELECT'')
+AND (
+        OBJECTPROPERTY(major_id, ''IsMSShipped'') = 1
+     OR OBJECT_NAME(major_id) LIKE ''sp_DTA_%''
+     OR OBJECT_SCHEMA_NAME(major_id) IN (''catalog'',''internal'')
+     OR OBJECT_NAME(major_id) IN (
+        ''fn_diagramobjects'',''sp_alterdiagram'',
+	''sp_creatediagram'',''sp_dropdiagram'',''sp_renamediagram'',
+	''sp_helpdiagramdefinition'',''sp_helpdiagrams''
+	)
     )
 )';
 
@@ -85,19 +102,23 @@ FOR
 SELECT [name]
 FROM sys.databases
 WHERE state = 0
-AND is_read_only = 0
-AND source_database_id IS NULL
 AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE';
 
 OPEN DBs;
+
 WHILE 1=1
 BEGIN
-FETCH NEXT FROM DBs INTO @CurrDB
-IF @@FETCH_STATUS <> 0 BREAK;
-SET @Executor = QUOTENAME(@CurrDB) + N'..sp_executesql'
-INSERT INTO @temp
-EXEC @Executor @CMD
+  
+  FETCH NEXT FROM DBs INTO @CurrDB;
+  IF @@FETCH_STATUS <> 0 BREAK;
+  
+  SET @spExecuteSQL = QUOTENAME(@CurrDB) + N'..sp_executesql';
+  
+  INSERT INTO @temp
+  EXEC @spExecuteSQL @CMD WITH RECOMPILE; -- don't cache exec plans
+  
 END
+
 CLOSE DBs;
 DEALLOCATE DBs;
 
@@ -108,7 +129,7 @@ SELECT @@SERVERNAME AS [server_name],
 ISNULL([object_type],'(unknown type)') AS [object_type],
 ISNULL([object_name], '(unknown object)') AS [object_name],
 RemediationCmd = N'USE ' + QUOTENAME([database_name]) + N'; REVOKE '
-+ [permission] + ' ON ' + [object_type] + '::' +QUOTENAME([object_name])
++ [permission] + ' ON ' + ISNULL(NULLIF([object_type], N'OBJECT OR COLUMN') + '::' + QUOTENAME([object_name]), [object_name])
 + N' FROM [public];'
 FROM @temp
 --WHERE [object_name] IS NOT NULL
