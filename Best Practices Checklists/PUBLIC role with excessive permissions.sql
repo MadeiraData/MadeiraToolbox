@@ -80,6 +80,13 @@ AND permission_name IN (
     ,''VIEW ANY COLUMN MASTER KEY DEFINITION''
     )
 )
+-- ignoring dbo.dtproperties:
+AND NOT (
+perms.class = 1
+AND permission_name IN (''DELETE'', ''SELECT'',''INSERT'',''UPDATE'',''REFERENCES'')
+AND OBJECT_SCHEMA_NAME(major_id) = ''dbo''
+AND OBJECT_NAME(major_id) IN (''dtproperties'')
+)
 -- ignoring built-in object permissions which are too numerous to exclude individually:
 AND NOT (
 perms.class = 1
@@ -87,9 +94,12 @@ AND permission_name IN (''EXECUTE'', ''SELECT'')
 AND (
         OBJECTPROPERTY(major_id, ''IsMSShipped'') = 1
      OR OBJECT_NAME(major_id) LIKE ''sp_DTA_%''
-     OR OBJECT_SCHEMA_NAME(major_id) IN (''catalog'',''internal'')
+     OR OBJECT_NAME(major_id) LIKE ''$%$srvproperty''
+     OR OBJECT_NAME(major_id) LIKE ''$%dbproperty''
+     OR OBJECT_NAME(major_id) LIKE ''xp_jdbc_%''
+     OR OBJECT_SCHEMA_NAME(major_id) IN (''catalog'',''internal'',''MS_PerfDashboard'')
      OR OBJECT_NAME(major_id) IN (
-        ''fn_diagramobjects'',''sp_alterdiagram'',
+        ''fn_diagramobjects'',''sp_alterdiagram'',''rds_drop_database'',
 	''sp_creatediagram'',''sp_dropdiagram'',''sp_renamediagram'',
 	''sp_helpdiagramdefinition'',''sp_helpdiagrams''
 	)
@@ -102,7 +112,8 @@ FOR
 SELECT [name]
 FROM sys.databases
 WHERE state = 0
-AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE';
+AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE'
+AND (DB_ID('rdsadmin') IS NULL OR [name] <> 'model');
 
 OPEN DBs;
 
