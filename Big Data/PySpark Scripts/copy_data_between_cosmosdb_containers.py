@@ -53,3 +53,12 @@ df.withColumn("pk",concat_ws("_",col("propertyA"),col("propertyB")))\
          .options(**cfg_target)\
          .mode("APPEND")\
          .save()
+
+# no spark query
+#df = spark.read.format("cosmos.oltp").options(**cfg)\
+#.option("spark.cosmos.read.inferSchema.enabled", "true")\
+#.load().write\
+#     .format("cosmos.oltp")\
+#     .options(**cfg_target)\
+#     .mode("APPEND")\
+#     .save()
