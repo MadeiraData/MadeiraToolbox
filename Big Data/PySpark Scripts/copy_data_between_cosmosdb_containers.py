@@ -62,3 +62,16 @@ df.withColumn("pk",concat_ws("_",col("propertyA"),col("propertyB")))\
 #     .options(**cfg_target)\
 #     .mode("APPEND")\
 #     .save()
+
+# streaming query
+#streamQuery = dfStream\
+#        .writeStream\
+#        .format("cosmos.oltp")\
+#        .outputMode("append")\
+#        .option("checkpointLocation", "/localWriteCheckpointFolder")\
+#        .option("spark.synapse.linkedService", "<enter linked service name>")\
+#        .option("spark.cosmos.container", "<enter container name>")\
+#        .option("spark.cosmos.connection.mode", "gateway")\
+#        .start()
+
+#streamQuery.awaitTermination()
