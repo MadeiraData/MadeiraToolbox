@@ -36,7 +36,11 @@ CONVERT(decimal(18,2), migs.avg_total_user_cost) AS [avg_total_user_cost], migs.
  THEN N' )'
  ELSE N''
  END
- )
+ ),
+RunThisForMoreDetails = N'USE ' + QUOTENAME(DB_NAME(database_id))
++ N'; EXEC sp_indexes_rowset @table_schema = ' + QUOTENAME(OBJECT_SCHEMA_NAME(mid.object_id, database_id), '''') + N', @table_name = ' + QUOTENAME(OBJECT_NAME(mid.object_id, database_id), '''')
++ N'; EXEC sp_spaceused ' + QUOTENAME(QUOTENAME(OBJECT_SCHEMA_NAME(mid.object_id, database_id)) + N'.' + QUOTENAME(OBJECT_NAME(mid.object_id, database_id)), '''')
++ N';'
 FROM sys.dm_db_missing_index_group_stats AS migs WITH (NOLOCK)
 INNER JOIN sys.dm_db_missing_index_groups AS mig WITH (NOLOCK)
 ON migs.group_handle = mig.index_group_handle
