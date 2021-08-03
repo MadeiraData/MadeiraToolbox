@@ -3,7 +3,7 @@
 
 s3_path = 's3://bucket/folder_holding_the_files'
 
-data = spark.read.option("recursiveFileLookup", "true").load(s3_path),format="parquet"
+data = spark.read.option("recursiveFileLookup", "true").load(s3_path,format="parquet")
 
 duplicates = data \
     .groupby(data.columns) \
