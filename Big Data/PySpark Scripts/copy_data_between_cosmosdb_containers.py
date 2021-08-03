@@ -75,3 +75,7 @@ df.withColumn("pk",concat_ws("_",col("propertyA"),col("propertyB")))\
 #        .start()
 
 #streamQuery.awaitTermination()
+
+#columns_to_drop = ['u1', 'u2','u3','u4']
+#df = df.drop(*columns_to_drop)
+
