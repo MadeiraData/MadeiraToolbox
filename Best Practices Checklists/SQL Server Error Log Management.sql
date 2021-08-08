@@ -65,7 +65,7 @@ EXECUTE dbo.sp_add_jobstep
 	@retry_interval			= 0 ,
 	@os_run_priority		= 0 ,
 	@subsystem				= N'TSQL' ,
-	@command				= N'DECLARE @LogSizeThresholdMB BIGINT = 100;
+	@command				= N'DECLARE @LogSizeThresholdMB BIGINT = 50;
 SET NOCOUNT ON;
 DECLARE @Logs AS TABLE
 (
@@ -100,7 +100,7 @@ EXECUTE dbo.sp_add_jobstep
 	@retry_interval			= 0 ,
 	@os_run_priority		= 0 ,
 	@subsystem				= N'TSQL' ,
-	@command				= N'DECLARE @LogSizeThresholdMB BIGINT = 100;
+	@command				= N'DECLARE @LogSizeThresholdMB BIGINT = 50;
 SET NOCOUNT ON;
 DECLARE @Logs AS TABLE
 (
