@@ -96,12 +96,19 @@ SELECT DBWriteable = CASE WHEN DATABASEPROPERTYEX(DBName,'Updateability') = 'REA
 		), 1, 2, N'')
 , RemediationCmd =
 CASE WHEN UserName = 'dbo' THEN
-	N'USE ' + QUOTENAME(DBName) + N'; ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME(DBName) + N' TO ' + QUOTENAME(@saName) + N' -- assign orphaned [dbo] to [sa]'
+	N'USE ' + QUOTENAME(DBName) + N'; ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME(DBName) + N' TO ' + QUOTENAME(@saName) + N'; '
+	+ CASE WHEN LoginExists = 1 THEN N' CREATE USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(UserName) + N'; ALTER ROLE [db_owner] ADD USER ' + QUOTENAME(UserName) + N';'
+	ELSE N'' END
+	+ N'-- assign orphaned [dbo] to [sa]'
 WHEN LoginExists = 0 THEN
-	N'USE ' + QUOTENAME(DBName) + N'; ' + ISNULL(OwnedSchemas, N'') + N' DROP USER ' + QUOTENAME(UserName) + N' -- no existing login found'
+	N'USE ' + QUOTENAME(DBName) + N'; ' + ISNULL(OwnedSchemas, N'') + N' DROP USER ' + QUOTENAME(UserName) + N'; -- no existing login found'
 ELSE
-	N'USE ' + QUOTENAME(DBName) + N'; ALTER USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(UserName) + N' -- existing login found'
-END
+	N'USE ' + QUOTENAME(DBName) + N'; ALTER USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(UserName) + N'; -- existing login found with a different sid'
+END + ISNULL(N', but the login ' + QUOTENAME(ISNULL(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)))) + N' is a member of: ' + STUFF((
+		SELECT N', ' + QUOTENAME(GroupPath)
+		FROM (SELECT DISTINCT GroupPath FROM @AdminsByGroup AS g WHERE g.AccountName = ISNULL(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)))) AS gg
+		FOR XML PATH('')
+		), 1, 2, N''), N'')
 FROM @tmp
 WHERE (DBName = @Database OR @Database IS NULL)
 AND (@WriteableDBsOnly = 0 OR DATABASEPROPERTYEX(DBName,'Updateability') = 'READ_WRITE')
