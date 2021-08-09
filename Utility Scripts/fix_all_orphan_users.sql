@@ -1,13 +1,15 @@
 /*
 Author: Eitan Blumin | https://eitanblumin.com
 Date Created: 2018-01-02
-Last Update: 2021-07-28
+Last Update: 2021-08-09
 Description:
 	Fix All Orphaned Users Within Current Database, or all databases in the instance.
 	Handles 3 possible use-cases:
 	1. Login with same name as user exists - generate ALTER LOGIN to map the user to the login.
 	2. No login with same name exists - generate DROP USER to delete the orphan user.
 	3. Orphan user is [dbo] - change the database owner to SA (or whatever SA was renamed to)
+
+	The script also tries to detect automatically whether a user is a member of a Windows Group.
 
 More info: https://eitanblumin.com/2018/10/31/t-sql-script-to-fix-orphaned-db-users-easily/
 */
@@ -23,10 +25,43 @@ DECLARE @user NVARCHAR(MAX), @loginExists BIT, @saName SYSNAME, @ownedSchemas NV
 -- Find the actual name of the "sa" login
 SELECT @saName = SUSER_NAME(0x01);
 
-DECLARE @tmp AS TABLE(DBName SYSNAME NULL, UserName NVARCHAR(MAX), LoginExists BIT, OwnedSchemas NVARCHAR(MAX));
+-- Find any Windows Group members:
+DECLARE @AdminsByGroup AS TABLE (AccountName sysname, AccountType sysname, privilege sysname, MappedName sysname, GroupPath sysname);
+DECLARE @CurrentGroup sysname;
+
+DECLARE Groups CURSOR
+LOCAL FAST_FORWARD
+FOR
+SELECT [name]
+FROM sys.server_principals
+WHERE [type] = 'G'
+
+OPEN Groups;
+
+WHILE 1=1
+BEGIN
+	FETCH NEXT FROM Groups INTO @CurrentGroup;
+	IF @@FETCH_STATUS <> 0 BREAK;
+
+	BEGIN TRY
+	INSERT INTO @AdminsByGroup
+	EXEC master..xp_logininfo 
+		@acctname = @CurrentGroup,
+		@option = 'members';
+	END TRY
+	BEGIN CATCH
+		PRINT N'Error while retrieving members of ' + @CurrentGroup + N'; ' + ERROR_MESSAGE()
+	END CATCH
+END
+
+CLOSE Groups;
+DEALLOCATE Groups;
+
+DECLARE @tmp AS TABLE(DBName SYSNAME NULL, UserName NVARCHAR(MAX), [sid] VARBINARY(128), LoginExists BIT, OwnedSchemas NVARCHAR(MAX));
 INSERT INTO @tmp
-exec sp_MSforeachdb 'IF DATABASEPROPERTYEX(''?'', ''Status'') = ''ONLINE''
+exec sp_MSforeachdb 'IF HAS_DBACCESS(''?'') = 1
 SELECT ''?'', dp.name AS user_name
+, dp.[sid]
 , CASE WHEN dp.name IN (SELECT name COLLATE database_default FROM sys.server_principals) THEN 1 ELSE 0 END AS LoginExists
 , OwnedSchemas = (
 SELECT cmd + N''; ''
@@ -53,6 +88,12 @@ AND dp.authentication_type <> 0;'
 
 SELECT DBWriteable = CASE WHEN DATABASEPROPERTYEX(DBName,'Updateability') = 'READ_WRITE' THEN 1 ELSE 0 END
 , DBName, UserName, LoginExists --, OwnedSchemas
+, LoginName = ISNULL(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)))
+, MemberOfGroups = STUFF((
+		SELECT N', ' + QUOTENAME(GroupPath)
+		FROM (SELECT DISTINCT GroupPath FROM @AdminsByGroup AS g WHERE g.AccountName = ISNULL(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)))) AS gg
+		FOR XML PATH('')
+		), 1, 2, N'')
 , RemediationCmd =
 CASE WHEN UserName = 'dbo' THEN
 	N'USE ' + QUOTENAME(DBName) + N'; ALTER AUTHORIZATION ON DATABASE::' + QUOTENAME(DBName) + N' TO ' + QUOTENAME(@saName) + N' -- assign orphaned [dbo] to [sa]'
