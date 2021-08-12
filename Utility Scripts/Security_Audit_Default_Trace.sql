@@ -23,7 +23,17 @@ FROM    sys.fn_trace_gettable(CONVERT(VARCHAR(1000), (SELECT TOP (1) [path] FROM
         JOIN sys.trace_events te ON t.EventClass = te.trace_event_id
         JOIN sys.trace_subclass_values v ON v.trace_event_id = te.trace_event_id AND v.subclass_value = t.EventSubClass
 WHERE te.category_id = 8 -- Security Audit
---WHERE   te.[name] IN ( 'Audit Addlogin Event', 'Audit Add DB User Event',
---                     'Audit Add Member to DB Role Event', 'Audit Add Login to Server Role Event' )
+AND (
+	te.[name] LIKE N'%GDR Event%'
+	OR  te.[name] IN
+		('Audit Addlogin Event', 'Audit Add DB User Event', 'Audit Add Role Event', 'Audit App Role Change Password Event'
+		,'Audit Statement Permission Event', 'Audit Schema Object Access Event', 'Audit Database Object Access Event', 'Audit Change Audit Event'
+		,'Audit Object Derived Permission Event', 'Audit Database Principal Management Event', 'Audit Server Principal Management Event'
+		,'Audit Add Member to DB Role Event', 'Audit Add Login to Server Role Event' 
+		--,'Audit Change Database Owner'
+		--,'Audit Server Operation Event','Audit Database Operation Event'
+		--,'Audit Server Alter Trace Event'
+		)
 --        AND v.subclass_name IN ( 'add', 'Grant database access' )
+)
 ORDER BY t.StartTime DESC
