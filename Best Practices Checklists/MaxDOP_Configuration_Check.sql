@@ -5,7 +5,7 @@ https://support.microsoft.com/en-us/help/2806535/recommendations-and-guidelines-
 If @WhatIf = 0 then MAXDOP will automatically be changed to the recommended setting.
 */
 -- change this to 1 to only display findings without actually changing the config:
-DECLARE @WhatIf BIT = 0;
+DECLARE @WhatIf BIT = 1;
 
 --------------------------------------
 DECLARE @ProductVersion NVARCHAR(50);
@@ -114,29 +114,48 @@ PRINT CONCAT(N'@@SERVERNAME: ', @@SERVERNAME, N'
 @RecommendedMaxDOP: ', @RecommendedMaxDOP, N'
 ================================================')
 
-IF @ResultMessage IS NOT NULL AND @EffectiveMaxDOP <> @RecommendedMaxDOP
+IF @ResultMessage IS NOT NULL AND @EffectiveMaxDOP > @RecommendedMaxDOP
 BEGIN
 PRINT @ResultMessage + ' Changing MaxDOP ' + CONVERT(varchar(10), @EffectiveMaxDOP) + ' to ' + CONVERT(varchar(10), @RecommendedMaxDOP);
 
+
+DECLARE @AdvancedOptionsWasOn BIT
+
+SELECT @AdvancedOptionsWasOn = CAST([value] AS BIT) FROM sys.configurations WHERE name = 'show advanced options';
+
+IF @AdvancedOptionsWasOn = 0
+BEGIN
+	IF @WhatIf = 0
+	BEGIN
+	  EXEC sp_configure 'show advanced options', 1;
+	  RECONFIGURE WITH OVERRIDE;
+	END
+	ELSE
+	BEGIN
+	  PRINT N'EXEC sp_configure ''show advanced options'', 1; RECONFIGURE WITH OVERRIDE;'
+	END
+END
+
 IF @WhatIf = 0
 BEGIN
-	DECLARE @AdvancedOptionsWasOn BIT
+  EXEC sp_configure 'max degree of parallelism', @RecommendedMaxDOP;
+  RECONFIGURE WITH OVERRIDE;
+END
+ELSE
+BEGIN
+  PRINT N'EXEC sp_configure ''max degree of parallelism'', ' + CONVERT(NVARCHAR(MAX), @RecommendedMaxDOP) + N'; RECONFIGURE WITH OVERRIDE;'
+END
 
-	SELECT @AdvancedOptionsWasOn = CAST([value] AS BIT) FROM sys.configurations WHERE name = 'show advanced options';
-
-	IF @AdvancedOptionsWasOn = 0
+IF @AdvancedOptionsWasOn = 0
+BEGIN
+	IF @WhatIf = 0
 	BEGIN
-	EXEC sp_configure 'show advanced options', 1;
-	RECONFIGURE WITH OVERRIDE;
+	  EXEC sp_configure 'show advanced options', 0;
+	  RECONFIGURE WITH OVERRIDE;
 	END
-
-	EXEC sp_configure 'max degree of parallelism', @RecommendedMaxDOP;
-	RECONFIGURE WITH OVERRIDE;
-
-	IF @AdvancedOptionsWasOn = 0
+	ELSE
 	BEGIN
-	EXEC sp_configure 'show advanced options', 0;
-	RECONFIGURE WITH OVERRIDE;
+	  PRINT N'EXEC sp_configure ''show advanced options'', 0; RECONFIGURE WITH OVERRIDE;'
 	END
 END
 END
