@@ -21,6 +21,7 @@
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2021-08-16	Fixed missing database context bug and some code quality issues.
 -- 2021-04-18	Added enhancements for replacing primary key, and added parameter @DefaultClusteredIndexName
 -- 2021-03-21	Fixed DROP command for unique or primary key constraints; added check for deprecated data types; some other minor fixes
 -- 2021-02-15	Added details and logic based on index used pages count
@@ -62,6 +63,7 @@ IF OBJECT_ID(N'tempdb..#temp_heap') IS NOT NULL DROP TABLE #temp_heap;
 
 DECLARE @CMD NVARCHAR(MAX), @CurrDB SYSNAME, @CurrObjId INT, @CurrTable NVARCHAR(1000);
 DECLARE @RebuildOptions NVARCHAR(MAX);
+DECLARE @spExecuteSql NVARCHAR(1000)
 
 -- Init local variables and defaults
 SET @RebuildOptions = N''
@@ -78,12 +80,12 @@ END
 
 CREATE TABLE #temp_heap
     (
-        [database_name] NVARCHAR(50),
-        table_name NVARCHAR(MAX),
-        full_table_name NVARCHAR(MAX),
+        [database_name] SYSNAME NOT NULL,
+        table_name SYSNAME NOT NULL,
+        full_table_name NVARCHAR(1000) NOT NULL,
 	num_of_rows INT NULL,
 	heap_used_pages INT NULL,
-	[object_id] INT,
+	[object_id] INT NULL,
         candidate_index SYSNAME NULL,
 	candidate_index_used_pages INT NULL,
 	candidate_columns_from_existing_index NVARCHAR(MAX) NULL,
@@ -129,7 +131,7 @@ SET @CMD = N'
 	ON ps.index_id = p.index_id AND ps.object_id = p.object_id AND p.partition_id = ps.partition_id
 	WHERE t.object_id = p.OBJECT_ID
 	AND p.index_id = 0
-	' + ISNULL(N'HAVING SUM(p.rows) >= ' + CONVERT(nvarchar,@MinimumRowsInTable), N'') + N'
+	' + ISNULL(N'HAVING SUM(p.rows) >= ' + CONVERT(NVARCHAR(MAX),@MinimumRowsInTable), N'') + N'
  ) AS p
  OUTER APPLY
  (
@@ -179,7 +181,6 @@ BEGIN
 END
 ELSE
 BEGIN
-	DECLARE @Executor NVARCHAR(1000)
 	DECLARE DBs CURSOR
 	LOCAL FAST_FORWARD
 	FOR
@@ -194,10 +195,10 @@ BEGIN
 
 	WHILE @@FETCH_STATUS = 0
 	BEGIN
-		SET @Executor = QUOTENAME(@CurrDB) + N'..sp_executesql'
+		SET @spExecuteSql = QUOTENAME(@CurrDB) + N'..sp_executesql'
 
 		INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, heap_used_pages, candidate_index, candidate_index_used_pages, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, is_primary_key, is_constraint, has_non_online_columns, data_compression_type)
-		EXEC @Executor @CMD
+		EXEC @spExecuteSql @CMD;
 
 		FETCH NEXT FROM DBs INTO @CurrDB
 	END
@@ -212,7 +213,7 @@ UPDATE t
 FROM #temp_heap AS t
  CROSS APPLY
  (
-	SELECT TOP 1 ISNULL(mid.equality_columns, mid.inequality_columns) AS indexColumns
+	SELECT TOP (1) ISNULL(mid.equality_columns, mid.inequality_columns) AS indexColumns
 	FROM sys.dm_db_missing_index_group_stats AS migs  
 	INNER JOIN sys.dm_db_missing_index_groups AS mig  
 		ON (migs.group_handle = mig.index_group_handle)  
@@ -227,7 +228,7 @@ FROM #temp_heap AS t
 --WHERE t.candidate_index IS NULL -- filters for only those without existing recommendation
 
 DECLARE Tabs CURSOR
-FAST_FORWARD READ_ONLY
+LOCAL FAST_FORWARD READ_ONLY
 FOR
 SELECT database_name, object_id, full_table_name
 FROM #temp_heap AS t
@@ -242,6 +243,8 @@ BEGIN
 	DECLARE @FirstIndex SYSNAME, @IsUnique BIT, @IsPK BIT, @IsConstraint BIT, @HasNonOnlineColumns BIT, @IdentityColumn SYSNAME
 	, @FirstIndexColumns NVARCHAR(MAX), @FirstIndexIncludeColumns NVARCHAR(MAX)
 	, @FirstDateColumn SYSNAME, @FirstIntColumn SYSNAME, @FirstIntColumnType SYSNAME, @FirstNonNullableColumn SYSNAME;
+	SET @spExecuteSql = QUOTENAME(@CurrDB) + N'..sp_executesql';
+
 	SET @CMD = N'SELECT TOP 1 
 		@FirstIndex = name,
 		@IsUnique = ix.is_unique,
@@ -250,48 +253,48 @@ BEGIN
 		@FirstIndexColumns = 
 			STUFF((
 				SELECT '', '' + QUOTENAME(COL_NAME(ic.object_id, ic.column_id)) + CASE ic.is_descending_key WHEN 1 THEN '' DESC'' ELSE '' ASC'' END
-				FROM ' + QUOTENAME(@CurrDB) + N'.sys.index_columns AS ic
+				FROM sys.index_columns AS ic
 				WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id AND ic.is_included_column = 0
 				FOR XML PATH('''')
 			), 1, 2, ''''),
 		@FirstIndexIncludeColumns = 
 			STUFF((
 				SELECT '', '' + QUOTENAME(COL_NAME(ic.object_id, ic.column_id))
-				FROM ' + QUOTENAME(@CurrDB) + N'.sys.index_columns AS ic
+				FROM sys.index_columns AS ic
 				WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id AND ic.is_included_column = 1
 				FOR XML PATH('''')
 			), 1, 2, '''')
-	FROM ' + QUOTENAME(@CurrDB) + N'.sys.indexes AS ix 
+	FROM sys.indexes AS ix 
 	OUTER APPLY (SELECT SUM(CASE WHEN is_included_column = 1 THEN 1 ELSE 0 END) AS included_columns, COUNT(*) AS indexed_columns 
-			FROM ' + QUOTENAME(@CurrDB) + N'.sys.index_columns AS ic WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id) AS st  
+			FROM sys.index_columns AS ic WHERE ic.object_id = ix.object_id AND ic.index_id = ix.index_id) AS st  
 	WHERE object_id = @ObjId AND index_id > 0
 	AND is_hypothetical = 0 AND ix.has_filter = 0
 	AND type <= 2 -- ignore special index types
 	ORDER BY ix.is_unique DESC, included_columns DESC, indexed_columns ASC, index_id ASC;
 	
 	SELECT @IdentityColumn = [name]
-	FROM ' + QUOTENAME(@CurrDB) + N'.sys.identity_columns
+	FROM sys.identity_columns
 	WHERE object_id = @ObjId;
 
 	SELECT TOP 1 @FirstDateColumn = c.[name]
-	FROM ' + QUOTENAME(@CurrDB) + N'.sys.columns AS c
-	LEFT JOIN ' + QUOTENAME(@CurrDB) + N'.sys.default_constraints AS dc
+	FROM sys.columns AS c
+	LEFT JOIN sys.default_constraints AS dc
 	ON c.default_object_id = dc.object_id
 	AND c.object_id = dc.parent_object_id
 	WHERE c.object_id = @ObjId
 	AND c.system_type_id IN
-	(SELECT system_type_id FROM ' + QUOTENAME(@CurrDB) + N'.sys.types WHERE precision > 0 AND (name LIKE ''%date%'' OR name LIKE ''%time%''))
+	(SELECT system_type_id FROM sys.types WHERE precision > 0 AND (name LIKE ''%date%'' OR name LIKE ''%time%''))
 	ORDER BY
 		CASE WHEN dc.[definition] IS NOT NULL THEN 0 ELSE 1 END ASC,
 		CONVERT(smallint, c.is_nullable) ASC,
 		c.column_id ASC;
 	
 	SELECT TOP 1 @FirstIntColumn = c.[name], @FirstIntColumnType = t.[name]
-	FROM ' + QUOTENAME(@CurrDB) + N'.sys.columns AS c
-	LEFT JOIN ' + QUOTENAME(@CurrDB) + N'.sys.default_constraints AS dc
+	FROM sys.columns AS c
+	LEFT JOIN sys.default_constraints AS dc
 	ON c.default_object_id = dc.object_id
 	AND c.object_id = dc.parent_object_id
-	LEFT JOIN ' + QUOTENAME(@CurrDB) + N'.sys.types AS t ON c.system_type_id = t.system_type_id
+	LEFT JOIN sys.types AS t ON c.system_type_id = t.system_type_id
 	WHERE c.object_id = @ObjId
 	AND t.[name] IN (''bigint'', ''int'', ''smallint'', ''tinyint'')
 	AND c.is_nullable = 0
@@ -301,8 +304,8 @@ BEGIN
 		c.column_id ASC;
 
 	SELECT TOP 1 @FirstNonNullableColumn = c.[name]
-	FROM ' + QUOTENAME(@CurrDB) + N'.sys.columns AS c
-	LEFT JOIN ' + QUOTENAME(@CurrDB) + N'.sys.default_constraints AS dc
+	FROM sys.columns AS c
+	LEFT JOIN sys.default_constraints AS dc
 	ON c.default_object_id = dc.object_id
 	AND c.object_id = dc.parent_object_id
 	WHERE c.object_id = @ObjId
@@ -322,7 +325,7 @@ BEGIN
 	SET @FirstIntColumn = NULL;
 	SET @FirstIntColumnType = NULL;
 	SET @FirstNonNullableColumn = NULL;
-	EXEC sp_executesql @CMD
+	EXEC @spExecuteSql @CMD
 			, N'@ObjId INT, @FirstIndex SYSNAME OUTPUT, @IsUnique BIT OUTPUT, @IsPK BIT OUTPUT, @IsConstraint BIT OUTPUT, @HasNonOnlineColumns BIT OUTPUT, @FirstIndexColumns NVARCHAR(MAX) OUTPUT, @FirstIndexIncludeColumns NVARCHAR(MAX) OUTPUT, @IdentityColumn SYSNAME OUTPUT, @FirstDateColumn SYSNAME OUTPUT, @FirstIntColumn SYSNAME OUTPUT, @FirstIntColumnType SYSNAME OUTPUT, @FirstNonNullableColumn SYSNAME OUTPUT'
 			, @CurrObjId, @FirstIndex OUTPUT, @IsUnique OUTPUT, @IsPK OUTPUT, @IsConstraint OUTPUT, @HasNonOnlineColumns OUTPUT, @FirstIndexColumns OUTPUT, @FirstIndexIncludeColumns OUTPUT, @IdentityColumn OUTPUT, @FirstDateColumn OUTPUT, @FirstIntColumn OUTPUT, @FirstIntColumnType OUTPUT, @FirstNonNullableColumn OUTPUT
 
@@ -381,15 +384,14 @@ BEGIN
 		-- Get recommendations based on most selective column based on statistics
 		---------------------
 		-- Get list of table columns
-		DECLARE @Columns AS TABLE (colName SYSNAME);
-		SET @CMD = N'SELECT name FROM ' + QUOTENAME(@CurrDB) + N'.sys.columns WHERE object_id = @ObjId AND is_computed = 0'
+		DECLARE @Columns AS TABLE (colName SYSNAME NULL);
+		SET @CMD = N'SELECT name FROM sys.columns WHERE object_id = @ObjId AND is_computed = 0'
 
 		INSERT INTO @Columns
-		EXEC sp_executesql @CMD, N'@ObjId INT', @CurrObjId
+		EXEC @spExecuteSql @CMD, N'@ObjId INT', @CurrObjId;
 
 		-- Generate and run SHOW_STATISTICS command
-		SET @CMD = N'USE ' + QUOTENAME(@CurrDB) + N';
-	SET NOCOUNT ON;'
+		SET @CMD = N'SET NOCOUNT ON;'
 	
 		SELECT @CMD = @CMD + N'
 	BEGIN TRY
@@ -400,10 +402,10 @@ BEGIN
 	END CATCH'
 		FROM @Columns
 
-		DECLARE @DensityStats AS TABLE (AllDensity FLOAT, AvgLength FLOAT, Cols NVARCHAR(MAX));
+		DECLARE @DensityStats AS TABLE (AllDensity FLOAT NULL, AvgLength FLOAT NULL, Cols NVARCHAR(MAX) NULL);
 
 		INSERT INTO @DensityStats
-		EXEC(@CMD);
+		EXEC @spExecuteSql @CMD;
 
 		IF @@ROWCOUNT > 0
 		BEGIN
@@ -411,7 +413,7 @@ BEGIN
 			UPDATE #temp_heap
 				SET most_selective_column_from_stats = 
 						(
-							SELECT TOP 1 QUOTENAME(Cols)
+							SELECT TOP (1) QUOTENAME(Cols)
 							FROM @DensityStats
 							ORDER BY AllDensity ASC, AvgLength ASC
 						)
