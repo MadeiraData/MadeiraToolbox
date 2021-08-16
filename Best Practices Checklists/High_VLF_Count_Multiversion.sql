@@ -61,6 +61,7 @@ BEGIN
  DEALLOCATE minor_crsr;  
  
  SELECT 'In server: ' + @@SERVERNAME + ', database: ' + QUOTENAME(dbname) + ' has a high VLF count' AS msg, VLF_Count
+ , LogSizeMB = (SELECT SUM(size) / 128 FROM sys.master_files AS mf WHERE mf.database_id = DB_ID(dbname) AND mf.type_desc = 'LOG')
  FROM @vlfcounts
  WHERE VLF_Count > @MinVLFCountForAlert
 END
@@ -68,6 +69,7 @@ ELSE
 BEGIN 
 
  SELECT 'In server: ' + @@SERVERNAME + ', database: ' + QUOTENAME(d.[name]) + ' has a high VLF count' AS msg, vlf.total_vlf_count AS VLF_Count
+ , LogSizeMB = (SELECT SUM(size) / 128 FROM sys.master_files AS mf WHERE mf.database_id = d.database_id AND mf.type_desc = 'LOG')
  FROM sys.databases d
  CROSS APPLY sys.dm_db_log_stats(database_id) AS vlf
  WHERE d.database_id > 4
