@@ -9,6 +9,7 @@ the disk volume where the TempDB files are located.
 This check only works when TempDB files are isolated from other databases and exist on their own dedicated volume.
 
 Change log:
+2021-08-16 - Added @ForceAllowSameDiskWithOtherDBs, added support to force UNLIMITED using @MaxSizeMBOverride 
 2021-07-12 - Added @MaxSizeMBOverride, fixed nvarchar conversions, fixed @InitialSizeMBOverride, added TF details
 2020-10-11 - Added WITH NO_INFOMSGS to shrink command, added ForceShrink parameter
 2020-08-04 - Added @ClearServerCache and @SpaceUsedMaxPercent parameters, updated indentations and comments
@@ -21,19 +22,20 @@ Change log:
 DECLARE @ClearServerCache 		BIT	= 0 -- If shrinking tempdb files doesn't work, you may have to set this to 1 to clear objects from server cache.
 DECLARE @MaxSizeDiskUtilizationPercent 	FLOAT 	= 95 -- Maximum total percentage to be used for MAXSIZE property. Use NULL for UNLIMITED.
 DECLARE @InitSizeDiskUtilizationPercent FLOAT 	= 70 -- Desired total percentage of disk space to be used for SIZE property.
-DECLARE @InitialSizeMBOverride 		INT 	= NULL -- hard-coded size per file for edge cases, overriding the calculation based on disk size.
-DECLARE @MaxSizeMBOverride 		INT 	= NULL -- hard-coded max size per file for edge cases, overriding the calculation based on disk size.
-DECLARE @FileGrowthMB 			INT 	= 1024 -- Auto-growth increment in MB.
-DECLARE @IncludeTransactionLog 		BIT 	= 0 -- Specify whether to include the transaction log file in the calculations.
+DECLARE @InitialSizeMBOverride 		INT 	= NULL -- hard-coded starting size per file for edge cases, overriding the calculation based on disk size.
+DECLARE @MaxSizeMBOverride 		INT 	= NULL -- hard-coded max size per file for edge cases, overriding the calculation based on disk size. Set to -1 for UNLIMITED.
+DECLARE @FileGrowthMB 			INT 	= 256 -- Auto-growth increment in MB.
+DECLARE @IncludeTransactionLog 		BIT 	= 0 -- Set this to 1 to include the transaction log file in the calculations.
 DECLARE @SpaceUsedMaxPercent 		INT 	= 50 -- Maximum percent space used compared to desired file size, if found to be above - a warning will be raised.
-DECLARE @ForceShrink			BIT	= 0 -- Set this to 1 to force shrink (use this if size on disk is larger than what's specified in system tables).
+DECLARE @ForceShrink			BIT	= 0 -- Set this to 1 to force shrink (use this if actual tempdb file size on disk is larger than what's specified in system tables).
+DECLARE @ForceAllowSameDiskWithOtherDBs	BIT	= 1 -- Set this to 1 to allow for TempDB to be located on the same physical disk with other databases.
 
 /** DO NOT CHANGE ANYTHING BELOW THIS LINE **/
 
 SET NOCOUNT, XACT_ABORT, ARITHABORT ON;
 USE [tempdb];
 
-DECLARE @CMDs AS TABLE (CMD nvarchar(max));
+DECLARE @CMDs AS TABLE (CMD nvarchar(max) NULL);
 
 INSERT INTO @CMDs
 SELECT
@@ -47,7 +49,7 @@ SELECT
 FROM
 (
 	SELECT 
-		  MaxSizeMBPerFile = ISNULL(@MaxSizeMBOverride, CEILING(@MaxSizeDiskUtilizationPercent / 100.0 * total_MB_ceil / TotalNumOfFiles))
+		  MaxSizeMBPerFile = CASE WHEN @MaxSizeMBOverride = -1 THEN NULL ELSE ISNULL(@MaxSizeMBOverride, CEILING(@MaxSizeDiskUtilizationPercent / 100.0 * total_MB_ceil / TotalNumOfFiles)) END
 		, InitSizeMBPerFile = ISNULL(@InitialSizeMBOverride, FLOOR(@InitSizeDiskUtilizationPercent / 100.0 * total_MB_floor / TotalNumOfFiles))
 		, *
 	FROM
@@ -69,14 +71,14 @@ FROM
 	CROSS APPLY sys.dm_os_volume_stats (A.database_id, A.[file_id]) B
 	WHERE A.database_id = 2
 	AND A.[type] IN (0,1)
-	AND NOT EXISTS
-	(
+	AND (@ForceAllowSameDiskWithOtherDBs = 1 OR NOT EXISTS
+		(
 		select null
 		from sys.master_files A1
 		CROSS APPLY sys.dm_os_volume_stats (A1.database_id, A1.[file_id]) B1
 		WHERE A1.database_id <> 2
 		AND B1.volume_mount_point = B.volume_mount_point
-	)
+		))
 	) AS f
 ) AS f2
 WHERE
@@ -114,7 +116,7 @@ VALUES
 (N'DBCC FREESYSTEMCACHE (''ALL'')'),
 (N'GO')) AS v(Remediation_Script)
 WHERE @ClearServerCache = 1
-AND EXISTS (SELECT TOP 1 NULL FROM @CMDs WHERE CMD NOT LIKE 'DBCC TRACE%')
+AND EXISTS (SELECT NULL FROM @CMDs WHERE CMD NOT LIKE 'DBCC TRACE%')
 UNION ALL
 SELECT CMD AS Remediation_Script FROM @CMDs
 
