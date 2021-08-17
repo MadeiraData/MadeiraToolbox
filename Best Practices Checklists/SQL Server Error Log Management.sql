@@ -30,7 +30,7 @@ GO
 USE
 	msdb;
 GO
-
+DECLARE @saLogin sysname = SUSER_SNAME(0x01);
 
 EXECUTE dbo.sp_add_job
 	@job_name				= N'RecycleLogFiles' ,
@@ -42,8 +42,8 @@ EXECUTE dbo.sp_add_job
 	@notify_level_page		= 2 ,
 	@delete_level			= 0 ,
 	@description			= N'This job runs every midnight and recylces the SQL Server log files as well as the SQL Server Agent log files' ,
-	@category_name			= N'[Uncategorized (Local)]' ,
-	@owner_login_name		= N'sa' ,
+	@category_name			= N'Database Maintenance' ,
+	@owner_login_name		= @saLogin ,
 	@job_id					= NULL;
 GO
 
