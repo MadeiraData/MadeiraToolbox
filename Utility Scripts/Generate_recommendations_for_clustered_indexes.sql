@@ -21,6 +21,7 @@
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2021-08-18	Added last read/write details per table
 -- 2021-08-16	Fixed missing database context bug and some code quality issues.
 -- 2021-04-18	Added enhancements for replacing primary key, and added parameter @DefaultClusteredIndexName
 -- 2021-03-21	Fixed DROP command for unique or primary key constraints; added check for deprecated data types; some other minor fixes
@@ -445,7 +446,8 @@ Details = 'Database:' +  QUOTENAME([database_name]) + ', Heap Table:' + full_tab
 	, N', first DATE/TIME column: ' + t.first_date_column
 	, N', first ' + ISNULL(UPPER(t.first_integer_column_type), 'INTEGER') + ' column: ' + t.first_integer_column
 	, N', first non-nullable column: ' + t.first_non_nullable_column
-	, N', NO RECOMMENDATION POSSIBLE')
+	, N', NO RECOMMENDATION POSSIBLE' + CASE WHEN ixstat.last_write_dt IS NULL AND ixstat.last_read_dt IS NULL THEN N' (likely not in use)' ELSE N'' END
+	)
 + CASE WHEN @OnlineRebuild = 1 AND t.has_non_online_columns = 1 THEN N'. !!! WARNING !!! ONLINE=ON not possible due to deprecated data types!' ELSE N'' END
 , Script = N'USE ' + QUOTENAME(t.database_name) 
 	+
@@ -505,5 +507,21 @@ SELECT NewClusteredIndexName =
 	,N']', N'')
 	,N'[', N'')
 ) AS ixname
+OUTER APPLY
+(
+	SELECT max(stat.last_write_dt), max(stat.last_read_dt)
+	FROM sys.dm_db_index_usage_stats AS us
+	CROSS APPLY
+	(VALUES
+	(us.last_system_update, us.last_system_lookup),
+	(us.last_user_update, us.last_system_scan),
+	(NULL, us.last_system_seek),
+	(NULL, us.last_user_lookup),
+	(NULL, us.last_user_scan),
+	(NULL, us.last_user_seek)
+	) AS stat(last_write_dt, last_read_dt)
+	WHERE us.database_id = DB_ID(t.database_name)
+	AND us.object_id = t.object_id
+) AS ixstat(last_write_dt, last_read_dt)
 
 --DROP TABLE #temp_heap
