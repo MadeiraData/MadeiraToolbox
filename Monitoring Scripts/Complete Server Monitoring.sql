@@ -45,7 +45,7 @@ CREATE TABLE [dbo].[IO_VirtualFileStats](
 	[SampleDate] [datetime] NOT NULL,
 	[FileId] [smallint] NOT NULL,
 	[FileName] [sysname] NOT NULL,
-	[sample_ms] [int] NOT NULL,
+	[sample_ms] [bigint] NOT NULL,
 	[num_of_reads] [bigint] NOT NULL,
 	[num_of_bytes_read] [bigint] NOT NULL,
 	[io_stall_read_ms] [bigint] NOT NULL,
