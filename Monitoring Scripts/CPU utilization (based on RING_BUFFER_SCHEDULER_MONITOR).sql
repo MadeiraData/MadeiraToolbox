@@ -1,4 +1,5 @@
 SET NOCOUNT ON;
+SET ANSI_PADDING ON;
 DECLARE @NumOfSamplesToCheck int = 10
 
 DECLARE @TimeStamp bigint
