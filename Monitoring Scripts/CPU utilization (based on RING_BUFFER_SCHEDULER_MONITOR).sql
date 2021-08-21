@@ -1,8 +1,9 @@
 SET NOCOUNT ON;
+SET ANSI_PADDING ON;
 DECLARE @NumOfSamplesToCheck int = 10
 
 DECLARE @TimeStamp bigint
-SELECT @TimeStamp = cpu_ticks / (cpu_ticks/ms_ticks) FROM sys.dm_os_sys_info
+SELECT @TimeStamp = ms_ticks FROM sys.dm_os_sys_info
 
 SELECT
 	DATEADD (ms, -1 * (@TimeStamp - [timestamp]), GETDATE()) AS [SystemTime],
