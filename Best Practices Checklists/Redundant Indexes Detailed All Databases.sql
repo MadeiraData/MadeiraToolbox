@@ -1,4 +1,5 @@
 SET NOCOUNT ON;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 DECLARE @MinimumRowsInTable INT = 200000;
 
 IF OBJECT_ID('tempdb..#Results') IS NOT NULL DROP TABLE #Results;
@@ -14,13 +15,15 @@ redundant_index_filter	nvarchar(MAX) NULL,
 redundant_index_seeks	bigint NULL,
 redundant_index_scans	bigint NULL,
 redundant_index_updates	bigint NULL,
+redundant_index_pages	bigint NULL,
 containing_index_name	sysname NULL,
 containing_key_columns	nvarchar(MAX) NULL,
 containing_include_columns	nvarchar(MAX) NULL,
 containing_index_filter	nvarchar(MAX) NULL,
 containing_index_seeks	bigint NULL,
 containing_index_scans	bigint NULL,
-containing_index_updates bigint NULL
+containing_index_updates bigint NULL,
+containing_index_pages	bigint NULL
 );
 
 DECLARE @CMD NVARCHAR(MAX);
@@ -137,6 +140,7 @@ tbl.redundant_index_filter,
 redundant_index_seeks = us1.user_seeks,
 redundant_index_scans = us1.user_scans,
 redundant_index_updates = us1.user_updates,
+redundant_index_pages = (SELECT SUM(reserved_page_count) FROM sys.dm_db_partition_stats AS ps WHERE ind1.index_id = ps.index_id AND ps.OBJECT_ID = ind1.OBJECT_ID),
 containing_index_name = ind2.name,
 containing_key_columns = STUFF
 ((
@@ -161,7 +165,8 @@ FOR XML PATH('''')), 1, 2, ''''),
 tbl.containing_index_filter,
 containing_index_seeks = us2.user_seeks,
 containing_index_scans = us2.user_scans,
-containing_index_updates = us2.user_updates
+containing_index_updates = us2.user_updates,
+containing_index_pages = (SELECT SUM(reserved_page_count) FROM sys.dm_db_partition_stats AS ps WHERE ind2.index_id = ps.index_id AND ps.OBJECT_ID = ind2.OBJECT_ID)
 from #FindOnThisDB AS tbl
 INNER JOIN sys.tables tb
 ON tb.object_id = tbl.table_object_id
@@ -200,8 +205,10 @@ DEALLOCATE DBs;
 
 SELECT *,
 DisableCmd = N'USE ' + QUOTENAME(database_name) + N'; ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' DISABLE;',
+DIsableIfActiveCmd = N'USE ' + QUOTENAME(database_name) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' DISABLE;',
 DropCmd = N'USE ' + QUOTENAME(database_name) + N'; DROP INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N';'
 FROM #Results
+ORDER BY database_name, schema_name, table_name, redundant_index_name
 OPTION(RECOMPILE);
 
 --DROP TABLE #Results;
