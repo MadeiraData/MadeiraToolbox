@@ -89,13 +89,16 @@ END
 CLOSE DBs;
 DEALLOCATE DBs;
 
-SELECT
-Msg = N'In server: ' + @@SERVERNAME + N', database: ' + QUOTENAME(DBName)
-+ N', system ' + ObjType + N'::' + QUOTENAME(ObjectName) + N' has an invalid owner ' + ISNULL(QUOTENAME(CurrentOwnerName), N'(null)') + ISNULL(N' (login: ' + QUOTENAME(SUSER_SNAME(OwnerSID)) + N')', N'')
-+ N'. should be: ' + QUOTENAME(ISNULL(DefaultOwner, @SaName)) + CASE WHEN IsExistingMembership > 0 THEN N' (existing membership: YES)' ELSE N' (existing membership: NO)' END
+SELECT ServerName = SERVERPROPERTY('ServerName')
+, DatabaseName = DBName
+, ObjectName = ObjType + N'::' + QUOTENAME(ObjectName)
+, OwnerName = CurrentOwnerName
+, LoginName = SUSER_SNAME(OwnerSID)
+, OwnerShouldBe = ISNULL(DefaultOwner, @SaName)
+, HasExistingMembership = CASE WHEN IsExistingMembership > 0 THEN 'YES' ELSE N'NO' END
 , RemediationCmd = N'USE ' + QUOTENAME(DBName) + N'; ALTER AUTHORIZATION ON ' + UPPER(ObjType) + N'::' + QUOTENAME(ObjectName) + N' TO ' + QUOTENAME(ISNULL(DefaultOwner, @SaName)) + N';'
 + ISNULL(
-  CASE WHEN IsExistingMembership = 0 AND IS_SRVROLEMEMBER('sysadmin', SUSER_SNAME(OwnerSID)) = 0 THEN
+  CASE WHEN ISNULL(IsExistingMembership,0) = 0 AND IS_SRVROLEMEMBER('sysadmin', SUSER_SNAME(OwnerSID)) = 0 THEN
 	CASE ObjType
 	WHEN N'DATABASE' THEN N' CREATE USER ' + QUOTENAME(SUSER_SNAME(OwnerSID)) + N' FOR LOGIN ' + QUOTENAME(SUSER_SNAME(OwnerSID)) + N'; ALTER ROLE [db_owner] ADD MEMBER ' + QUOTENAME(SUSER_SNAME(OwnerSID)) + N';'
 	ELSE N' ALTER ROLE ' + QUOTENAME(ObjectName) + N' ADD MEMBER ' + QUOTENAME(SUSER_SNAME(OwnerSID)) + N';'
