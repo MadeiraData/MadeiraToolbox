@@ -27,7 +27,7 @@ DECLARE @CMD NVARCHAR(MAX), @DBName SYSNAME, @Executor NVARCHAR(1000), @SaName S
 SELECT @SaName = [name] FROM sys.server_principals WHERE sid = 0x01;
 
 SET @CMD = N'SELECT DB_ID(), DB_NAME(), ''SCHEMA'', sch.[name], pr.[name], pr.[sid]
-, ExistingMembership = (SELECT COUNT(*) FROM sys.database_role_members AS rm WHERE rm.member_principal_id = pr.principal_id AND USER_NAME(rm.role_principal_id) = sch.[name])
+, ExistingMembership = IS_ROLEMEMBER(sch.[name], pr.[name])
 FROM sys.schemas AS sch
 LEFT JOIN sys.database_principals AS pr ON sch.principal_id = pr.principal_id
 WHERE (sch.schema_id >= 16384 OR DB_NAME() = ''msdb'')
@@ -92,7 +92,7 @@ DEALLOCATE DBs;
 SELECT
 Msg = N'In server: ' + @@SERVERNAME + N', database: ' + QUOTENAME(DBName)
 + N', system ' + ObjType + N'::' + QUOTENAME(ObjectName) + N' has an invalid owner ' + ISNULL(QUOTENAME(CurrentOwnerName), N'(null)') + ISNULL(N' (login: ' + QUOTENAME(SUSER_SNAME(OwnerSID)) + N')', N'')
-+ N'. should be: ' + QUOTENAME(ISNULL(DefaultOwner, @SaName)) + CASE WHEN IsExistingMembership = 0 THEN N' (existing membership: NO)' ELSE N' (existing membership: YES)' END
++ N'. should be: ' + QUOTENAME(ISNULL(DefaultOwner, @SaName)) + CASE WHEN IsExistingMembership > 0 THEN N' (existing membership: YES)' ELSE N' (existing membership: NO)' END
 , RemediationCmd = N'USE ' + QUOTENAME(DBName) + N'; ALTER AUTHORIZATION ON ' + UPPER(ObjType) + N'::' + QUOTENAME(ObjectName) + N' TO ' + QUOTENAME(ISNULL(DefaultOwner, @SaName)) + N';'
 + ISNULL(
   CASE WHEN IsExistingMembership = 0 AND IS_SRVROLEMEMBER('sysadmin', SUSER_SNAME(OwnerSID)) = 0 THEN
