@@ -21,6 +21,7 @@
 -------------------------------------------------------
 -- Change log:
 -- ------------
+-- 2021-08-29	Changed INT to BIGINT to support larger tables
 -- 2021-08-18	Added last read/write details per table
 -- 2021-08-16	Fixed missing database context bug and some code quality issues.
 -- 2021-04-18	Added enhancements for replacing primary key, and added parameter @DefaultClusteredIndexName
@@ -47,7 +48,7 @@
 -- Parameters:
 -- ------------
 DECLARE
-	 @MinimumRowsInTable		INT	= 200000	-- Minimum number of rows in a table in order to check it
+	 @MinimumRowsInTable		BIGINT	= 200000	-- Minimum number of rows in a table in order to check it
 
 	-- Parameters controlling the structure of output scripts:
 	,@OnlineRebuild			BIT	= 1	-- If 1, will generate CREATE INDEX commands with the ONLINE option turned on.
@@ -84,11 +85,11 @@ CREATE TABLE #temp_heap
         [database_name] SYSNAME NOT NULL,
         table_name SYSNAME NOT NULL,
         full_table_name NVARCHAR(1000) NOT NULL,
-	num_of_rows INT NULL,
-	heap_used_pages INT NULL,
+	num_of_rows BIGINT NULL,
+	heap_used_pages BIGINT NULL,
 	[object_id] INT NULL,
         candidate_index SYSNAME NULL,
-	candidate_index_used_pages INT NULL,
+	candidate_index_used_pages BIGINT NULL,
 	candidate_columns_from_existing_index NVARCHAR(MAX) NULL,
 	include_columns_from_existing_index NVARCHAR(MAX) NULL,
 	candidate_columns_from_missing_index NVARCHAR(MAX) NULL,
