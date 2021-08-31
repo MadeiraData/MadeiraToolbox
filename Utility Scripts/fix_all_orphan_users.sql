@@ -15,7 +15,7 @@ More info: https://eitanblumin.com/2018/10/31/t-sql-script-to-fix-orphaned-db-us
 */
 DECLARE
 	    @Database		SYSNAME		= NULL	-- Filter by a specific database. Leave NULL for all databases.
-	 ,  @WriteableDBsOnly	BIT		= 1	-- Ignore read-only databases or not.
+	 ,  @WriteableDBsOnly	BIT		= 0	-- Ignore read-only databases or not.
 
 SET NOCOUNT ON;
 
@@ -88,10 +88,10 @@ AND dp.authentication_type <> 0;'
 
 SELECT DBWriteable = CASE WHEN DATABASEPROPERTYEX(DBName,'Updateability') = 'READ_WRITE' THEN 1 ELSE 0 END
 , DBName, UserName, LoginExists --, OwnedSchemas
-, LoginName = ISNULL(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)))
+, LoginName = l.LoginName
 , MemberOfGroups = STUFF((
 		SELECT N', ' + QUOTENAME(GroupPath)
-		FROM (SELECT DISTINCT GroupPath FROM @AdminsByGroup AS g WHERE g.AccountName = ISNULL(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)))) AS gg
+		FROM (SELECT DISTINCT GroupPath FROM @AdminsByGroup AS g WHERE g.AccountName = l.LoginName) AS gg
 		FOR XML PATH('')
 		), 1, 2, N'')
 , RemediationCmd =
@@ -104,12 +104,21 @@ WHEN LoginExists = 0 THEN
 	N'USE ' + QUOTENAME(DBName) + N'; ' + ISNULL(OwnedSchemas, N'') + N' DROP USER ' + QUOTENAME(UserName) + N'; -- no existing login found'
 ELSE
 	N'USE ' + QUOTENAME(DBName) + N'; ALTER USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(UserName) + N'; -- existing login found with a different sid'
-END + ISNULL(N', but the login ' + QUOTENAME(ISNULL(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)))) + N' is a member of: ' + STUFF((
+END + ISNULL(N', but the login ' + QUOTENAME(l.LoginName) + N' is a member of: ' + STUFF((
 		SELECT N', ' + QUOTENAME(GroupPath)
 		FROM (SELECT DISTINCT GroupPath FROM @AdminsByGroup AS g WHERE g.AccountName = ISNULL(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)))) AS gg
 		FOR XML PATH('')
 		), 1, 2, N''), N'')
+, CreateWindowsLoginCmd = N'CREATE LOGIN ' + QUOTENAME( l.LoginName ) + ' FROM WINDOWS WITH DEFAULT_DATABASE = [master];'
+, CreateSQLLoginCmd = N'CREATE LOGIN ' + QUOTENAME( l.LoginName ) + CHAR(13) + CHAR(10) + ' WITH PASSWORD = '
+	+ ISNULL(CONVERT(nvarchar(max), CAST( LOGINPROPERTY( l.LoginName, 'PasswordHash' ) AS varbinary (max)), 1) + ' HASHED', N'N''change_me''')
+	+ N', SID = ' +  CONVERT(nvarchar(max), [sid], 1) + CHAR(13) + CHAR(10) + ', DEFAULT_DATABASE = ' + QUOTENAME( ISNULL(CONVERT(sysname, LOGINPROPERTY( l.LoginName, 'DefaultDatabase')), DB_NAME()) )
+   + N', CHECK_POLICY = ' + CASE WHEN CAST(LOGINPROPERTY( l.LoginName, 'HistoryLength' ) AS int) <> 0 THEN N'ON' ELSE N'OFF' END
+   + N', CHECK_EXPIRATION = ' + CASE WHEN LOGINPROPERTY( l.LoginName, 'DaysUntilExpiration' ) IS NOT NULL THEN N'ON' ELSE N'OFF' END
+   + N';'
 FROM @tmp
+CROSS APPLY
+(VALUES(COALESCE(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)), UserName))) AS l(LoginName)
 WHERE (DBName = @Database OR @Database IS NULL)
 AND (@WriteableDBsOnly = 0 OR DATABASEPROPERTYEX(DBName,'Updateability') = 'READ_WRITE')
 ORDER BY DBWriteable DESC, DBName, UserName
