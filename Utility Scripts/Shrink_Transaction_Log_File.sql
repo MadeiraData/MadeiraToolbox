@@ -23,7 +23,10 @@ BEGIN
 	ORDER BY inf.vlf_begin_offset DESC;
 
 	IF @IsLastVLFActive <> 0
+	BEGIN
+		PRINT N'Last VLF is still active. Aborting.'
 		BREAK;
+	END
 
 	SET @CMD = N'USE ' + QUOTENAME(DB_NAME(@DBId)) + N'; CHECKPOINT; DBCC SHRINKFILE (N' + QUOTENAME(@FileName, N'''') + N' , 0, TRUNCATEONLY) WITH NO_INFOMSGS;';
 	PRINT @CMD;
