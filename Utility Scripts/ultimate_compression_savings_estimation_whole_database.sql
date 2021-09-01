@@ -26,6 +26,7 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2021-09-01 - some minor bug fixes and code quality fixes
 -- 2021-02-02 - added SET NOCOUNT, QUOTED_IDENTIFIER, ARITHABORT, XACT_ABORT ON settings
 -- 2021-01-17 - added cautionary parameters to stop/pause execution if CPU utilization is too high 
 -- 2021-01-17 - added optional cautionary parameters controlling allowed/forbidden execution window
@@ -122,7 +123,7 @@ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 -- Variable declaration
 DECLARE @CMD NVARCHAR(MAX), @AvailableTempDBSpaceMB INT, @ErrMsg NVARCHAR(MAX)
 DECLARE @CurrDB SYSNAME, @Schema SYSNAME, @Table SYSNAME, @ObjectId INT, @IndexId INT, @IndexName SYSNAME, @Partition INT, @CompressionType VARCHAR(4), @EstimationCheckRecommended BIT, @TotalSizeMB INT, @InRowPercent INT, @ScanPercent INT, @UpdatePercent INT
-DECLARE @Results AS TABLE ([object_name] SYSNAME, [schema_name] SYSNAME, index_id INT, partition_number INT, size_w_current_compression_KB FLOAT, size_w_requested_compression_KB FLOAT, sample_size_current_KB INT, sample_size_requested_KB INT)
+DECLARE @Results AS TABLE ([object_name] SYSNAME NOT NULL, [schema_name] SYSNAME NOT NULL, index_id int NULL, partition_number int NULL, size_w_current_compression_KB float NULL, size_w_requested_compression_KB float NULL, sample_size_current_KB int NULL, sample_size_requested_KB int NULL)
 DECLARE @RebuildOptions NVARCHAR(MAX), @ChecksSkipped BIT
 
 -- Compatibility checks
@@ -185,7 +186,7 @@ FROM
 	,('@NotAllowedRuntimeHourFrom',@NotAllowedRuntimeHourFrom)
 	,('@NotAllowedRuntimeHourTo',@NotAllowedRuntimeHourTo)
 ) AS v(VarName,VarValue)
-WHERE VarValue NOT BETWEEN 1 AND 100 AND VarValue IS NOT NULL
+WHERE VarValue NOT BETWEEN 1 AND 23 AND VarValue IS NOT NULL
 OPTION (RECOMPILE);
 
 IF @ErrMsg IS NOT NULL
@@ -256,17 +257,17 @@ END
 
 DECLARE @ObjectsToCheck AS TABLE
 (
-	[database_name] SYSNAME,
-	[schema_name] SYSNAME,
-	[table_id] INT,
-	[table_name] SYSNAME,
-	[index_id] INT,
+	[database_name] SYSNAME NOT NULL,
+	[schema_name] SYSNAME NOT NULL,
+	[table_id] int NULL,
+	[table_name] SYSNAME NULL,
+	[index_id] INT NULL,
 	[index_name] SYSNAME NULL,
 	[partition_number] INT NULL,
-	size_MB INT,
-	in_row_percent INT,
-	range_scans_percent INT,
-	updates_percent INT
+	size_MB INT NULL,
+	in_row_percent INT NULL,
+	range_scans_percent INT NULL,
+	updates_percent INT NULL
 );
 
 -- The following code, making use of @CurrDB variable, is written in a way which would make
@@ -382,7 +383,7 @@ GROUP BY
 	+ CASE WHEN @CheckPerPartition = 1 THEN N', p.partition_number' ELSE '' END
 + CASE WHEN ISNULL(@MinimumSizeMB,0) > 0 THEN N'
 HAVING
-	CEILING(SUM(ISNULL(sps.in_row_data_page_count,0) + ISNULL(sps.row_overflow_used_page_count,0) + ISNULL(sps.lob_reserved_page_count,0)) / 128.0) >= ' + CONVERT(nvarchar, @MinimumSizeMB) 
+	CEILING(SUM(ISNULL(sps.in_row_data_page_count,0) + ISNULL(sps.row_overflow_used_page_count,0) + ISNULL(sps.lob_reserved_page_count,0)) / 128.0) >= ' + CONVERT(nvarchar(MAX), @MinimumSizeMB) 
 ELSE N'' END + N'
 OPTION (RECOMPILE);
 
@@ -437,20 +438,20 @@ EXEC sp_executesql @CMD;
 -- Init temp table to hold final results
 IF OBJECT_ID('tempdb..#ResultsAll') IS NOT NULL DROP TABLE #ResultsAll;
 CREATE TABLE #ResultsAll (
-	  [database_name] SYSNAME
-	, [schema_name] SYSNAME
-	, [table_name] SYSNAME
+	  [database_name] SYSNAME NOT NULL
+	, [schema_name] SYSNAME NOT NULL
+	, [table_name] SYSNAME NOT NULL
 	, [index_name] SYSNAME NULL
 	, partition_number INT NULL
 	, size_MB INT NULL
 	, in_row_percent INT NULL
 	, scan_percent INT NULL
 	, update_percent INT NULL
-	, compression_type VARCHAR(4)
-	, compression_ratio FLOAT
-	, compression_size_saving_KB FLOAT
-	, is_compression_feasible BIT
-	, is_compression_recommended BIT
+	, compression_type VARCHAR(4) NOT NULL
+	, compression_ratio FLOAT NULL
+	, compression_size_saving_KB FLOAT NULL
+	, is_compression_feasible BIT NULL
+	, is_compression_recommended bit NULL
 )
 
 -- Init cursor to traverse all un-compressed tables that were found
@@ -616,7 +617,7 @@ SELECT
 	,[table_name]
 	,full_table_name		= QUOTENAME([schema_name]) + '.' + QUOTENAME([table_name])
 	,index_name
-	,partition_number		= ISNULL(CONVERT(VARCHAR,partition_number),'ALL')
+	,partition_number		= ISNULL(CONVERT(varchar(256),partition_number),'ALL')
 	,size_MB
 	,compressible_data		= CONVERT(varchar(10), in_row_percent) + ' %'
 	,scan_percent			= CONVERT(varchar(10), scan_percent) + ' %'
@@ -641,7 +642,7 @@ SELECT
 	,remediation_command		= 
 					CASE WHEN ISNULL(is_compression_recommended,0) = 0 OR SavingsRating <> 1 THEN N'-- ' ELSE N'' END
 				+ N'USE ' + QUOTENAME([database_name]) + N'; ALTER ' + ISNULL(N'INDEX ' + QUOTENAME(index_name) + N' ON ', N'TABLE ') + QUOTENAME([schema_name]) + '.' + QUOTENAME([table_name]) 
-				+ N' REBUILD PARTITION = ' + ISNULL(CONVERT(nvarchar,partition_number), N'ALL') 
+				+ N' REBUILD PARTITION = ' + ISNULL(CONVERT(nvarchar(max),partition_number), N'ALL') 
 				+ N' WITH (DATA_COMPRESSION = ' + compression_type + @RebuildOptions + N');'
 FROM
 (
@@ -670,7 +671,7 @@ IF @@ROWCOUNT > 0 AND @FeasibilityCheckOnly = 0
 BEGIN
 	-- Begin generating remediation script that takes into consideration all checks
 	-- including ROW vs. PAGE considerations
-	DECLARE @StatusMsg NVARCHAR(MAX), @PrevDB SYSNAME;
+	DECLARE @PrevDB SYSNAME;
 	SET @PrevDB = N'';
 	SET @CMD = NULL;
 	PRINT N'-----------------------------------------------------------------------'
@@ -741,19 +742,17 @@ SET NOCOUNT, QUOTED_IDENTIFIER, ARITHABORT, XACT_ABORT ON;
 IF OBJECT_ID(''tempdb..#INDEXTABLE'') IS NOT NULL DROP TABLE #INDEXTABLE;
 CREATE TABLE #INDEXTABLE (
 	IndexName SYSNAME NULL, 
-	TableName NVARCHAR(4000),
+	TableName NVARCHAR(4000) NOT NULL,
 	PartitionNumber INT NULL,
-	CompressionType SYSNAME
+	CompressionType SYSNAME NOT NULL
 )
 '
 			SET @PrevDB = @CurrDB;
 		END
 
-		--PRINT N'DECLARE @time VARCHAR(25) = CONVERT(varchar(25), GETDATE(), 121); RAISERROR(N''%s - ' + REPLACE(REPLACE(@StatusMsg, '''', ''''''), '%', '') + N''',0,1,@time) WITH NOWAIT;'
-		PRINT @CMD
-		--PRINT N'GO'
+		PRINT @CMD;
 
-		FETCH NEXT FROM Rebuilds INTO @CurrDB, @CMD
+		FETCH NEXT FROM Rebuilds INTO @CurrDB, @CMD;
 		
 		IF @@FETCH_STATUS <> 0 OR @CurrDB <> @PrevDB
 		BEGIN
@@ -788,7 +787,7 @@ BEGIN
 
 	IF @AllowedRuntimeHourFrom IS NOT NULL AND @AllowedRuntimeHourTo IS NOT NULL
 		PRINT N'
-	IF DATEPART(hour, GETDATE()) NOT BETWEEN ' + CONVERT(nvarchar, @AllowedRuntimeHourFrom) + N' AND ' + CONVERT(nvarchar, @AllowedRuntimeHourTo) + N'
+	IF DATEPART(hour, GETDATE()) NOT BETWEEN ' + CONVERT(nvarchar(MAX), @AllowedRuntimeHourFrom) + N' AND ' + CONVERT(nvarchar(MAX), @AllowedRuntimeHourTo) + N'
 	BEGIN
 		SET @time = CONVERT(VARCHAR(25), GETDATE(), 121);
 		RAISERROR(N''%s - Reached outside allowed execution time.'', 0, 1, @time);
@@ -797,7 +796,7 @@ BEGIN
 
 	IF @NotAllowedRuntimeHourFrom IS NOT NULL AND @NotAllowedRuntimeHourTo IS NOT NULL
 		PRINT N'
-	IF DATEPART(hour, GETDATE()) BETWEEN ' + CONVERT(nvarchar, @NotAllowedRuntimeHourFrom) + N' AND ' + CONVERT(nvarchar, @NotAllowedRuntimeHourTo) + N'
+	IF DATEPART(hour, GETDATE()) BETWEEN ' + CONVERT(nvarchar(MAX), @NotAllowedRuntimeHourFrom) + N' AND ' + CONVERT(nvarchar(MAX), @NotAllowedRuntimeHourTo) + N'
 	BEGIN
 		SET @time = CONVERT(VARCHAR(25), GETDATE(), 121);
 		RAISERROR(N''%s - Reached outside allowed execution time.'', 0, 1, @time);
@@ -811,14 +810,14 @@ BEGIN
 	CpuUtilizationCheck:
 		SELECT @AvgCPU = AVG( 100 - record.value(''(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]'', ''int'') )
 		from (
-		SELECT TOP (' + CONVERT(nvarchar, @SamplesToCheckAvgForCPUPercent) + N') [timestamp], convert(xml, record) as record
+		SELECT TOP (' + CONVERT(nvarchar(MAX), @SamplesToCheckAvgForCPUPercent) + N') [timestamp], convert(xml, record) as record
 		FROM sys.dm_os_ring_buffers
 		WHERE ring_buffer_type = N''RING_BUFFER_SCHEDULER_MONITOR''
 		AND record like ''%<SystemHealth>%''
 		ORDER BY [timestamp] DESC
 		) as RingBufferInfo
 
-		IF @AvgCPU <= ' + CONVERT(nvarchar, @MaximumCPUPercentForRebuild) + N'
+		IF @AvgCPU <= ' + CONVERT(nvarchar(MAX), @MaximumCPUPercentForRebuild) + N'
 		BEGIN
 			SET @WaitForCPUStartTime = NULL;
 		END' + CASE WHEN @MaximumTimeToWaitForCPU IS NOT NULL THEN N'
@@ -832,7 +831,7 @@ BEGIN
 			SET @time = CONVERT(VARCHAR(25), GETDATE(), 121);
 			RAISERROR(N''%s - CPU utilization is too high.'', 0, 1, @time);
 			BREAK;
-		END' END +  N'
+		END' ELSE N'' END +  N'
 		ELSE
 		BEGIN
 			WAITFOR DELAY ''00:00:00.5''
@@ -875,8 +874,8 @@ SELECT @Size = SUM(FILEPROPERTY([name], ''SpaceUsed'')) / 128.0 FROM sys.databas
 
 RAISERROR(N''Space used for data in "%s" AFTER compression: %d MB'', 0, 1, @DB, @Size) WITH NOWAIT;
 GO'
-		END
-	END
+		END --IF @@FETCH_STATUS <> 0 OR @CurrDB <> @PrevDB
+	END -- WHILE @@FETCH_STATUS = 0
 	PRINT N'DECLARE @time VARCHAR(25) = CONVERT(varchar(25), GETDATE(), 121); RAISERROR(N''%s - Done'',0,1,@time) WITH NOWAIT;'
 
 	CLOSE Rebuilds
