@@ -1,20 +1,20 @@
 DECLARE
-	@TopPerDB		int		= 100,
+	@TopPerDB		int		= 50,
 	@MinimumRowCount	int		= 1000,
 	@MinimumUnusedSizeMB	int		= 1024,
-	@MinimumUnusedSpacePct	int		= 50,
-	@RebuildIndexOptions	varchar(max)	= 'ONLINE = ON, SORT_IN_TEMPDB = ON, MAXDOP = 1'
+	@MinimumUnusedSpacePct	int		= 40,
+	@RebuildIndexOptions	varchar(max)	= 'ONLINE = ON, SORT_IN_TEMPDB = ON, MAXDOP = 1' -- , RESUMABLE = ON  -- adjust as needed
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 DECLARE @command NVARCHAR(MAX);
-DECLARE @TempResult AS TABLE (DatabaseName sysname, SchemaName sysname NULL, TableName sysname NULL, IndexName sysname NULL, Fill_Factor int NULL
-, DatabaseID int, ObjectId int, IndexId int
-, CompressionType tinyint, CompressionType_Desc AS (CASE CompressionType WHEN 0 THEN 'NONE' WHEN 1 THEN 'ROW' WHEN 2 THEN 'PAGE' WHEN 3 THEN 'COLUMNSTORE' WHEN 4 THEN 'COLUMNSTORE_ARCHIVE' ELSE 'UNKNOWN' END)
+DECLARE @TempResult AS TABLE (DatabaseName sysname NOT NULL, SchemaName sysname NULL, TableName sysname NULL, IndexName sysname NULL, Fill_Factor int NULL
+, DatabaseID int NOT NULL, ObjectId int NOT NULL, IndexId int NULL
+, CompressionType tinyint NULL, CompressionType_Desc AS (CASE CompressionType WHEN 0 THEN 'NONE' WHEN 1 THEN 'ROW' WHEN 2 THEN 'PAGE' WHEN 3 THEN 'COLUMNSTORE' WHEN 4 THEN 'COLUMNSTORE_ARCHIVE' ELSE 'UNKNOWN' END)
 , RowCounts bigint NULL, TotalSpaceMB money NULL, UsedSpaceMB money NULL, UnusedSpaceMB money NULL
 , UserSeeks int NULL, UserScans int NULL, UserLookups int NULL, UserUpdates int NULL);
 
-SELECT @command = 'IF EXISTS (SELECT * FROM sys.databases WHERE state = 0 AND is_read_only = 0 AND database_id > 4 AND is_distributor = 0 AND DATABASEPROPERTYEX([name], ''Updateability'') = ''READ_WRITE'')
+SELECT @command = 'IF EXISTS (SELECT * FROM sys.databases WHERE [name] = ''?'' AND state = 0 AND HAS_DBACCESS([name]) = 1 AND database_id > 4 AND is_distributor = 0 AND DATABASEPROPERTYEX([name], ''Updateability'') = ''READ_WRITE'')
 BEGIN
 USE [?];
 SELECT TOP (' + CONVERT(nvarchar(max), @TopPerDB) + N')
