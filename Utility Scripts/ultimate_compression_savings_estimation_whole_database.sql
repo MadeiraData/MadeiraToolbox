@@ -26,6 +26,7 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2021-09-06 - added @ResumableRebuild parameter
 -- 2021-09-01 - some minor bug fixes and code quality fixes
 -- 2021-02-02 - added SET NOCOUNT, QUOTED_IDENTIFIER, ARITHABORT, XACT_ABORT ON settings
 -- 2021-01-17 - added cautionary parameters to stop/pause execution if CPU utilization is too high 
@@ -110,6 +111,7 @@ DECLARE
 
 	-- Parameters controlling the structure of output scripts:
 	,@OnlineRebuild				BIT		= 1		-- If 1, will generate REBUILD commands with the ONLINE option turned on
+	,@ResumableRebuild			BIT		= 0		-- If 1, will generate REBUILD commands with the RESUMABLE option turned on (SQL 2019 and newer only)
 	,@SortInTempDB				BIT		= 1		-- If 1, will generate REBUILD commands with the SORT_IN_TEMPDB option turned on
 	,@MaxDOP				INT		= NULL		-- If not NULL, will add a MaxDOP option accordingly. Set to 1 to prevent parallelism and reduce workload.
 
@@ -147,7 +149,9 @@ END
 
 -- Init local variables and defaults
 SET @RebuildOptions = N''
+IF @ResumableRebuild = 1 SET @OnlineRebuild = 1;
 IF @OnlineRebuild = 1 SET @RebuildOptions = @RebuildOptions + N', ONLINE = ON'
+IF @ResumableRebuild = 1  SET @RebuildOptions = @RebuildOptions + N', RESUMABLE = ON'
 IF @SortInTempDB = 1  SET @RebuildOptions = @RebuildOptions + N', SORT_IN_TEMPDB = ON'
 IF @MaxDOP IS NOT NULL SET @RebuildOptions = @RebuildOptions + N', MAXDOP = ' + CONVERT(nvarchar(4000), @MaxDOP)
 SET @ChecksSkipped = 0;
@@ -186,7 +190,7 @@ FROM
 	,('@NotAllowedRuntimeHourFrom',@NotAllowedRuntimeHourFrom)
 	,('@NotAllowedRuntimeHourTo',@NotAllowedRuntimeHourTo)
 ) AS v(VarName,VarValue)
-WHERE VarValue NOT BETWEEN 1 AND 23 AND VarValue IS NOT NULL
+WHERE VarValue NOT BETWEEN 0 AND 23 AND VarValue IS NOT NULL
 OPTION (RECOMPILE);
 
 IF @ErrMsg IS NOT NULL
@@ -253,6 +257,11 @@ END
 IF @OnlineRebuild = 1 AND ISNULL(CONVERT(int, SERVERPROPERTY('EngineEdition')),0) NOT IN (3,5,8)
 BEGIN
 	RAISERROR(N'-- WARNING: @OnlineRebuild is set to 1, but current SQL edition does not support ONLINE rebuilds.', 0, 1);
+END
+
+IF @ResumableRebuild = 1 AND CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) < 15
+BEGIN
+	RAISERROR(N'-- WARNING: @ResumableRebuild is set to 1, but current SQL version does not support RESUMABLE rebuilds.', 0, 1);
 END
 
 DECLARE @ObjectsToCheck AS TABLE
