@@ -25,6 +25,7 @@
 ----------------------------------------------------------------
 -- Change Log:
 -- -----------
+-- 2021-09-09 - added check for incompatible options SortInTempDB and ResumableBuild being both enabled
 -- 2021-09-06 - added @ResumableRebuild parameter
 -- 2021-09-01 - some minor bug fixes and code quality fixes
 -- 2021-02-02 - added SET NOCOUNT, QUOTED_IDENTIFIER, ARITHABORT, XACT_ABORT ON settings
@@ -111,7 +112,7 @@ DECLARE
 	-- Parameters controlling the structure of output scripts:
 	,@OnlineRebuild				BIT		= 1		-- If 1, will generate REBUILD commands with the ONLINE option turned on
 	,@ResumableRebuild			BIT		= 0		-- If 1, will generate REBUILD commands with the RESUMABLE option turned on (SQL 2019 and newer only)
-	,@SortInTempDB				BIT		= 1		-- If 1, will generate REBUILD commands with the SORT_IN_TEMPDB option turned on
+	,@SortInTempDB				BIT		= 1		-- If 1, will generate REBUILD commands with the SORT_IN_TEMPDB option turned on. Incompatible with RESUMABLE=ON.
 	,@MaxDOP				INT		= NULL		-- If not NULL, will add a MaxDOP option accordingly. Set to 1 to prevent parallelism and reduce workload.
 
 --------------------------------------------------------------------
@@ -155,6 +156,13 @@ IF @SortInTempDB = 1  SET @RebuildOptions = @RebuildOptions + N', SORT_IN_TEMPDB
 IF @MaxDOP IS NOT NULL SET @RebuildOptions = @RebuildOptions + N', MAXDOP = ' + CONVERT(nvarchar(4000), @MaxDOP)
 SET @ChecksSkipped = 0;
 SET @FeasibilityCheckOnly = ISNULL(@FeasibilityCheckOnly, 1)
+
+-- Check for incompatible options
+IF @SortInTempDB = 1 AND @ResumableRebuild = 1
+BEGIN
+	RAISERROR(N'SORT_IN_TEMPDB and RESUMABLE are incompatible options. Please pick only one of them.',16,1)
+	GOTO Quit;
+END
 
 -- Validate mandatory percentage parameters
 SELECT @ErrMsg = ISNULL(@ErrMsg + CHAR(10), N'Invalid parameter(s): ') + CONVERT(nvarchar(max), N'' + VarName + N' must be a value between 1 and 100')
