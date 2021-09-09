@@ -3,7 +3,6 @@
 ----------------------------------------------------------------
 -- Author: Eitan Blumin | https://www.eitanblumin.com
 -- Create Date: 2019-12-08
--- Last Update: 2021-03-21
 -- Source: http://bit.ly/SQLCompressionEstimation
 -- Full Link: https://gist.github.com/EitanBlumin/85cf620f7267b234d677f9c3027fb7ce
 -- GitHub Repo: https://github.com/MadeiraData/MadeiraToolbox/blob/master/Utility%20Scripts/ultimate_compression_savings_estimation_whole_database.sql
