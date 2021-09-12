@@ -77,6 +77,7 @@ END
 
 SELECT *,
 DisableCmd = N'USE ' + QUOTENAME(DBName) + N'; ALTER INDEX ' + QUOTENAME(IndexName) + N' ON ' + QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName) + N' DISABLE;',
+DisableIfActiveCmd = N'USE ' + QUOTENAME(DBName) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName) + N'''), ''' + IndexName + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(IndexName) + N' ON ' + QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName) + N' DISABLE;',
 DropCmd = N'USE ' + QUOTENAME(DBName) + N'; DROP INDEX ' + QUOTENAME(IndexName) + N' ON ' + QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName) + N';'
 FROM #tmp
 ORDER BY DBName ASC, IndexSizeKB DESC, RowsCount DESC
