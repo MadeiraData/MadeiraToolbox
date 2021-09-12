@@ -3,7 +3,7 @@ DECLARE
 	@MinimumRowCount	int		= 1000,
 	@MinimumUnusedSizeMB	int		= 1024,
 	@MinimumUnusedSpacePct	int		= 40,
-	@RebuildIndexOptions	varchar(max)	= 'ONLINE = ON, SORT_IN_TEMPDB = ON, MAXDOP = 1' -- , RESUMABLE = ON  -- adjust as needed
+	@RebuildIndexOptions	varchar(max)	= 'ONLINE = ON, MAXDOP = 4, SORT_IN_TEMPDB = ON' -- , RESUMABLE = ON  -- adjust as needed
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -69,7 +69,7 @@ SELECT r.*
 , ReorganizeCommand = N'USE ' + QUOTENAME(DatabaseName) + N'; ' +
 		CASE WHEN IndexName IS NULL THEN N'ALTER TABLE ' + QUOTENAME(SchemaName) + '.' + QUOTENAME(TableName)
 		ELSE N'ALTER INDEX ' + QUOTENAME(IndexName) + N' ON ' + QUOTENAME(SchemaName) + '.' + QUOTENAME(TableName)
-		END + N' REORGANIZE;'
+		END + N' REORGANIZE WITH (LOB_COMPACTION = ON);'
 , CleanTableCommand = N'USE ' + QUOTENAME(DatabaseName) + N'; DBCC CLEANTABLE ('
 		+ QUOTENAME(DatabaseName, N'''') + N', ' + QUOTENAME(QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName), N'''')
 		+ N', 10000 ) WITH NO_INFOMSGS;'
