@@ -4,7 +4,6 @@
 ----------------------------------------------------------------------------
 Author: Eitan Blumin (t: @EitanBlumin | b: eitanblumin.com)
 Creation Date: 2020-01-05
-Last Update: 2020-08-23
 ----------------------------------------------------------------------------
 Description:
 	This script uses small intervals to shrink a file (in the current database)
@@ -20,6 +19,9 @@ Description:
 ----------------------------------------------------------------------------
 
 Change log:
+	2021-09-17 - Renamed @MinPercentFree to @MaxPercentUsed, some code-quality fixes
+	2021-09-17 - added shrink with TRUNCATEONLY attempt when conditions favor it
+	2021-09-17 - added linked server connectivity test. moved recovery queue check to start of loop.
 	2020-08-23 - Added new parameters: @AGReplicaLinkedServer, @MaxReplicaRecoveryQueue, @RecoveryQueueSeverity, and @WhatIf
 	2020-06-22 - Added @RegrowOnError5240 parameter
 	2020-06-21 - Added @DelayBetweenShrinks and @IterationMaxRetries parameters
@@ -34,18 +36,18 @@ Parameters:
 DECLARE
 	 @DatabaseName		SYSNAME = NULL		-- Leave NULL to use current database context
 	,@FileName		SYSNAME	= NULL		-- Leave NULL to shrink the file with the highest % free space
-	,@TargetSizeMB		INT	= 20000		-- Leave NULL to rely on @MinPercentFree exclusively.
-	,@MinPercentFree	INT	= 80		-- Leave NULL to rely on @TargetSizeMB exclusively.
-								-- Either @TargetSizeMB or @MinPercentFree must be specified.
-								-- If both @TargetSizeMB and @MinPercentFree are provided, the largest of them will be used.
+	,@TargetSizeMB		INT	= 20000		-- Leave NULL to rely on @MaxPercentUsed exclusively.
+	,@MaxPercentUsed	INT	= 80		-- Leave NULL to rely on @TargetSizeMB exclusively.
+								-- Either @TargetSizeMB or @MaxPercentUsed must be specified.
+								-- If both @TargetSizeMB and @MaxPercentUsed are provided, the largest of them will be used.
 	,@IntervalMB		INT	= 50		-- Leave NULL to shrink the file in a single interval
-	,@DelayBetweenShrinks	VARCHAR(12) = '00:00:01' -- Delay to wait between shrink iterations (in 'hh:mm[[:ss].mss]' format). Leave NULL to disable delay. For more info, see the 'time_to_execute' argument of WAITFOR DELAY: https://docs.microsoft.com/en-us/sql/t-sql/language-elements/waitfor-transact-sql?view=sql-server-ver15#arguments
+	,@DelayBetweenShrinks	VARCHAR(12) = '00:00:01' -- Delay to wait between shrink iterations (in 'hh:mm[[:ss].mss]' format). Leave NULL to disable delay. For more info, see the 'time_to_execute' argument of WAITFOR DELAY: https://docs.microsoft.com/sql/t-sql/language-elements/waitfor-transact-sql#arguments
 	,@IterationMaxRetries	INT	= 3		-- Maximum number of attempts per iteration to shrink a file, when cannot successfuly shrink to desired target size
 	,@RegrowOnError5240	BIT	= 1		-- Error 5240 may be resolved by temporarily increasing the file size before shrinking it again.
 
 	,@AGReplicaLinkedServer	SYSNAME	= NULL		-- Linked Server name of the AG replica to check. Leave as NULL to ignore.
 	,@MaxReplicaRecoveryQueue INT	= 10000		-- Maximum recovery queue of AG replica (in KB). Use this to prevent overload on the AG.
-	,@RecoveryQueueSeverity INT	= 16		-- Error severity to raise when @MaxReplicaRecoveryQueue is breached. 
+	,@RecoveryQueueSeverity INT	= 16		-- Error severity to raise when @MaxReplicaRecoveryQueue is breached.
 
 	,@WhatIf		BIT	= 0		-- Set to 1 to only print the commands but not run them.
 
@@ -55,7 +57,7 @@ DECLARE
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET ANSI_WARNINGS OFF;
-DECLARE @CurrSizeMB INT, @StartTime DATETIME, @sp_executesql NVARCHAR(1000), @CMD NVARCHAR(MAX), @SpaceUsedMB INT, @SpaceUsedPct VARCHAR(10), @TargetPct VARCHAR(10);
+DECLARE @CurrSizeMB INT, @sp_executesql NVARCHAR(1000), @CMD NVARCHAR(MAX), @SpaceUsedMB INT, @SpaceUsedPct VARCHAR(10), @TargetPct VARCHAR(10);
 DECLARE @NewSizeMB INT, @RetryNum INT
 SET @DatabaseName = ISNULL(@DatabaseName, DB_NAME());
 SET @RetryNum = 0;
@@ -72,9 +74,9 @@ BEGIN
 	GOTO Quit;
 END
 
-IF @TargetSizeMB IS NULL AND @MinPercentFree IS NULL
+IF @TargetSizeMB IS NULL AND @MaxPercentUsed IS NULL
 BEGIN
-	RAISERROR(N'Either @TargetSizeMB or @MinPercentFree must be specified!', 16, 1);
+	RAISERROR(N'Either @TargetSizeMB or @MaxPercentUsed must be specified!', 16, 1);
 	GOTO Quit;
 END
 
@@ -96,6 +98,15 @@ BEGIN
 		RAISERROR(N'Specified linked server "%s" was not found.', 16,1, @AGReplicaLinkedServer);
 		GOTO Quit;
 	END
+	
+	BEGIN TRY
+		EXEC sp_testlinkedserver @AGReplicaLinkedServer;
+	END TRY
+	BEGIN CATCH
+		DECLARE @ErrMsg nvarchar(max) = ERROR_MESSAGE()
+		RAISERROR(N'Linked server "%s" is inaccessible. Reason: %s', @RecoveryQueueSeverity, 1, @AGReplicaLinkedServer, @ErrMsg);
+		GOTO Quit;
+	END CATCH
 
 	IF @RecoveryQueueSeverity IS NULL OR @RecoveryQueueSeverity NOT BETWEEN 0 AND 16
 	BEGIN
@@ -116,7 +127,7 @@ BEGIN
 
 	IF @RecoveryQueue IS NULL
 	BEGIN
-		RAISERROR(N'Unable to fetch "Recovery Queue" for database "%s" via linked server "%s".', 16, 1, @DatabaseName, @AGReplicaLinkedServer);
+		RAISERROR(N'Unable to fetch "Recovery Queue" for database "%s" via linked server "%s".', @RecoveryQueueSeverity, 1, @DatabaseName, @AGReplicaLinkedServer);
 		GOTO Quit;
 	END
 	ELSE
@@ -143,7 +154,7 @@ EXEC @sp_executesql @CMD, N'@FileName SYSNAME OUTPUT, @CurrSizeMB INT OUTPUT, @S
 SET @TargetSizeMB = (
 			SELECT MAX(val)
 			FROM (VALUES
-				(@TargetSizeMB),(CEILING(@SpaceUsedMB / (CAST(@MinPercentFree as float) / 100.0)))
+				(@TargetSizeMB),(CEILING(@SpaceUsedMB / (CAST(@MaxPercentUsed as float) / 100.0)))
 				) AS v(val)
 			)
 
@@ -159,12 +170,41 @@ BEGIN
 	GOTO Quit;
 END
 
+IF @SpaceUsedMB > @TargetSizeMB AND @SpaceUsedPct <= @TargetPct
+BEGIN
+	-- attempt to perform shrink with TRUNCATEONLY
+	SET @CMD = N'DBCC SHRINKFILE (N' + QUOTENAME(@FileName, N'''') + N' , 0, TRUNCATEONLY) WITH NO_INFOMSGS; -- ' + CONVERT(nvarchar(25),GETDATE(),121)
+
+	RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
+	IF @WhatIf = 1
+		PRINT N'-- @WhatIf was set to 1. Skipping execution.'
+	ELSE
+		EXEC @sp_executesql @CMD
+
+	-- Re-check new file size
+	EXEC @sp_executesql N'SELECT @NewSizeInMB = [size]/128 FROM sys.database_files WHERE [name] = @FileName;'
+				, N'@FileName SYSNAME, @NewSizeInMB FLOAT OUTPUT', @FileName, @CurrSizeMB OUTPUT
+END
+
 WHILE @CurrSizeMB > @TargetSizeMB
 BEGIN
+	-- Check recovery queue of AG partner
+	IF @AGReplicaLinkedServer IS NOT NULL AND @MaxReplicaRecoveryQueue IS NOT NULL
+	BEGIN
+		SET @RecoveryQueue = NULL;
+		EXEC @RecoveryQueueCheckExec @RecoveryQueueCheckCmd, @RecoveryQueueCheckParams, @DatabaseName, 'Recovery Queue', @PartnerServer OUTPUT, @RecoveryQueue OUTPUT
+	
+		IF @RecoveryQueue > @MaxReplicaRecoveryQueue
+		BEGIN
+			RAISERROR(N'-- Stopping because the recovery queue in server "%s" has reached %d KB.', @RecoveryQueueSeverity, 1, @PartnerServer, @RecoveryQueue);
+			GOTO Quit;
+		END
+	END
+
 	SET @CurrSizeMB = @CurrSizeMB-@IntervalMB
 	IF @CurrSizeMB < @TargetSizeMB OR @IntervalMB IS NULL SET @CurrSizeMB = @TargetSizeMB
 	
-	SET @CMD = N'DBCC SHRINKFILE (N' + QUOTENAME(@FileName, N'''') + N' , ' + CONVERT(nvarchar, @CurrSizeMB) + N') WITH NO_INFOMSGS; -- ' + CONVERT(nvarchar(25),GETDATE(),121)
+	SET @CMD = N'DBCC SHRINKFILE (N' + QUOTENAME(@FileName, N'''') + N' , ' + CONVERT(nvarchar(1000), @CurrSizeMB) + N') WITH NO_INFOMSGS; -- ' + CONVERT(nvarchar(25),GETDATE(),121)
 	RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
 
 	IF @WhatIf = 1
@@ -179,7 +219,7 @@ BEGIN
 			IF @RegrowOnError5240 = 1 AND ERROR_NUMBER() = 5240
 			BEGIN
 				-- This error can be solved by increasing the file size a bit before shrinking again
-				SET @CMD = N'ALTER DATABASE ' + QUOTENAME(@DatabaseName) + N' MODIFY FILE (NAME = ' + QUOTENAME(@FileName, N'''') + N', SIZE = ' + CONVERT(nvarchar, @CurrSizeMB + @IntervalMB) + N'MB); -- ' + CONVERT(nvarchar(25),GETDATE(),121)
+				SET @CMD = N'ALTER DATABASE ' + QUOTENAME(@DatabaseName) + N' MODIFY FILE (NAME = ' + QUOTENAME(@FileName, N'''') + N', SIZE = ' + CONVERT(nvarchar(1000), @CurrSizeMB + @IntervalMB) + N'MB); -- ' + CONVERT(nvarchar(25),GETDATE(),121)
 			
 				PRINT N'-- Error 5240 encountered. Regrowing:'
 				RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
@@ -215,19 +255,6 @@ BEGIN
 		-- Sleep between iterations
 		IF @DelayBetweenShrinks IS NOT NULL
 			WAITFOR DELAY @DelayBetweenShrinks;
-
-		-- Check recovery queue of AG partner
-		IF @AGReplicaLinkedServer IS NOT NULL AND @MaxReplicaRecoveryQueue IS NOT NULL
-		BEGIN
-			SET @RecoveryQueue = NULL;
-			EXEC @RecoveryQueueCheckExec @RecoveryQueueCheckCmd, @RecoveryQueueCheckParams, @DatabaseName, 'Recovery Queue', @PartnerServer OUTPUT, @RecoveryQueue OUTPUT
-	
-			IF @RecoveryQueue > @MaxReplicaRecoveryQueue
-			BEGIN
-				RAISERROR(N'-- Stopping because the recovery queue in server "%s" has reached %d KB.', @RecoveryQueueSeverity, 1, @PartnerServer, @RecoveryQueue);
-				GOTO Quit;
-			END
-		END
 	END
 END
 
