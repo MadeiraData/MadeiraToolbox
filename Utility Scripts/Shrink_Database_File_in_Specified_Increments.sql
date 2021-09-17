@@ -99,6 +99,12 @@ BEGIN
 		GOTO Quit;
 	END
 	
+	IF @RecoveryQueueSeverity IS NULL OR @RecoveryQueueSeverity NOT BETWEEN 0 AND 16
+	BEGIN
+		RAISERROR(N'@RecoveryQueueSeverity "%d" is invalid. Must be between an integer 0 and 16.', 16, 1, @RecoveryQueueSeverity);
+		GOTO Quit;
+	END
+
 	BEGIN TRY
 		EXEC sp_testlinkedserver @AGReplicaLinkedServer;
 	END TRY
@@ -107,12 +113,6 @@ BEGIN
 		RAISERROR(N'Linked server "%s" is inaccessible. Reason: %s', @RecoveryQueueSeverity, 1, @AGReplicaLinkedServer, @ErrMsg);
 		GOTO Quit;
 	END CATCH
-
-	IF @RecoveryQueueSeverity IS NULL OR @RecoveryQueueSeverity NOT BETWEEN 0 AND 16
-	BEGIN
-		RAISERROR(N'@RecoveryQueueSeverity "%d" is invalid. Must be between an integer 0 and 16.', 16, 1, @RecoveryQueueSeverity);
-		GOTO Quit;
-	END
 
 	SET @RecoveryQueueCheckParams = N'@DBNAME SYSNAME, @CounterName VARCHAR(1000), @PartnerServer SYSNAME OUTPUT, @CounterValue INT OUTPUT'
 	SET @RecoveryQueueCheckCmd = N'SELECT @PartnerServer = @@SERVERNAME, @CounterValue = cntr_value
