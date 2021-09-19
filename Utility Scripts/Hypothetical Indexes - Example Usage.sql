@@ -21,8 +21,8 @@ GO
 -- DBCC AUTOPILOT (TYPE_ID,DB_ID,OBJECT_ID,INDEX_ID);
 SELECT CONCAT(N'DBCC AUTOPILOT(0,', DB_ID(), N',', object_id, N',', index_id, N');'), name
 FROM sys.indexes
-WHERE object_id = OBJECT_ID('[dbo].[MyTableName]')
-AND is_hypothetical = 1
+WHERE is_hypothetical = 1
+AND object_id = OBJECT_ID('[dbo].[MyTableName]')
 GO
 -- step 3: copy-paste and run the DBCC AUTOPILOT commands generated above
 
@@ -30,6 +30,7 @@ GO
 
 GO
 -- step 4: run the below to generate an estimated plan assuming the existence of hypothetical indexes marked for autopilot
+-- WARNING: This was found to sometimes cause SQL Crash Dumps, specifically when cancelling mid-execution.
 GO
 SET AUTOPILOT ON;
 GO
