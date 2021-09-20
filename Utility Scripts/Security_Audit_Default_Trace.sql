@@ -4,6 +4,13 @@ Get Security Audit trace data from the SQL Server Default Trace
 This script is based on a sample script provided here:
 https://www.red-gate.com/simple-talk/databases/sql-server/performance-sql-server/the-default-trace-in-sql-server-the-power-of-performance-and-security-auditing/
 */
+DECLARE @filePath VARCHAR(1000);
+SET @filePath = (SELECT TOP (1) [path] FROM sys.traces WHERE is_default = 1);
+
+PRINT @filePath;
+SET @filePath = SUBSTRING(@filePath, 0, LEN(@filePath) - CHARINDEX('_', REVERSE(@filePath)) + 1) + '.trc'
+PRINT @filePath;
+
 SELECT TOP (1000)
 	te.[name] AS [EventName] ,
 	v.subclass_name ,
@@ -11,6 +18,8 @@ SELECT TOP (1000)
         t.DatabaseID ,
         t.NTDomainName ,
         t.ApplicationName ,
+        t.HostName ,
+        t.ClientProcessID ,
         t.LoginName ,
         t.SPID ,
         t.StartTime ,
@@ -19,7 +28,7 @@ SELECT TOP (1000)
         t.TargetLoginName ,
         t.SessionLoginName ,
 	t.TextData
-FROM    sys.fn_trace_gettable(CONVERT(VARCHAR(1000), (SELECT TOP (1) [path] FROM sys.traces WHERE is_default = 1)), default) AS t
+FROM    sys.fn_trace_gettable(@filePath, default) AS t
         JOIN sys.trace_events te ON t.EventClass = te.trace_event_id
         JOIN sys.trace_subclass_values v ON v.trace_event_id = te.trace_event_id AND v.subclass_value = t.EventSubClass
 WHERE te.category_id = 8 -- Security Audit
