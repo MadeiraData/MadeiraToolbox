@@ -73,7 +73,7 @@ FROM sys.dm_db_incremental_stats_properties(stat.object_id, stat.stats_id)
 + N') AS sp
 WHERE t.is_ms_shipped = 0
 AND t.[type] = ''U''
-AND (ix.index_id IS NULL OR (ix.is_disabled = 0 AND ix.is_hypothetical = 0))
+AND (ix.index_id IS NULL OR (ix.is_disabled = 0 AND ix.is_hypothetical = 0 AND ix.type <= 2))
 AND (sp.modification_counter IS NULL
 	OR (sp.modification_counter >= ' + CONVERT(nvarchar(MAX), @MinimumModCountr) + N'
 	  AND sp.last_updated < DATEADD(day, -' + CONVERT(nvarchar(MAX), @MinimumDaysOld) + N', GETDATE())
