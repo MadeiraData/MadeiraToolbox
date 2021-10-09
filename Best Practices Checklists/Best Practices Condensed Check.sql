@@ -31,7 +31,7 @@ DECLARE @Alerts AS TABLE
 	Details NVARCHAR(MAX)
 );
 
-IF CAST(SERVERPROPERTY('Edition') AS VARCHAR(255)) NOT LIKE '%Azure%'
+IF CONVERT(int, SERVERPROPERTY('EngineEdition')) <> 5
 BEGIN
 	PRINT 'Checking: Database Backup';
 
@@ -169,7 +169,7 @@ FROM sys.databases
 WHERE state_desc = 'ONLINE'
 AND is_auto_shrink_on = 1
 
-IF CAST(SERVERPROPERTY('Edition') AS varchar(255)) NOT LIKE '%Azure%'
+IF CONVERT(int, SERVERPROPERTY('EngineEdition')) <> 5
 BEGIN
 	PRINT 'Checking: Database File(s) on Volume C';
 	INSERT INTO @Alerts
@@ -271,7 +271,7 @@ FROM
 	SELECT 'Current MaxMem setting is too high. Recommended maximum value for MaxMem setting on this configuration is ' + CONVERT(nvarchar(1000), @RecommendedMaxMemMB) + N' MB for a single instance'
 	WHERE @numa <= 1 AND @maxservermem BETWEEN @RecommendedMaxMemMB AND @systemmem
 ) AS V(Report)
-WHERE CAST(SERVERPROPERTY('Edition') AS varchar(255)) NOT LIKE '%Azure%'
+WHERE CONVERT(int, SERVERPROPERTY('EngineEdition')) <> 5
  
 UNION ALL
  

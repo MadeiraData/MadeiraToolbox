@@ -82,7 +82,7 @@ AND (sp.modification_counter IS NULL
 GROUP BY stat.object_id,stat.name
 OPTION (RECOMPILE, MAXDOP 1)' -- use MAXDOP 1 to avoid access violation bug
 
-IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) = 'SQL Azure'
+IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
 BEGIN
 exec (@qry)
 END

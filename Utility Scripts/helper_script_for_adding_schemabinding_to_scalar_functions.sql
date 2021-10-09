@@ -80,7 +80,7 @@ WHERE d.referencing_id = OB.id
 AND d.referencing_id = d.referenced_id
 )'
 
-IF CONVERT(varchar(4000), SERVERPROPERTY('Edition')) = 'SQL Azure'
+IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
 BEGIN
 	INSERT INTO #temp_Schemabinding
 	exec (@CMD_Template)

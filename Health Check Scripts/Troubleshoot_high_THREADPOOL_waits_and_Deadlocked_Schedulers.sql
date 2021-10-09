@@ -18,6 +18,7 @@ Description:
 	https://docs.microsoft.com/en-us/sql/relational-databases/extended-events/use-the-system-health-session
 
 Change Log:
+	2021-10-09 Added proper check to distinguish between Azure SQL DB and Azure SQL Managed Instance
 	2020-12-13 Added parameter @ForceRingBuffer for better support with Azure SQL servers
 	2020-10-04 Added parameters @ExcludeClean and @MinPendingTasks
 	2020-10-01 Added columns "blockedByNonSession" and "possibleHeadBlockers"
@@ -131,7 +132,7 @@ DECLARE
 	@UtcDateTo	DATETIME = NULL,
 	@CMD		NVARCHAR(MAX);
 
-IF @ForceRingBuffer = 0 AND CONVERT(nvarchar, SERVERPROPERTY('Edition')) = 'SQL Azure'
+IF @ForceRingBuffer = 0 AND CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
 BEGIN
 	SET @ForceRingBuffer = 1;
 	SET @FileTargetPath = NULL;

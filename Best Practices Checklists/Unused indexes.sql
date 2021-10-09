@@ -57,7 +57,7 @@ HAVING
 IF OBJECT_ID('tempdb..#tmp') IS NOT NULL DROP TABLE #tmp;
 CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IndexName SYSNAME NULL, RowsCount INT, IndexSizeKB INT, UpdatesCount INT NULL, TableCreatedDate DATETIME NULL, LastStatsDate DATETIME);
 
-IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) <> 'SQL Azure'
+IF CONVERT(int, SERVERPROPERTY('EngineEdition')) <> 5
 BEGIN
 	SET @CMD = N'
 IF EXISTS (SELECT * FROM sys.databases WHERE database_id > 4 AND HAS_DBACCESS([name]) = 1 AND state_desc = ''ONLINE'' AND DATABASEPROPERTYEX([name], ''Updateability'') = ''READ_WRITE'')

@@ -1,6 +1,6 @@
 -- Author: Eitan Blumin (t: @EitanBlumin | b: eitanblumin.com)
 -- Date: 2020-05-31
--- Last Update: 2021-04-22
+-- Last Update: 2021-10-09
 -- Description: Collect T-SQL Events using an Extended Events Buffer
 
 SET NOCOUNT ON;
@@ -63,7 +63,7 @@ DECLARE @CMD NVARCHAR(MAX), @Filters NVARCHAR(MAX), @ProcFilters NVARCHAR(MAX), 
 DECLARE @IsAzureSQLDB BIT, @IsNestedTransaction BIT
 
 SET @Executor =  ISNULL(QUOTENAME(@SourceLinkedServer) + N'...', N'') + N'sp_executesql'
-SET @CMD = N'SET @IsAzureSQLDB = CASE WHEN SERVERPROPERTY(''Edition'') = ''SQL Azure'' THEN 1 ELSE 0 END;'
+SET @CMD = N'SET @IsAzureSQLDB = CASE WHEN CONVERT(int, SERVERPROPERTY(''EngineEdition'')) = 5 THEN 1 ELSE 0 END;'
 
 EXEC @Executor @CMD, N'@IsAzureSQLDB BIT OUTPUT', @IsAzureSQLDB OUTPUT;
 

@@ -176,7 +176,7 @@ SET @CMD = N'
  AND t.is_memory_optimized = 0'
  ELSE N'' END
  
-IF CONVERT(varchar(300),SERVERPROPERTY('Edition')) = 'SQL Azure'
+IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
 BEGIN
 	INSERT INTO #temp_heap([database_name], [object_id], table_name, full_table_name, num_of_rows, heap_used_pages, candidate_index, candidate_index_used_pages, candidate_columns_from_existing_index, include_columns_from_existing_index, is_unique, is_primary_key, is_constraint, has_non_online_columns, data_compression_type)
 	exec (@CMD)
