@@ -43,6 +43,9 @@ A few remarks:
 - As always with such things: Test, test, test! I recommend adding a new, small database to your Availability Group and test the script on this database, before trying it out on your larger production databases.
 
 .LINK
+https://github.com/MadeiraData/MadeiraToolbox/blob/master/Utility%20Scripts/Move-SqlFilesAlwaysOn.ps1
+
+.LINK
 https://madeiradata.com
 
 .LINK
