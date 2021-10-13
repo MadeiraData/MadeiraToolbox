@@ -154,7 +154,7 @@ if ($IsSecondary) {
     try {
         $SqlService = Get-Service -Name $SqlServiceName
 
-        if ($SqlService.Status -eq "Running" -and !$svc.CanStop) {
+        if ($SqlService.Status -eq "Running" -and !$SqlService.CanStop) {
             Write-Error "No access to shut down '$SqlServiceName' service of computer '$env:COMPUTERNAME'" -ErrorAction Stop
         }
     } catch {
