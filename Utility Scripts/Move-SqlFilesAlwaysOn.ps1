@@ -60,6 +60,8 @@ param
 [string]$SqlServiceName = "MSSQLSERVER",
 [switch]$SecondaryOnly,
 [switch]$AllowNonDataOrLogFileTypes,
+[switch]$SkipRunningJobsCheck,
+[int32]$MaxRecoveryQueueMB = 1024,
 [string]$logFileFolderPath = "C:\Madeira\log",
 [string]$logFilePrefix = "move_ag_dbfiles_",
 [string]$logFileDateFormat = "yyyyMMdd_HHmmss",
@@ -123,7 +125,7 @@ $result = Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query "S
 FROM sys.databases db
 INNER JOIN sys.dm_hadr_availability_replica_states replica_states ON db.replica_id = replica_states.replica_id
 INNER JOIN sys.availability_groups ag ON replica_states.group_id = ag.group_id
-WHERE db.name = '$DatabaseName'" -Verbose -AbortOnError -OutputSqlErrors -ErrorAction Stop
+WHERE db.name = '$DatabaseName'" -Verbose -AbortOnError -OutputSqlErrors $true -ErrorAction Stop
 
 if ($result)
 {
@@ -163,6 +165,41 @@ if ($IsSecondary) {
 
     # Get all services dependent on the MSSQLSERVER service
     $SqlDependentServices = Get-Service -Name $SqlServiceName -DependentServices -ErrorAction Stop
+
+    # Check for high recovery queues
+    $recoveryQueues = Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query "select counter_name, instance_name, cntr_value
+from sys.dm_os_performance_counters
+where object_name like '%Database Replica%'
+and counter_name like 'Recovery Queue%'
+and cntr_value > $MaxRecoveryQueueMB * 1024
+order by cntr_value desc" -Verbose -AbortOnError -ErrorAction Stop
+
+    if ($recoveryQueues) {
+        $recoveryQueues | Out-Host
+        Write-Error "Stopping execution because Availability Group Recovery Queue is too high. Stopping the SQL service at this state may put the Availability Group at risk." -ErrorAction Stop
+    }
+}
+
+while (!$SkipRunningJobsCheck)
+{
+    $runningJobs = Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query "SELECT j.name, ja.start_execution_date, ja.stop_execution_date, ja.next_scheduled_run_date
+    FROM msdb..sysjobactivity as ja
+    inner join msdb..sysjobs as j on ja.job_id = j.job_id
+    WHERE session_id = (SELECT MAX(session_id) FROM msdb..sysjobactivity)
+    AND start_execution_date IS NOT NULL
+    AND (stop_execution_date is null or next_scheduled_Run_date between GETDATE() and DATEADD(minute, 5, GETDATE()))" -Verbose -AbortOnError -ErrorAction Stop
+
+    if ($runningJobs)
+    {
+        $runningJobs | Out-Host
+        $inputResponse = Read-Host "There are jobs currently running or soon to be executed. Are you sure you want to proceed anyway? (C=Continue, R=Retry Check, S=Stop) "
+        if ($inputResponse.ToLower().StartsWith("c")) {
+            $SkipRunningJobsCheck = $true;
+        }
+        elseif ($inputResponse.ToLower().StartsWith("s")) {
+            Write-Error "Stopping execution because found currently running or soon to be run jobs." -ErrorAction Stop
+        }
+    }
 }
 
 # Use T-SQL to make sure target folder(s) exist with proper permissions
@@ -186,7 +223,7 @@ else if exists (select * from #tmp where FILE_EXISTS = 0 AND FILE_IS_DIRECTORY =
 begin
 	raiserror(N'Creating new directory: %s', 0, 1, @path);
 	exec xp_create_subdir @path
-end" -Verbose -AbortOnError -OutputSqlErrors -ErrorAction Stop
+end" -Verbose -AbortOnError -OutputSqlErrors $true -ErrorAction Stop
 }
 
 # Make sure the new folder paths are accessible
@@ -200,7 +237,7 @@ if (!$NewLogFolderPath -or !(Test-Path $NewLogFolderPath -PathType Container)) {
 # Get metadata for all database files
 $dbFiles = Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query "SELECT name, type_desc, physical_name
 FROM sys.master_files
-WHERE database_id = DB_ID('$DatabaseName');" -Verbose -AbortOnError -OutputSqlErrors -ErrorAction Stop
+WHERE database_id = DB_ID('$DatabaseName');" -Verbose -AbortOnError -OutputSqlErrors $true -ErrorAction Stop
 
 # Validate the path for each file and make sure it's either LOG or ROWS
 # (I cannot guarantee at this point that this script will work with other file types such as FILESTREAM, Full-Text, In-Memory, etc.)
@@ -229,7 +266,7 @@ ALTER DATABASE [$DatabaseName] SET HADR OFF;"
 ALTER AVAILABILITY GROUP [$AGName] REMOVE DATABASE [$DatabaseName];"
 }
 
-Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query $cmd -Verbose -AbortOnError -OutputSqlErrors -ErrorAction Stop | Out-Null
+Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query $cmd -Verbose -AbortOnError -OutputSqlErrors $true -ErrorAction Stop | Out-Null
 
 # Update the database file paths with their new locations
 $dbFiles | ForEach {
@@ -245,7 +282,7 @@ $dbFiles | ForEach {
     Write-Output "$(Get-TimeStamp) Altering file [$($_.name)] with new path: $currNewPath"
 
     Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query "USE [master];
-    ALTER DATABASE [$DatabaseName] MODIFY FILE (NAME = [$($_.name)], FILENAME = '$currNewPath');" -Verbose -AbortOnError -OutputSqlErrors -ErrorAction Stop | Out-Null
+    ALTER DATABASE [$DatabaseName] MODIFY FILE (NAME = [$($_.name)], FILENAME = '$currNewPath');" -Verbose -AbortOnError -OutputSqlErrors $true -ErrorAction Stop | Out-Null
 }
 
 if (!$IsSecondary) {
@@ -254,7 +291,7 @@ if (!$IsSecondary) {
     Write-Output "$(Get-TimeStamp) Taking [$DatabaseName] offline"
 
     Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query "USE [master];
-    ALTER DATABASE [$DatabaseName] SET OFFLINE WITH ROLLBACK IMMEDIATE;" -Verbose -AbortOnError -OutputSqlErrors -ErrorAction Stop | Out-Null
+    ALTER DATABASE [$DatabaseName] SET OFFLINE WITH ROLLBACK IMMEDIATE;" -Verbose -AbortOnError -OutputSqlErrors $true -ErrorAction Stop | Out-Null
 
 } elseif ($SqlService.Status -eq "Running") {
 
@@ -296,7 +333,7 @@ if (!$IsSecondary) {
     Write-Output "$(Get-TimeStamp) Bringing [$DatabaseName] online"
 
     Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query "USE [master];
-    ALTER DATABASE [$DatabaseName] SET ONLINE;" -Verbose -AbortOnError -OutputSqlErrors -ErrorAction Stop | Out-Null
+    ALTER DATABASE [$DatabaseName] SET ONLINE;" -Verbose -AbortOnError -OutputSqlErrors $true -ErrorAction Stop | Out-Null
 
 } elseif ($SqlService.Status -eq "Stopped") {
 
@@ -319,12 +356,12 @@ if ($IsSecondary) {
     $cmd = "ALTER AVAILABILITY GROUP [$AGName] ADD DATABASE [$DatabaseName];"
 }
 
-Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query $cmd -Verbose -AbortOnError -OutputSqlErrors -ErrorAction Stop
+Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query $cmd -Verbose -AbortOnError -OutputSqlErrors $true -ErrorAction Stop
 
 # Output new file details
 Invoke-Sqlcmd -ConnectionString $SqlInstanceConnectionString -Query "SELECT name, type_desc, physical_name, state_desc
 FROM sys.master_files
-WHERE database_id = DB_ID('$DatabaseName');" -Verbose -AbortOnError -OutputSqlErrors -ErrorAction Stop
+WHERE database_id = DB_ID('$DatabaseName');" -Verbose -AbortOnError -OutputSqlErrors $true -ErrorAction Stop
 
 Write-Output "$(Get-TimeStamp) Done"
 
