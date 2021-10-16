@@ -60,6 +60,7 @@ AS
 		, CONVERT(float, ROUND(SUM(load_value) * 100.0 / SUM(SUM(load_value)) OVER(PARTITION BY load_type), 2)) AS load_percent
 	FROM nodes
 	INNER JOIN sys.dm_os_nodes AS n WITH(NOLOCK) ON nodes.node_id = n.node_id
+	WHERE n.node_state_desc <> N'ONLINE DAC'
 	GROUP BY n.memory_node_id, load_type
 )
 SELECT *
