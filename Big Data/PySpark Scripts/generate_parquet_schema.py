@@ -64,3 +64,10 @@ spark.sql("set spark.sql.files.ignoreCorruptFiles=true")
 
 df = spark.read.load('s3://bucketname/datafiles/',
                      format="parquet", pathGlobFilter="*.parquet")
+
+
+# if there is a complicated folders structure, you can set RecursiveFileLookup on
+
+df = spark.read.schema(FileSchema)\
+ .option("recursiveFileLookup", "true")\
+ .parquet('s3://bucketname/datafiles/')
