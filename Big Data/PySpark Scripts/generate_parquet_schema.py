@@ -55,3 +55,7 @@ FileSchema = StructType([
 df = spark.read.schema(FileSchema).parquet('s3://bucketname/datafiles/')
 
 display(df)
+
+# if you still have issues with the files that are corrupted or have different extension, you can use this command to ignore them
+
+spark.sql("set spark.sql.files.ignoreCorruptFiles=true")
