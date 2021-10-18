@@ -59,3 +59,8 @@ display(df)
 # if you still have issues with the files that are corrupted or have different extension, you can use this command to ignore them
 
 spark.sql("set spark.sql.files.ignoreCorruptFiles=true")
+
+# as another workaround, you can set to read only files with specific format or set path pattern
+
+df = spark.read.load('s3://bucketname/datafiles/',
+                     format="parquet", pathGlobFilter="*.parquet")
