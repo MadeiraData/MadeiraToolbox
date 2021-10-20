@@ -134,6 +134,7 @@ SELECT *
  ),
 RunThisForMoreDetails = N'USE ' + QUOTENAME([DatabaseName])
 + N'; EXEC sp_indexes_rowset @table_schema = ' + QUOTENAME(SchemaName, '''') + N', @table_name = ' + QUOTENAME(TableName, '''')
++ N'; EXEC sp_helpindex ' + QUOTENAME(QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName), '''')
 + N'; EXEC sp_spaceused ' + QUOTENAME(QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName), '''')
 + N';'
 FROM #Results
