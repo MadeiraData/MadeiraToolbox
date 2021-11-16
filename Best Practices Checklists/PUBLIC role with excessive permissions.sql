@@ -10,21 +10,60 @@ https://eitanblumin.com/sql-vulnerability-assessment-tool-rules-reference-list/#
 
 The rule check is evaluated against all accessible databases,
 and outputs the relevant details as well as remediation commands.
+
+Parameters:
+================================================
+@EnableRevokeSimulation_To_CheckForAffectedUsers
+================================================
+	This enables a simulation where PUBLIC permissions are temporarily REVOKED,
+	and then each database user is checked for loss of permissions.
+	Any users with permissions loss will be returned in the "NegativelyAffectedUsers" columns.
+	The permissions will be re-GRANT-ed after each check.
+
+	IMPORTANT:
+	Please be mindful of possible effect on production systems as this simulation
+	may cause temporary loss of permissions for currently active users!
+
+	NOTE:
+	This simulation is currently not supported for GRANT WITH GRANT OPTION permissions
+	when there are non-dbo users who granted permissions to other users.
+
+===============================================
+@Verbose
+===============================================
+	If enabled, runtime debug details will be returned in the messages output.
 */
 SET NOCOUNT, XACT_ABORT, ARITHABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-DECLARE @temp AS TABLE
+
+DECLARE
+	@EnableRevokeSimulation_To_CheckForAffectedUsers bit = 0,
+	@Verbose bit = 0
+
+IF OBJECT_ID('tempdb..#securables') IS NOT NULL DROP TABLE #securables;
+CREATE TABLE #securables
 (
+[id] int NOT NULL IDENTITY(1,1) PRIMARY KEY,
 [database_name] SYSNAME COLLATE database_default NULL,
 [permission_state] NVARCHAR(256) COLLATE database_default NULL,
 [permission] NVARCHAR(256) COLLATE database_default NULL,
 [object_type] SYSNAME COLLATE database_default NULL,
-[object_name] SYSNAME COLLATE database_default NULL
+[object_name] SYSNAME COLLATE database_default NULL,
+[sub_object_name] NVARCHAR(4000) COLLATE database_default NULL
+);
+IF OBJECT_ID('tempdb..#dbusers') IS NOT NULL DROP TABLE #dbusers;
+CREATE TABLE #dbusers
+(
+[id] int NOT NULL IDENTITY(1,1) PRIMARY KEY,
+[database_name] SYSNAME COLLATE database_default NULL,
+[user_name] sysname COLLATE database_default NULL,
+[sid] varbinary(100) NULL,
+[grantor_count] int NULL
 );
 
 DECLARE @CurrDB sysname, @CMD nvarchar(max), @spExecuteSQL nvarchar(1000);
 
-SET @CMD = N'
+SET @CMD = N'INSERT INTO #securables
 SELECT DISTINCT
 db_name() AS [database_name]
 , perms.state_desc
@@ -47,7 +86,13 @@ WHEN 23 THEN ftc.name -- full text catalog
 WHEN 24 THEN sym.name -- symmetric key
 WHEN 25 THEN crt.name -- certificate
 WHEN 26 THEN asym.name -- assymetric key
-END AS [object_name]
+END AS [object_name],
+(
+SELECT QUOTENAME(c.name)
+FROM sys.all_columns AS c
+WHERE c.object_id = perms.major_id
+AND c.column_id = perms.minor_id
+)
 FROM sys.database_permissions AS perms
 LEFT JOIN sys.database_principals AS prin ON perms.grantee_principal_id = prin.principal_id
 LEFT JOIN sys.assemblies AS asm ON perms.major_id = asm.assembly_id
@@ -104,7 +149,16 @@ AND (
 	''sp_helpdiagramdefinition'',''sp_helpdiagrams''
 	)
     )
-)';
+)
+
+IF @@ROWCOUNT > 0
+  INSERT INTO #dbusers
+  SELECT DB_NAME(), name, sid
+  , GrantorCount = (SELECT COUNT(*) FROM sys.database_permissions AS perm WHERE perm.grantor_principal_id = usr.principal_id)
+  FROM sys.database_principals AS usr
+  WHERE is_fixed_role = 0
+  AND usr.principal_id <> 1 AND [sid] > 0x01
+  AND type IN (''A'', ''E'', ''S'', ''U'')';
 
 DECLARE DBs CURSOR
 LOCAL FAST_FORWARD
@@ -112,6 +166,7 @@ FOR
 SELECT [name]
 FROM sys.databases
 WHERE state = 0
+AND HAS_DBACCESS([name]) = 1
 AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE'
 AND (DB_ID('rdsadmin') IS NULL OR [name] <> 'model');
 
@@ -125,7 +180,6 @@ BEGIN
   
   SET @spExecuteSQL = QUOTENAME(@CurrDB) + N'..sp_executesql';
   
-  INSERT INTO @temp
   EXEC @spExecuteSQL @CMD WITH RECOMPILE; -- don't cache exec plans
   
 END
@@ -133,14 +187,163 @@ END
 CLOSE DBs;
 DEALLOCATE DBs;
 
+IF OBJECT_ID('tempdb..#results') IS NOT NULL DROP TABLE #results;
+CREATE TABLE #results
+(
+	SecurableId int NOT NULL,
+	UserName sysname NULL
+);
+
+IF @EnableRevokeSimulation_To_CheckForAffectedUsers = 1
+BEGIN
+DECLARE @CurrSecurableId int, @CurrUsername sysname, @CurrRevokeCmd nvarchar(MAX), @CurrGrantCmd nvarchar(MAX), @CurrState sysname
+
+	SET @CMD = N'EXECUTE AS USER = @Username;
+
+INSERT INTO #results (SecurableId, UserName)
+SELECT @CurrSecurableId, @Username
+FROM #securables
+WHERE id = @CurrSecurableId
+AND 1 NOT IN
+(
+ HAS_PERMS_BY_NAME([object_name], ISNULL(NULLIF([object_type],N''OBJECT OR COLUMN''), ''OBJECT''), [permission])
+,HAS_PERMS_BY_NAME([object_name], ''OBJECT'', [permission], [sub_object_name], ''COLUMN'')
+);
+
+SET @RCount = @@ROWCOUNT;
+
+REVERT;'
+
+DECLARE Securables CURSOR
+LOCAL FAST_FORWARD
+FOR
+SELECT id
+, RevokeCmd = N'USE ' + QUOTENAME([database_name]) + N'; REVOKE ' + [permission] + ' ON '
++ ISNULL(NULLIF([object_type], N'OBJECT OR COLUMN')
++ '::' + QUOTENAME([object_name]), [object_name]) + ISNULL(N'(' + sub_object_name + N')','')
++ N' FROM [public]'
++ CASE WHEN permission_state = 'GRANT' THEN N'' ELSE N' CASCADE' END
++ N';'
+, GrantCmd = N'USE ' + QUOTENAME([database_name]) + N'; GRANT ' + [permission] + ' ON '
++ ISNULL(NULLIF([object_type], N'OBJECT OR COLUMN')
++ '::' + QUOTENAME([object_name]), [object_name]) + ISNULL(N'(' + sub_object_name + N')','')
++ N' TO [public]'
++ CASE WHEN permission_state = 'GRANT' THEN N'' ELSE N' WITH GRANT OPTION' END
++ N';'
+,[database_name]
+FROM #securables;
+
+OPEN Securables
+
+WHILE 1=1
+BEGIN
+	FETCH NEXT FROM Securables INTO @CurrSecurableId, @CurrRevokeCmd, @CurrGrantCmd, @CurrDB;
+	IF @@FETCH_STATUS <> 0 BREAK;
+
+	DECLARE UsersToCheck CURSOR
+	LOCAL FAST_FORWARD
+	FOR
+	SELECT [user_name]
+	FROM #dbusers
+	WHERE [database_name] = @CurrDB
+	AND [grantor_count] = 0
+	;
+
+	OPEN UsersToCheck
+
+	WHILE 1=1
+	BEGIN
+		FETCH NEXT FROM UsersToCheck INTO @CurrUsername;
+		IF @@FETCH_STATUS <> 0 BREAK;
+
+		IF @Verbose = 1 RAISERROR(N'-- Checking for username "%s" in database "%s" --', 0,1, @CurrUsername, @CurrDB) WITH NOWAIT;
+
+		DECLARE @RCount int;
+
+		BEGIN TRY
+			BEGIN TRAN;
+			
+			IF @Verbose = 1 PRINT @CurrRevokeCmd;
+			EXEC sp_executesql @CurrRevokeCmd;
+
+			IF @Verbose = 1 PRINT @CMD;
+			EXEC sp_executesql @CMD, N'@Username sysname, @CurrSecurableId int, @RCount int OUTPUT', @CurrUsername, @CurrSecurableId, @RCount OUTPUT;
+
+			IF @Verbose = 1 
+			BEGIN
+				IF @RCount = 0
+					PRINT N'-- OK --'
+				ELSE
+					PRINT N'-- !!! WARNING !!! --'
+			END
+
+			COMMIT TRAN;
+		END TRY
+		BEGIN CATCH
+			PRINT N'ERROR: ' + ERROR_MESSAGE();
+			WHILE @@TRANCOUNT > 0 ROLLBACK;
+		END CATCH
+
+		REVERT;
+		
+		IF @Verbose = 1 PRINT @CurrGrantCmd;
+		EXEC sp_executesql @CurrGrantCmd;
+
+	END
+
+	CLOSE UsersToCheck;
+	DEALLOCATE UsersToCheck;
+END
+
+CLOSE Securables
+DEALLOCATE Securables
+
+END
+
 SELECT @@SERVERNAME AS [server_name],
 [database_name],
 [permission_state],
 [permission],
 ISNULL([object_type],'(unknown type)') AS [object_type],
 ISNULL([object_name], '(unknown object)') AS [object_name],
-RemediationCmd = N'USE ' + QUOTENAME([database_name]) + N'; REVOKE '
-+ [permission] + ' ON ' + ISNULL(NULLIF([object_type], N'OBJECT OR COLUMN') + '::' + QUOTENAME([object_name]), [object_name])
-+ N' FROM [public];'
-FROM @temp
+sub_object_name
+, NegativelyAffectedUsers =
+	STUFF((
+		SELECT N', ' + QUOTENAME(r.UserName)
+		FROM #results AS r
+		WHERE r.SecurableId = s.id
+		FOR XML PATH('')
+	), 1, 2, N'')
+, RevokeCmd = N'USE ' + QUOTENAME([database_name]) + N'; REVOKE ' + [permission] + ' ON '
++ ISNULL(NULLIF([object_type], N'OBJECT OR COLUMN')
++ '::' + QUOTENAME([object_name]), [object_name]) + ISNULL(N'(' + sub_object_name + N')','')
++ N' FROM [public]'
++ CASE WHEN permission_state = 'GRANT' THEN N'' ELSE N' CASCADE' END
++ N';'
+, GrantCmd = N'USE ' + QUOTENAME([database_name]) + N'; GRANT ' + [permission] + ' ON '
++ ISNULL(NULLIF([object_type], N'OBJECT OR COLUMN')
++ '::' + QUOTENAME([object_name]), [object_name]) + ISNULL(N'(' + sub_object_name + N')','')
++ N' TO [public]'
++ CASE WHEN permission_state = 'GRANT' THEN N'' ELSE N' WITH GRANT OPTION' END
++ N';'
+FROM #securables AS s
 --WHERE [object_name] IS NOT NULL
+
+IF @EnableRevokeSimulation_To_CheckForAffectedUsers = 1 AND EXISTS 
+	(
+	SELECT *
+	FROM #securables AS s
+	INNER JOIN #dbusers AS u ON s.database_name = u.database_name AND u.grantor_count > 0
+	WHERE s.permission_state = 'GRANT_WITH_GRANT_OPTION'
+	)
+BEGIN
+	RAISERROR(N'WARNING: Found GRANT WITH GRANT OPTION permissions and database users who granted permissions to other users. This is not supported for simulation. Results are inconclusive.', 15, 1);
+END
+ELSE IF @EnableRevokeSimulation_To_CheckForAffectedUsers = 0
+BEGIN
+	RAISERROR(N'WARNING: Revoke Simulation was not performed! Negatively affected users are unknown!', 15, 1);
+END
+ELSE IF EXISTS (SELECT * FROM #results)
+BEGIN
+	RAISERROR(N'WARNING: Negatively affected users found! Please review results and GRANT direct permissions or role membership before revoking from PUBLIC!', 15, 1);
+END
