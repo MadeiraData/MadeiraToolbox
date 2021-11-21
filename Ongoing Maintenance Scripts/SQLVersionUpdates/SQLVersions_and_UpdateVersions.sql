@@ -67,22 +67,6 @@ BEGIN
 END
 
 DECLARE @Versao_SQL_Build VARCHAR(10)
-		
---SET @Versao_SQL_Build = (CASE LEFT(CONVERT(VARCHAR, SERVERPROPERTY('ProductVersion')), 2)
---    WHEN '8.' THEN '2000'
---    WHEN '9.' THEN '2005'
---    WHEN '10' THEN (
---        CASE
---            WHEN LEFT(CONVERT(VARCHAR, SERVERPROPERTY('ProductVersion')), 4) = '10.5' THEN '2008 R2' 
---            WHEN LEFT(CONVERT(VARCHAR, SERVERPROPERTY('ProductVersion')), 4) = '10.0' THEN '2008' 
---        END)
---    WHEN '11' THEN '2012'
---    WHEN '12' THEN '2014'
---    WHEN '13' THEN '2016'
---    WHEN '14' THEN '2017'
---    WHEN '15' THEN '2019'
---    ELSE '2019'
---END)
 
 SET @xml = @resposta COLLATE SQL_Latin1_General_CP1251_CS_AS
 
@@ -109,6 +93,7 @@ DECLARE
 	@dadosXML XML
 
 DECLARE Versions CURSOR
+LOCAL FAST_FORWARD
 FOR
 SELECT
 	Versao_SQL_Build,
@@ -123,14 +108,18 @@ FROM (VALUES
 	,('2016','13')
 	,('2017','14')
 	,('2019','15')
+	,('2022','16')
 	) AS v(Versao_SQL_Build, BuildPrefix)
 
 OPEN Versions
 
 FETCH NEXT FROM Versions INTO @Versao_SQL_Build, @Version_Prefix
 
-WHILE @@FETCH_STATUS = 0
+WHILE 1=1
 BEGIN
+	FETCH NEXT FROM Versions INTO @Versao_SQL_Build, @Version_Prefix
+	IF @@FETCH_STATUS <> 0 BREAK;
+
 	SET @ExpressaoBuscar = 'Microsoft SQL Server ' + @Versao_SQL_Build + ' Builds'
 	SET @PosicaoInicialVersao = CHARINDEX(@ExpressaoBuscar, @xml) + LEN(@ExpressaoBuscar) + 6
 
@@ -162,7 +151,6 @@ BEGIN
 	-- Corrigindo elementos não fechados corretamente
 	SET @RetornoTabela = REPLACE(@RetornoTabela, '<th>', '</th><th>')
 	SET @RetornoTabela = REPLACE(@RetornoTabela, '<tr></th>', '<tr>')
-	SET @RetornoTabela = REPLACE(@RetornoTabela, '<th>Release Date</tr>', '<th>Release Date</th></tr>')
 
 	SET @RetornoTabela = REPLACE(@RetornoTabela, '<td>', '</td><td>')
 	SET @RetornoTabela = REPLACE(@RetornoTabela, '<tr></td>', '<tr>')
@@ -175,6 +163,11 @@ BEGIN
 	SET @RetornoTabela = REPLACE(@RetornoTabela, '&nbsp;', ' ')
 	SET @RetornoTabela = REPLACE(@RetornoTabela, '&kbln', '&amp;kbln')
 	SET @RetornoTabela = REPLACE(@RetornoTabela, '<br>', '<br/>')
+	
+	SET @RetornoTabela = REPLACE(@RetornoTabela, '>Release Date</td>', '>Release Date</th>')
+	SET @RetornoTabela = REPLACE(@RetornoTabela, '<th>Release Date</tr>', '<th>Release Date</th></tr>')
+	SET @RetornoTabela = REPLACE(@RetornoTabela, '>KB / Description<th', '>KB / Description</th><th')
+	SET @RetornoTabela = REPLACE(@RetornoTabela, '<th>KB<th', '<th>KB</th><th')
 
 	--SELECT @RetornoTabela, @ExpressaoBuscar
 	BEGIN TRY
@@ -182,11 +175,11 @@ BEGIN
 	END TRY
 	BEGIN CATCH
 		SELECT
-		  @ExpressaoBuscar AS [@ExpressaoBuscar]
-		, @RetornoTabela AS [@RetornoTabela]
-		, @PosicaoFinalVersao AS [@PosicaoFinalVersao]
-		, @PosicaoInicialVersao AS [@PosicaoInicialVersao]
-		, @xml AS [@xml];
+			@ExpressaoBuscar AS [@ExpressaoBuscar]
+			, @RetornoTabela AS [@RetornoTabela]
+			, @PosicaoFinalVersao AS [@PosicaoFinalVersao]
+			, @PosicaoInicialVersao AS [@PosicaoInicialVersao]
+			, @xml AS [@xml];
 		PRINT N'Error at line ' + CONVERT(nvarchar(max),ERROR_LINE())
 		PRINT ERROR_MESSAGE();
 	END CATCH
@@ -195,22 +188,20 @@ BEGIN
 	INSERT INTO @Atualizacoes_SQL_Server
 	SELECT TOP 1 * 
 	FROM
-	(SELECT @Versao_SQL_Build AS Versao_SQL_Build, @Version_Prefix AS Version_Prefix,
-	X.value('(td[1])[1]','varchar(100)') AS Ultimo_Build,
-	X.value('(td[2])[1]','varchar(100)') AS [Ultimo_Build_SQLSERVR.EXE],
-	X.value('(td[3])[1]','varchar(100)') AS Versao_Arquivo,
-	X.value('(td[4])[1]','varchar(100)') AS [Q],
-	X.value('(td[5])[1]','varchar(100)') AS KB,
-	X.value('(td[6]/a)[1]','varchar(100)') AS Descricao_KB,
-	X.value('(td[7])[1]','varchar(100)') AS Lancamento_KB,
-	X.value('(td[6]/a/@href)[1]','varchar(100)') AS Download_Ultimo_Build
-	FROM @dadosXML.nodes('//table/tr') AS T(X)
-	WHERE X.query('.').exist('tr/td[1]/text()') = 1
-	) AS a
+		(SELECT
+			@Versao_SQL_Build AS Versao_SQL_Build, @Version_Prefix AS Version_Prefix,
+		X.value('(td[1])[1]','varchar(100)') AS Ultimo_Build,
+		X.value('(td[2])[1]','varchar(100)') AS [Ultimo_Build_SQLSERVR.EXE],
+		X.value('(td[3])[1]','varchar(100)') AS Versao_Arquivo,
+		X.value('(td[4])[1]','varchar(100)') AS [Q],
+		X.value('(td[5])[1]','varchar(100)') AS KB,
+		X.value('(td[6]/a)[1]','varchar(100)') AS Descricao_KB,
+		X.value('(td[7])[1]','varchar(100)') AS Lancamento_KB,
+		X.value('(td[6]/a/@href)[1]','varchar(100)') AS Download_Ultimo_Build
+		FROM @dadosXML.nodes('//table/tr') AS T(X)
+		WHERE X.query('.').exist('tr/td[1]/text()') = 1
+		) AS a
 	ORDER BY Lancamento_KB DESC
-
-
-	FETCH NEXT FROM Versions INTO @Versao_SQL_Build, @Version_Prefix
 END
 
 CLOSE Versions
@@ -220,7 +211,7 @@ IF OBJECT_ID('tempdb..#tmpVersions') IS NOT NULL DROP TABLE #tmpVersions;
 
 SELECT	[Version] = cast([Version] as varchar(6)),
 	[BuildNumber] = cast([BuildNumber] as varchar(50)),
-	[ReleaseDate] = cast([ReleaseDate] as datetime),
+	[ReleaseDate] = try_cast([ReleaseDate] as datetime),
 	[MajorVersionNumber] = cast([1] as int),
       	[MinorVersionNumber] = cast([2] as int),
       	[BuildVersionNumber] = cast([3] as int),
@@ -236,8 +227,8 @@ SELECT
 	rowid = ROW_NUMBER() OVER(PARTITION BY Version_Major ORDER BY Lancamento_KB)
 FROM @Atualizacoes_SQL_Server
 CROSS APPLY STRING_SPLIT(Ultimo_Build,'.') AS SPL ) AS s
-pivot
-(MAX(value) FOR rowid in ([1],[2],[3])) p;
+PIVOT (MAX(value) FOR rowid in ([1],[2],[3])) p
+WHERE try_cast([ReleaseDate] as datetime) IS NOT NULL;
 
 
 MERGE INTO [dbo].[SQLVersions] as trg
@@ -246,14 +237,15 @@ ON  trg.[MinorVersionNumber] = src.[MinorVersionNumber]
 AND trg.[MajorVersionNumber] = src.[MajorVersionNumber]
 AND trg.[BuildVersionNumber] = src.[BuildVersionNumber]
 	
-WHEN MATCHED THEN
-	UPDATE SET [DownloadUrl] = src.[DownloadUrl]
+WHEN MATCHED and exists (select src.[DownloadUrl], src.[ReleaseDate] EXCEPT select trg.[DownloadUrl], trg.[ReleaseDate]) THEN
+	UPDATE SET [DownloadUrl] = src.[DownloadUrl], [ReleaseDate] = src.[ReleaseDate]
 WHEN NOT MATCHED THEN
 INSERT 
 ([Version],[BuildNumber],[ReleaseDate],[MajorVersionNumber],[MinorVersionNumber],[BuildVersionNumber],[DownloadUrl])
 VALUES
 (src.[Version],src.[BuildNumber],src.[ReleaseDate],src.[MajorVersionNumber],src.[MinorVersionNumber],src.[BuildVersionNumber],src.[DownloadUrl]);
 
+RAISERROR(N'Affected build versions: %d',0,1,@@ROWCOUNT) WITH NOWAIT;
 
 DROP TABLE #tmpVersions;
 GO
