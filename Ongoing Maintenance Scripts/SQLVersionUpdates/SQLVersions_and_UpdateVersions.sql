@@ -121,6 +121,12 @@ BEGIN
 	IF @@FETCH_STATUS <> 0 BREAK;
 
 	SET @ExpressaoBuscar = 'Microsoft SQL Server ' + @Versao_SQL_Build + ' Builds'
+	IF @xml NOT LIKE N'%' + @ExpressaoBuscar + N'%'
+	BEGIN
+		RAISERROR(N'Not found: %s', 0, 1, @ExpressaoBuscar) WITH NOWAIT;
+		CONTINUE;
+	END
+
 	SET @PosicaoInicialVersao = CHARINDEX(@ExpressaoBuscar, @xml) + LEN(@ExpressaoBuscar) + 6
 
 	PRINT CONCAT(@ExpressaoBuscar, N' offset: ', @PosicaoInicialVersao, N', table location: ', CHARINDEX('<table', @xml, @PosicaoInicialVersao), N' to ', CHARINDEX('</table>', @xml, @PosicaoInicialVersao))
