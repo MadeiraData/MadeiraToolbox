@@ -1,7 +1,9 @@
 USE [master];
 GO
 
-DROP TABLE IF EXISTS #AllDatabases;
+IF OBJECT_ID('tempdb..#AllDatabases') IS NOT NULL
+DROP TABLE #AllDatabases;
+
 CREATE TABLE #AllDatabases
 					(
 						DBName NVARCHAR(128),
