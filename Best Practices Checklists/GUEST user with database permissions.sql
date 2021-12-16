@@ -4,7 +4,8 @@ Database permissions should not be granted to GUEST user
 Author: Eitan Blumin | https://madeiradata.com | https://eitanblumin.com
 Date: 2021-12-16
 Description:
-This check is based on SQL Vulnerability Assessment rules VA1096, VA1097, and VA1099
+This check is based on SQL Vulnerability Assessment rules VA1043, VA1096, VA1097, and VA1099
+https://eitanblumin.com/sql-vulnerability-assessment-tool-rules-reference-list/#Rule_VA1043
 https://eitanblumin.com/sql-vulnerability-assessment-tool-rules-reference-list/#Rule_VA1096
 https://eitanblumin.com/sql-vulnerability-assessment-tool-rules-reference-list/#Rule_VA1097
 https://eitanblumin.com/sql-vulnerability-assessment-tool-rules-reference-list/#Rule_VA1099
