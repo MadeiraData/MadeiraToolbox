@@ -2,6 +2,17 @@ DECLARE @OutputPassword bit = 0;
 
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+IF OBJECT_ID('tempdb..#logins') IS NOT NULL DROP TABLE #logins;
+CREATE TABLE #logins
+(
+Deviation nvarchar(4000),
+LoginName sysname,
+ServerRoles nvarchar(MAX) NULL,
+ServerPermissions nvarchar(MAX) NULL,
+DBAccess nvarchar(MAX) NULL
+)
+
 ;WITH NumbersCTE
 AS
 (
@@ -137,9 +148,26 @@ FROM (VALUES
 ,('vampire')
 ) AS V(TxtWord)
 )
+INSERT INTO #logins
+(Deviation, LoginName, ServerRoles, ServerPermissions)
 SELECT 
 Deviation = dev.Deviation + CASE WHEN @OutputPassword = 1 THEN N' (' + Pwd + N')' ELSE N'' END
 , [LoginName]
+, ServerRoles =
+STUFF((
+	SELECT N', ' + roles.name
+	FROM sys.server_role_members AS srm
+	INNER JOIN sys.server_principals AS roles ON srm.role_principal_id = roles.principal_id
+	WHERE srm.member_principal_id = SUSER_ID(dev.[LoginName])
+	FOR XML PATH('')
+	), 1, 2, N'')
+, ServerPermissions =
+STUFF((
+	SELECT N', ' + perm.state_desc + N' ' + perm.permission_name + N' ' + perm.class_desc
+	FROM sys.server_permissions AS perm
+	WHERE perm.grantee_principal_id = SUSER_ID([LoginName])
+	FOR XML PATH('')
+	), 1, 2, N'')
 FROM
 (
 SELECT 'Empty Password' AS Deviation, RTRIM(name) AS [LoginName], '' AS Pwd
@@ -164,3 +192,46 @@ INNER JOIN master.sys.sql_logins s ON PWDCOMPARE(RTRIM(RTRIM(d.generatedPwd)), s
 WHERE s.is_disabled = 0
 ) AS dev
 OPTION (RECOMPILE); -- avoid saving this in plan cache
+
+DECLARE @CurrDB sysname, @Executor nvarchar(1000), @Cmd nvarchar(MAX), @DBAccess nvarchar(MAX);
+
+SET @Cmd = N'
+UPDATE logins
+	SET DBAccess = ISNULL(DBAccess + N'', '', N'''') + QUOTENAME(DB_NAME())
+	+ ISNULL(N'' ('' +
+	STUFF((
+		SELECT N'', '' + roles.name
+		FROM sys.database_role_members AS drm
+		INNER JOIN sys.server_principals AS roles ON drm.role_principal_id = roles.principal_id
+		WHERE drm.member_principal_id = dp.principal_id
+	FOR XML PATH('''')
+	), 1, 2, N'''')
+	+ N'')'', N'''')
+FROM #logins AS logins
+INNER JOIN sys.database_principals AS dp ON dp.sid = SUSER_SID(logins.LoginName)'
+
+DECLARE DBs CURSOR
+FAST_FORWARD LOCAL
+FOR
+SELECT [name]
+FROM sys.databases
+WHERE HAS_DBACCESS([name]) = 1
+AND state = 0
+
+OPEN DBs;
+
+WHILE 1=1
+BEGIN
+	FETCH NEXT FROM DBs INTO @CurrDB;
+	IF @@FETCH_STATUS <> 0 BREAK;
+
+	SET @DBAccess = NULL;
+
+	SET @Executor = QUOTENAME(@CurrDB) + N'..sp_executesql'
+	EXEC @Executor @Cmd WITH RECOMPILE;
+END
+
+CLOSE DBs;
+DEALLOCATE DBs;
+
+SELECT * FROM #logins;
