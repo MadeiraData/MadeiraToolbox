@@ -18,17 +18,14 @@ Description:
 Note:
 	This script does NOT require xp_cmdshell or CLR or Powershell.
 	It is pure T-SQL only.
-
-IMPORTANT:
-	The script may fail if the provided folder path contains non-trace files!
 */
 SET NOEXEC OFF;
 DECLARE
-	 @AuditLogsPath		nvarchar(4000)	= 'C:\C2Logs\'
-	,@TargetTimeStamp	datetime	= '2021-11-15 11:14:26.163'
-	,@BufferMinutesBefore	int		= 10
+	 @AuditLogsPath		nvarchar(4000)	= CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultDataPath')) -- C2 audit trace files are saved in the default data folder
+	,@TargetTimeStamp	datetime	= /*'2021-11-15 11:14:26.163' --*/ (SELECT MAX(modify_date) FROM sys.server_principals) -- specify the target timestamp here
+	,@BufferMinutesBefore	int		= 5
 	,@BufferMinutesAfter	int		= 10
-	,@Verbose		bit		= 0
+	,@Verbose		bit		= 0			-- change this to 1 to track the progress of the binary search
 
 SET NOCOUNT, QUOTED_IDENTIFIER ON;
 IF OBJECT_ID('tempdb..#FilesList') IS NOT NULL DROP TABLE #FilesList;
@@ -37,7 +34,7 @@ CREATE TABLE #FilesList (ID int NULL, itempath nvarchar(4000), depth int, isfile
 INSERT INTO #FilesList (itempath, depth, isfile)
 exec xp_dirtree @AuditLogsPath, 0, 1
 
--- Remove all subdirectories and non-trace files and numerize the table
+-- Remove all subdirectories and non-trace files
 DELETE FROM #FilesList WHERE isfile = 0 OR itempath NOT LIKE '%.trc' OR depth > 1;
 
 IF NOT EXISTS (SELECT * FROM #FilesList)
@@ -46,7 +43,7 @@ BEGIN
 	SET NOEXEC ON;
 END
 
-
+-- Numerize the table alphabetically
 UPDATE t
 	SET ID = RowRank
 FROM (
@@ -57,12 +54,13 @@ FROM (
 DECLARE @LowerFileID int, @UpperFileID int, @MiddleFileID int, @LowerTimestamp datetime, @UpperTimestamp datetime, @MiddleTimestamp datetime
 DECLARE @MiddleFilePath nvarchar(4000)
 
+-- Get lower and upper bounds
 SELECT @LowerFileID = MIN(ID), @UpperFileID = MAX(ID)
 FROM #FilesList
 
 IF RIGHT(@AuditLogsPath, 1) <> N'\' SET @AuditLogsPath = @AuditLogsPath + N'\';
 
--- Get lower value
+-- Get lower bound value
 SELECT @MiddleFilePath = @AuditLogsPath + itempath
 FROM #FilesList
 WHERE ID = @LowerFileID;
@@ -70,7 +68,7 @@ WHERE ID = @LowerFileID;
 SELECT TOP (2) @LowerTimestamp = StartTime
 FROM sys.fn_trace_gettable(@MiddleFilePath, 1) AS t
 
--- Get upper value
+-- Get upper bound value
 SELECT @MiddleFilePath = @AuditLogsPath + itempath
 FROM #FilesList
 WHERE ID = @UpperFileID;
@@ -120,7 +118,7 @@ BEGIN
 
 END
 ELSE
-	RAISERROR(N'Not in range at all.',15,1)
+	RAISERROR(N'The specified target timestamp is not in range of available trace files.',15,1)
 
 SELECT @MiddleFilePath AS FoundTargetFilePath, MIN(StartTime) AS MinStartTime, @TargetTimeStamp AS TargetTimestamp, MAX(StartTime) AS MaxStartTime
 FROM sys.fn_trace_gettable(@MiddleFilePath, 1) AS t
@@ -130,5 +128,6 @@ SELECT *
 FROM sys.fn_trace_gettable(@MiddleFilePath, 1) AS t
 WHERE @MiddleFilePath IS NOT NULL
 AND StartTime BETWEEN DATEADD(minute, -@BufferMinutesBefore, @TargetTimeStamp) AND DATEADD(minute, @BufferMinutesAfter, @TargetTimeStamp)
+AND ApplicationName NOT LIKE 'SolarWinds%'
 AND ApplicationName NOT LIKE 'SentryOne%'
 AND ApplicationName NOT IN ('Microsoft Dynamics NAV Service', 'Microsoft SQL Server IaaS Agent Query Service', 'Mashup Engine', N'Microsoft® Mashup Runtime')
