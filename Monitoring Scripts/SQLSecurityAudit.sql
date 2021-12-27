@@ -1,0 +1,42 @@
+USE [master]
+
+GO
+
+CREATE SERVER AUDIT [SQLSecurityAudit]
+TO FILE 
+(	FILEPATH = N'N:\C2Logs'
+	,MAXSIZE = 200 MB
+	,MAX_FILES = 1000
+	,RESERVE_DISK_SPACE = OFF
+)
+WITH
+(	QUEUE_DELAY = 1000
+	,ON_FAILURE = CONTINUE
+)
+
+GO
+
+CREATE SERVER AUDIT SPECIFICATION [SQLSecurityAuditSpecification]
+FOR SERVER AUDIT [SQLSecurityAudit]
+ADD (AUDIT_CHANGE_GROUP),
+ADD (LOGIN_CHANGE_PASSWORD_GROUP),
+ADD (SERVER_PRINCIPAL_CHANGE_GROUP),
+ADD (SERVER_PERMISSION_CHANGE_GROUP),
+ADD (SERVER_ROLE_MEMBER_CHANGE_GROUP),
+ADD (USER_CHANGE_PASSWORD_GROUP)
+
+GO
+
+
+DECLARE @File nvarchar(4000)
+
+SELECT @File = log_file_path + REPLACE(log_file_name, '.sqlaudit', '*.sqlaudit')
+FROM sys.server_file_audits
+WHERE [name] = 'SQLSecurityAudit'
+
+PRINT @File
+
+SELECT *
+FROM sys.fn_get_audit_file(@File, default, default)
+
+GO
