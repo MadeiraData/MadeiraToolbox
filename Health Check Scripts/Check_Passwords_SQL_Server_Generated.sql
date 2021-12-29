@@ -36,6 +36,8 @@ BEGIN
 	SET NOEXEC ON;
 END
 
+DECLARE @RCount int
+
 -- Common passwords
 INSERT INTO #pwd WITH (TABLOCKX)
 SELECT [value]
@@ -605,6 +607,8 @@ FROM (VALUES
 ,('young')) AS v([value])
 OPTION (RECOMPILE); -- avoid saving this in plan cache
 
+SET @RCount = @@ROWCOUNT;
+
 ;WITH NumbersCTE
 AS
 (
@@ -706,6 +710,10 @@ INSERT INTO #pwd
 SELECT LTRIM(RTRIM(generatedPwd))
 FROM GeneratedPasswords
 OPTION (RECOMPILE); -- avoid saving this in plan cache
+
+SET @RCount = @RCount + @@ROWCOUNT;
+
+PRINT N'Generated passwords: ' + CONVERT(nvarchar(MAX), @RCount)
 
 IF @BringThePain = 1
 BEGIN
