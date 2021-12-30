@@ -178,7 +178,7 @@ AND errseverity >= 10
 AND (errnumber NOT IN (35202) OR @ShowRecoveryEvents = 1)
 AND NOT EXISTS (
 	SELECT * FROM AGEvents AS n
-	WHERE n.errnumber = 35202 AND a.errnumber = 35206
+	WHERE n.errnumber = 35202 AND a.errnumber IN (35201, 35206)
 	AND n.event_timestamp BETWEEN a.event_timestamp AND DATEADD(second, @MaxSecondsForErrorRecovery, a.event_timestamp)
 	--AND a.availability_group_name = n.availability_group_name
 	--AND a.availability_replica_name = n.availability_replica_name
