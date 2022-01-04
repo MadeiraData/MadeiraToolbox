@@ -5,6 +5,14 @@ Description:
 Helper T-SQL script for adding SCHEMABINDING on scalar functions (checks in ALL databases on the server)
 Added support for Azure SQL DB: Performs the same check across schemas instead of across databases
 
+The script ignores the following functions:
+- Self-referencing functions.
+- Functions that contain code that uses sp_executesql or OLE Automation procedures.
+- Functions in schemas "sys" and "tSQLt".
+- Functions dependent on synonyms (can be disabled by setting @IgnoreFunctionsDependentOnSynonyms to 0)
+- Functions that have constraints dependent on them (can be disabled by setting @IgnoreFunctionsWithConstraintDependencies to 0)
+- Functions referencing functions fitting any of the above criteria (recursive).
+
 Instructions:
 
 1. Run the script to detect all scalar functions with disabled SCHEMABINDING, that can potentially have it enabled.
@@ -20,65 +28,145 @@ Instructions:
 
 */
 DECLARE
-	@WithDependencies BIT = NULL -- optionally filter only on functions with/without dependencies
+	 @WithDependencies BIT = NULL -- optionally filter only on functions with/without dependencies (1 = with, 0 = without, NULL = all)
+	,@IgnoreFunctionsDependentOnSynonyms BIT = 1 -- optionally filter out functions that depend on synonyms (cannot be schemabound)
+	,@IgnoreFunctionsWithConstraintDependencies BIT = 1 -- optionally filter out functions that have constraints dependant on them (cannot be altered)
 
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
 
 IF OBJECT_ID('tempdb..#temp_Schemabinding') IS NOT NULL DROP TABLE #temp_Schemabinding;
 CREATE TABLE #temp_Schemabinding
- (
- [database_name] SYSNAME,
- [schema_name] SYSNAME,
- [object_name] SYSNAME,
- [definition] NVARCHAR(MAX),
- [has_dependencies] BIT,
- [name] AS (QUOTENAME([schema_name]) + N'.' + QUOTENAME([object_name]))
- );
+(
+	[database_name] SYSNAME,
+	[schema_name] SYSNAME,
+	[object_name] SYSNAME,
+	[definition] NVARCHAR(MAX),
+	[has_dependencies] BIT,
+	[has_synonym_dependencies] BIT,
+	[has_constraint_dependencies] BIT,
+	[name] AS (QUOTENAME([schema_name]) + N'.' + QUOTENAME([object_name]))
+);
 
- DECLARE @CMD_Template NVARCHAR(MAX), @proc SYSNAME
+DECLARE @CMD_Template NVARCHAR(MAX), @proc SYSNAME
 
- SET @CMD_Template  = N'
+SET @CMD_Template  = N'WITH Exclusions AS
+(
+-- exclude modules invalid for schemabinding
+select d.object_id
+from sys.sql_dependencies AS d
+WHERE d.referenced_major_id = d.object_id
+OR OBJECT_DEFINITION(d.referenced_major_id) LIKE N''%sp_OACreate%sp_OA%''
+OR LOWER(OBJECT_DEFINITION(d.referenced_major_id)) LIKE N''%exec%sp_executesql%''
+OR OBJECT_SCHEMA_NAME(d.referenced_major_id) IN (''tSQLt'',''sys'')
+UNION ALL
+select d.referenced_id
+from sys.sql_expression_dependencies AS d
+WHERE d.referencing_id = d.referenced_id
+OR OBJECT_DEFINITION(d.referenced_id) LIKE N''%sp_OACreate%sp_OA%''
+OR LOWER(OBJECT_DEFINITION(d.referenced_id)) LIKE N''%exec%sp_executesql%''
+OR OBJECT_SCHEMA_NAME(d.referenced_id) IN (''tSQLt'',''sys'')'
++ CASE WHEN @IgnoreFunctionsDependentOnSynonyms = 1 THEN N'
+-- dependant on synonyms
+UNION ALL
+select d.object_id
+from sys.sql_dependencies AS d
+INNER JOIN sys.synonyms AS syn ON d.referenced_major_id = syn.object_id
+UNION ALL
+select d.referencing_id
+from sys.sql_expression_dependencies AS d
+INNER JOIN sys.synonyms AS syn ON d.referenced_id = syn.object_id'
+ELSE N''
+END
++ CASE WHEN @IgnoreFunctionsWithConstraintDependencies = 1 THEN N'
+-- has constraint dependencies
+UNION ALL
+select d.referenced_major_id
+from sys.sql_dependencies AS d
+INNER JOIN sys.sysconstraints AS con ON d.object_id = con.constid
+UNION ALL
+select d.referenced_id
+from sys.sql_expression_dependencies AS d
+INNER JOIN sys.sysconstraints AS con ON d.referencing_id = con.constid'
+ELSE N''
+END + N'
+), ExclusionTree1 AS
+(
+select d.object_id
+from sys.sql_dependencies AS d
+INNER JOIN Exclusions AS Tree ON d.referenced_major_id = Tree.object_id
+WHERE d.referenced_major_id <> d.object_id
+
+UNION ALL
+
+select d.object_id
+from sys.sql_dependencies AS d
+INNER JOIN ExclusionTree1 AS Tree ON d.referenced_major_id = Tree.object_id
+WHERE d.referenced_major_id <> d.object_id
+), ExclusionTree2 AS
+(
+select d.referencing_id AS object_id
+from sys.sql_expression_dependencies AS d
+INNER JOIN Exclusions AS Tree ON d.referenced_id = Tree.object_id
+WHERE d.referencing_id <> d.referenced_id
+
+UNION ALL
+
+select d.referencing_id
+from sys.sql_expression_dependencies AS d
+INNER JOIN ExclusionTree2 AS Tree ON d.referenced_id = Tree.object_id
+WHERE d.referencing_id <> d.referenced_id
+)
 SELECT DB_NAME(), OBJECT_SCHEMA_NAME(OB.id), OB.name, MO.[definition]
 , HasDependencies = CASE WHEN EXISTS
 (
 select NULL
 from sys.sql_dependencies AS d
 WHERE d.object_id = OB.id
-
 UNION ALL
-
 select NULL
 from sys.sql_expression_dependencies AS d
 WHERE d.referencing_id = OB.id
 ) THEN 1 ELSE 0 END
-FROM sys.sysobjects OB
-INNER JOIN 
- sys.sql_modules MO
-ON OB.id = MO.object_id
-AND OB.type = ''FN''
-AND MO.is_schema_bound = 0
-WHERE LOWER(DB_NAME()) NOT IN (''msdb'',''master'',''tempdb'',''model'',''reportserver'',''reportservertemp'',''distribution'',''ssisdb'')
-AND MO.definition IS NOT NULL
-AND MO.definition NOT LIKE N''%sp_OACreate%sp_OA%''
-AND LOWER(MO.definition) NOT LIKE N''%exec%sp_executesql%''
-AND OB.name NOT IN (''fn_diagramobjects'')
-AND OBJECT_SCHEMA_NAME(OB.id) NOT IN (''tSQLt'',''sys'')
--- Ignore self-referencing modules:
-AND NOT EXISTS
+, HasSynonymDependencies = CASE WHEN EXISTS
 (
 select NULL
 from sys.sql_dependencies AS d
+INNER JOIN sys.synonyms AS syn ON d.referenced_major_id = syn.object_id
 WHERE d.object_id = OB.id
-AND d.referenced_major_id = d.object_id
-
 UNION ALL
-
 select NULL
 from sys.sql_expression_dependencies AS d
+INNER JOIN sys.synonyms AS syn ON d.referenced_id = syn.object_id
 WHERE d.referencing_id = OB.id
-AND d.referencing_id = d.referenced_id
-)'
+) THEN 1 ELSE 0 END
+, HasConstraintDependencies = CASE WHEN EXISTS
+(
+select NULL
+from sys.sql_dependencies AS d
+INNER JOIN sys.sysconstraints AS con ON d.object_id = con.constid
+WHERE d.referenced_major_id = OB.id
+UNION ALL
+select NULL
+from sys.sql_expression_dependencies AS d
+INNER JOIN sys.sysconstraints AS con ON d.referencing_id = con.constid
+WHERE d.referenced_id = OB.id
+) THEN 1 ELSE 0 END
+FROM sys.sysobjects OB
+INNER JOIN sys.sql_modules MO
+ON OB.id = MO.object_id
+AND OB.type = ''FN''
+AND MO.is_schema_bound = 0
+WHERE MO.definition NOT LIKE N''%sp_OACreate%sp_OA%''
+AND LOWER(MO.definition) NOT LIKE N''%exec%sp_executesql%''
+AND OB.name NOT IN (''fn_diagramobjects'')
+AND OBJECT_SCHEMA_NAME(OB.id) NOT IN (''tSQLt'',''sys'')
+-- Ignore excluded modules:
+AND OB.id NOT IN (select object_id FROM Exclusions)
+-- Ignore modules dependant on excluded modules:
+AND OB.id NOT IN (SELECT object_id FROM ExclusionTree1)
+AND OB.id NOT IN (SELECT object_id FROM ExclusionTree2)
+OPTION(MAXRECURSION 1000)'
 
 IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
 BEGIN
@@ -87,16 +175,33 @@ BEGIN
 END
 ELSE
 BEGIN
-	
-	SET @CMD_Template = N'IF EXISTS(SELECT * FROM sys.databases WHERE name = ''?'' 
-	AND state_desc = ''ONLINE'' AND DATABASEPROPERTYEX(''?'', ''Updateability'') = ''READ_WRITE'')
-BEGIN
-USE [?];'
-+ @CMD_Template + N'
-END'
+	DECLARE @CurrDB sysname, @spExecuteSql nvarchar(1000)
 
-	INSERT INTO #temp_Schemabinding
-	exec sp_MSforeachdb @CMD_Template
+	DECLARE DBs CURSOR LOCAL FAST_FORWARD FOR
+	SELECT [name]
+	FROM sys.databases
+	WHERE database_id > 4
+	AND is_distributor = 0
+	AND source_database_id IS NULL
+	AND LOWER([name]) NOT IN ('reportserver','reportservertemp','distribution','ssisdb')
+	AND state = 0
+	AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE'
+
+	OPEN DBs
+
+	WHILE 1=1
+	BEGIN
+		FETCH NEXT FROM DBs INTO @CurrDB;
+		IF @@FETCH_STATUS <> 0 BREAK;
+
+		SET @spExecuteSql = QUOTENAME(@CurrDB) + N'..sp_executesql'
+
+		INSERT INTO #temp_Schemabinding
+		exec @spExecuteSql @CMD_Template
+	END
+
+	CLOSE DBs;
+	DEALLOCATE DBs;
 
 	-- Remove functions that reference linked servers
 	DELETE T
@@ -116,7 +221,10 @@ WHERE [schema_name] IN ('sys', 'tSQLt')
 -- General summary:
 SELECT 'In server: ' + @@SERVERNAME + ', database: ' + QUOTENAME([database_name]) + ', fuction: ' + [name] + ', schemabinding option is disabled', *
 FROM #temp_Schemabinding
-WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
+WHERE (@WithDependencies IS NULL OR @WithDependencies = has_dependencies)
+AND (@IgnoreFunctionsDependentOnSynonyms = 0 OR [has_synonym_dependencies] = 0)
+AND (@IgnoreFunctionsWithConstraintDependencies = 0 OR [has_constraint_dependencies] = 0)
+
 
 IF CONVERT(varchar(4000), SERVERPROPERTY('Edition')) = 'SQL Azure'
 BEGIN
@@ -127,13 +235,16 @@ GO' AS [definition], COUNT(*) AS num_of_schemas
 	CROSS APPLY (VALUES(
 		REPLACE([definition],QUOTENAME([schema_name]),'[{SchemaName}]')
 		)) AS v(NormalizedDefinition)
-	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
+	WHERE (@WithDependencies IS NULL OR @WithDependencies = has_dependencies)
+	AND (@IgnoreFunctionsDependentOnSynonyms = 0 OR [has_synonym_dependencies] = 0)
+	AND (@IgnoreFunctionsWithConstraintDependencies = 0 OR [has_constraint_dependencies] = 0)
 	GROUP BY [object_name], NormalizedDefinition
 	
 	-- Generate CREATE script for all unique or "rare" functions
 	SELECT [object_name], [schema_name], FullObjectName = QUOTENAME([database_name]) + N'.' + [name]
 	, CreationScript = [definition] + N'
 GO'
+	, a.has_dependencies, a.has_constraint_dependencies, a.has_synonym_dependencies
 	FROM (
 	SELECT *, COUNT(*) OVER (PARTITION BY [object_name]) AS InsNum
 	FROM #temp_Schemabinding
@@ -141,7 +252,9 @@ GO'
 		REPLACE([definition],QUOTENAME([schema_name]),'[{SchemaName}]')
 		)) AS v(NormalizedDefinition)
 	) AS a
-	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
+	WHERE (@WithDependencies IS NULL OR @WithDependencies = has_dependencies)
+	AND (@IgnoreFunctionsDependentOnSynonyms = 0 OR [has_synonym_dependencies] = 0)
+	AND (@IgnoreFunctionsWithConstraintDependencies = 0 OR [has_constraint_dependencies] = 0)
 	AND (InsNum < 5
 	OR [object_name] IN (SELECT [object_name] FROM #temp_Schemabinding 
 						CROSS APPLY (VALUES(
@@ -183,7 +296,9 @@ GO'
 	CROSS APPLY (VALUES(
 		REPLACE([definition],QUOTENAME([schema_name]),'[{SchemaName}]')
 		)) AS v(NormalizedDefinition)
-	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
+	WHERE (@WithDependencies IS NULL OR @WithDependencies = has_dependencies)
+	AND (@IgnoreFunctionsDependentOnSynonyms = 0 OR [has_synonym_dependencies] = 0)
+	AND (@IgnoreFunctionsWithConstraintDependencies = 0 OR [has_constraint_dependencies] = 0)
 	GROUP BY [object_name], NormalizedDefinition
 	HAVING COUNT(*) >= 3
 	AND [object_name] NOT IN (SELECT [object_name] FROM #temp_Schemabinding 
@@ -198,7 +313,9 @@ BEGIN
 	-- Check how many times each identical function exists in multiple databases
 	SELECT [schema_name], [object_name], [definition], COUNT(*) AS num_of_databases
 	FROM #temp_Schemabinding
-	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
+	WHERE (@WithDependencies IS NULL OR @WithDependencies = has_dependencies)
+	AND (@IgnoreFunctionsDependentOnSynonyms = 0 OR [has_synonym_dependencies] = 0)
+	AND (@IgnoreFunctionsWithConstraintDependencies = 0 OR [has_constraint_dependencies] = 0)
 	GROUP BY [schema_name], [object_name], [definition]
 	
 	-- Generate CREATE script for all unique or "rare" functions
@@ -207,11 +324,14 @@ BEGIN
 GO
 ' + [definition] + N'
 GO'
+	, a.has_dependencies, a.has_constraint_dependencies, a.has_synonym_dependencies
 	FROM (
 	SELECT *, COUNT(*) OVER (PARTITION BY [name]) AS InsNum
 	FROM #temp_Schemabinding
 	) AS a
-	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
+	WHERE (@WithDependencies IS NULL OR @WithDependencies = has_dependencies)
+	AND (@IgnoreFunctionsDependentOnSynonyms = 0 OR [has_synonym_dependencies] = 0)
+	AND (@IgnoreFunctionsWithConstraintDependencies = 0 OR [has_constraint_dependencies] = 0)
 	AND (InsNum < 5
 	OR [name] IN (SELECT [name] FROM #temp_Schemabinding GROUP BY [name] HAVING COUNT(DISTINCT [definition]) > 1)
 	)
@@ -224,7 +344,9 @@ IF OBJECT_ID(''''' + [name] + N''''') IS NOT NULL
 EXEC(N''''' + REPLACE([definition],N'''', N'''''''''') + N''''');''
 GO'
 	FROM #temp_Schemabinding
-	WHERE @WithDependencies IS NULL OR @WithDependencies = has_dependencies
+	WHERE (@WithDependencies IS NULL OR @WithDependencies = has_dependencies)
+	AND (@IgnoreFunctionsDependentOnSynonyms = 0 OR [has_synonym_dependencies] = 0)
+	AND (@IgnoreFunctionsWithConstraintDependencies = 0 OR [has_constraint_dependencies] = 0)
 	GROUP BY [name], [definition]
 	HAVING COUNT(*) >= 5
 	AND [name] NOT IN (SELECT [name] FROM #temp_Schemabinding GROUP BY [name] HAVING COUNT(DISTINCT [definition]) > 1)
