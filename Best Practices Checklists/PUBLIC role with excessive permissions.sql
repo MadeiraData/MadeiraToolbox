@@ -13,6 +13,11 @@ and outputs the relevant details as well as remediation commands.
 
 Parameters:
 ================================================
+@FilterByDatabaseName
+================================================
+	Optional parameter to filter by database name.
+	Leave as NULL to check all accessible databases.
+================================================
 @EnableRevokeSimulation_To_CheckForAffectedUsers
 ================================================
 	This enables a simulation where PUBLIC permissions are temporarily REVOKED,
@@ -25,20 +30,51 @@ Parameters:
 	may cause temporary loss of permissions for currently active users!
 
 	NOTE:
-	This simulation is currently not supported for GRANT WITH GRANT OPTION permissions
+	Unless you're also using the @CloneDatabaseName_ForRevokeSimulation parameter,
+	this simulation is currently not supported for GRANT WITH GRANT OPTION permissions
 	when there are non-dbo users who granted permissions to other users.
+
+===============================================
+@CloneDatabaseName_ForRevokeSimulation
+===============================================
+	Specify a non-existent database name in this parameter to use DBCC CLONEDATABASE
+	for each checked database, and use that clone for the REVOKE simulation check.
+	This will avoid any impact on production databases.
 
 ===============================================
 @Verbose
 ===============================================
-	If enabled, runtime debug details will be returned in the messages output.
+	If enabled (set to 1), runtime debug details will be returned in the messages output.
 */
+DECLARE
+	@FilterByDatabaseName sysname = NULL,
+	@EnableRevokeSimulation_To_CheckForAffectedUsers bit = 0,
+	@CloneDatabaseName_ForRevokeSimulation sysname = 'RevokeSimulationCloneDB',
+	@Verbose bit = 0
+
+
 SET NOCOUNT, XACT_ABORT, ARITHABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-DECLARE
-	@EnableRevokeSimulation_To_CheckForAffectedUsers bit = 0,
-	@Verbose bit = 0
+DECLARE @EnableRevokeSimulation_ForWithGrantOption bit = 0;
+
+IF @CloneDatabaseName_ForRevokeSimulation IS NOT NULL AND @EnableRevokeSimulation_To_CheckForAffectedUsers = 1
+BEGIN
+	IF SERVERPROPERTY('Edition') = 'SQL Azure'
+	BEGIN
+		RAISERROR(N'CLONEDATABASE is not supported by this edition of SQL Server.',16,1);
+		SET @EnableRevokeSimulation_To_CheckForAffectedUsers = 0;
+	END
+	ELSE IF DB_ID(@CloneDatabaseName_ForRevokeSimulation) IS NOT NULL
+	BEGIN
+		RAISERROR(N'Database "%s" already exists. Please drop it first, or enter a different name for the clone database.',16,1,@CloneDatabaseName_ForRevokeSimulation);
+		SET @EnableRevokeSimulation_To_CheckForAffectedUsers = 0;
+	END
+	ELSE
+	BEGIN
+		SET @EnableRevokeSimulation_ForWithGrantOption = 1;
+	END
+END
 
 IF OBJECT_ID('tempdb..#securables') IS NOT NULL DROP TABLE #securables;
 CREATE TABLE #securables
@@ -166,6 +202,7 @@ FOR
 SELECT [name]
 FROM sys.databases
 WHERE state = 0
+AND (@FilterByDatabaseName IS NULL OR [name] = @FilterByDatabaseName)
 AND HAS_DBACCESS([name]) = 1
 AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE'
 AND (DB_ID('rdsadmin') IS NULL OR [name] <> 'model');
@@ -218,6 +255,7 @@ DECLARE Securables CURSOR
 LOCAL FAST_FORWARD
 FOR
 SELECT id
+, permission_state
 , RevokeCmd = N'USE ' + QUOTENAME([database_name]) + N'; REVOKE ' + [permission] + ' ON '
 + ISNULL(NULLIF([object_type], N'OBJECT OR COLUMN')
 + '::' + QUOTENAME([object_name]), [object_name]) + ISNULL(N'(' + sub_object_name + N')','')
@@ -237,8 +275,20 @@ OPEN Securables
 
 WHILE 1=1
 BEGIN
-	FETCH NEXT FROM Securables INTO @CurrSecurableId, @CurrRevokeCmd, @CurrGrantCmd, @CurrDB;
+	FETCH NEXT FROM Securables INTO @CurrSecurableId, @CurrState, @CurrRevokeCmd, @CurrGrantCmd, @CurrDB;
 	IF @@FETCH_STATUS <> 0 BREAK;
+
+	IF @CloneDatabaseName_ForRevokeSimulation IS NOT NULL
+	BEGIN
+		-- Clone target database without data
+		DBCC CLONEDATABASE(@CurrDB, @CloneDatabaseName_ForRevokeSimulation);
+
+		SET @spExecuteSql = QUOTENAME(@CloneDatabaseName_ForRevokeSimulation) + N'..sp_executesql'
+	END
+	ELSE
+	BEGIN
+		SET @spExecuteSql = QUOTENAME(@CurrDB) + N'..sp_executesql'
+	END
 
 	DECLARE UsersToCheck CURSOR
 	LOCAL FAST_FORWARD
@@ -246,10 +296,10 @@ BEGIN
 	SELECT [user_name]
 	FROM #dbusers
 	WHERE [database_name] = @CurrDB
-	AND [grantor_count] = 0
+	AND ([grantor_count] = 0 OR @EnableRevokeSimulation_ForWithGrantOption = 1)
 	;
 
-	OPEN UsersToCheck
+	OPEN UsersToCheck;
 
 	WHILE 1=1
 	BEGIN
@@ -264,10 +314,10 @@ BEGIN
 			BEGIN TRAN;
 			
 			IF @Verbose = 1 PRINT @CurrRevokeCmd;
-			EXEC sp_executesql @CurrRevokeCmd;
+			EXEC @spExecuteSql @CurrRevokeCmd;
 
 			IF @Verbose = 1 PRINT @CMD;
-			EXEC sp_executesql @CMD, N'@Username sysname, @CurrSecurableId int, @RCount int OUTPUT', @CurrUsername, @CurrSecurableId, @RCount OUTPUT;
+			EXEC @spExecuteSql @CMD, N'@Username sysname, @CurrSecurableId int, @RCount int OUTPUT', @CurrUsername, @CurrSecurableId, @RCount OUTPUT;
 
 			IF @Verbose = 1 
 			BEGIN
@@ -287,12 +337,20 @@ BEGIN
 		REVERT;
 		
 		IF @Verbose = 1 PRINT @CurrGrantCmd;
-		EXEC sp_executesql @CurrGrantCmd;
+		EXEC @spExecuteSql @CurrGrantCmd;
 
 	END
 
 	CLOSE UsersToCheck;
 	DEALLOCATE UsersToCheck;
+	
+	IF @CloneDatabaseName_ForRevokeSimulation IS NOT NULL
+	BEGIN
+		-- Drop cloned database
+		DECLARE @CMD2 nvarchar(MAX)
+		SET @CMD2 = N'DROP DATABASE ' + QUOTENAME(@CloneDatabaseName_ForRevokeSimulation)
+		EXEC(@CMD2);
+	END
 END
 
 CLOSE Securables
@@ -336,8 +394,9 @@ IF @EnableRevokeSimulation_To_CheckForAffectedUsers = 1 AND EXISTS
 	INNER JOIN #dbusers AS u ON s.database_name = u.database_name AND u.grantor_count > 0
 	WHERE s.permission_state = 'GRANT_WITH_GRANT_OPTION'
 	)
+AND @CloneDatabaseName_ForRevokeSimulation IS NULL
 BEGIN
-	RAISERROR(N'WARNING: Found GRANT WITH GRANT OPTION permissions and database users who granted permissions to other users. This is not supported for simulation. Results are inconclusive.', 15, 1);
+	RAISERROR(N'WARNING: Detected "GRANT WITH GRANT OPTION" permissions and database users who granted permissions to other users. This is not supported for simulation without using CLONEDATABASE. Results are inconclusive.', 15, 1);
 END
 ELSE IF @EnableRevokeSimulation_To_CheckForAffectedUsers = 0
 BEGIN
