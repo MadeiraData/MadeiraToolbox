@@ -46,8 +46,8 @@ DB_NAME(),
 DB_ID(),
 stat.object_id,
 stat.name,
-MIN(sp.last_updated),
-MAX(sp.modification_counter),
+ISNULL(MIN(sp.last_updated), STATS_DATE(stat.object_id, stat.stats_id)),
+ISNULL(MAX(sp.modification_counter),0),
 SUM(ps.rows)
 FROM sys.objects AS t
 INNER JOIN (
@@ -74,12 +74,9 @@ FROM sys.dm_db_incremental_stats_properties(stat.object_id, stat.stats_id)
 WHERE t.is_ms_shipped = 0
 AND t.[type] = ''U''
 AND (ix.index_id IS NULL OR (ix.is_disabled = 0 AND ix.is_hypothetical = 0 AND ix.type <= 2))
-AND (sp.modification_counter IS NULL
-	OR (sp.modification_counter >= ' + CONVERT(nvarchar(MAX), @MinimumModCountr) + N'
-	  AND sp.last_updated < DATEADD(day, -' + CONVERT(nvarchar(MAX), @MinimumDaysOld) + N', GETDATE())
-	  )
-    )
-GROUP BY stat.object_id,stat.name
+AND sp.modification_counter >= ' + CONVERT(nvarchar(MAX), @MinimumModCountr) + N'
+AND ISNULL(sp.last_updated, STATS_DATE(stat.object_id, stat.stats_id)) < DATEADD(day, -' + CONVERT(nvarchar(MAX), @MinimumDaysOld) + N', GETDATE())
+GROUP BY stat.object_id,stat.name,stat.stats_id
 OPTION (RECOMPILE, MAXDOP 1)' -- use MAXDOP 1 to avoid access violation bug
 
 IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
@@ -120,6 +117,7 @@ Msg = N'ModCntr: ' + ISNULL(CAST(ModCntr as nvarchar(max)), N'(unknown)')
 + ISNULL(@options, N'')
 + N';'
 FROM #tmpStats
+WHERE LastUpdate < DATEADD(day, -@MinimumDaysOld, GETDATE()) OR LastUpdate IS NULL
 ORDER BY
 ModCntr DESC
 , LastUpdate ASC
