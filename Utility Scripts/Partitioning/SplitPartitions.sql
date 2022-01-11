@@ -81,9 +81,11 @@ BEGIN
 	WHILE @CurrentRangeValue < @TargetRangeValue
 	BEGIN
 		SET @CurrentRangeValue = @CurrentRangeValue + @PartitionRangeInterval;
+		
 		SET @Msg = CONCAT(CONVERT(nvarchar(24), GETDATE(), 121), N' - Splitting range: ', @CurrentRangeValue)
 		RAISERROR(N'%s', 0,1, @Msg) WITH NOWAIT;
 		
+		-- Execute NEXT USED for all dependent partition schemes
 		DECLARE @CurrPS sysname, @CurrFG sysname
 
 		DECLARE PSFG CURSOR
@@ -122,7 +124,7 @@ BEGIN
 		CLOSE PSFG;
 		DEALLOCATE PSFG;
 
-		
+		-- Execute SPLIT on the partition function
 		SET @CMD = N'ALTER PARTITION FUNCTION ' + QUOTENAME(@PartitionFunctionName) + N'() SPLIT RANGE(@CurrentRangeValue); -- ' + CONVERT(nvarchar(MAX), @CurrentRangeValue)
 		RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
 		IF @DebugOnly = 0 EXEC sp_executesql @CMD, N'@CurrentRangeValue $(PartitionKeyDataType)', @CurrentRangeValue;
