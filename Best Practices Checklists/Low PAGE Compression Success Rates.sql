@@ -7,9 +7,12 @@ Based on blog post by Paul Randal:
 https://www.sqlskills.com/blogs/paul/the-curious-case-of-tracking-page-compression-success-rates/
 */
 DECLARE
+	/* threshold parameters: */
 	 @MinimumCompressionAttempts int = 200
 	,@MaxAttemptSuccessRatePercentage int = 20
-	,@RebuildOptions nvarchar(MAX) = N'ONLINE = ON, SORT_IN_TEMPDB = ON'
+
+	/* change index rebuild options as needed: */
+	,@RebuildOptions nvarchar(MAX) = N'ONLINE = ON, SORT_IN_TEMPDB = ON, MAXDOP = 4'
 
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -105,7 +108,7 @@ SELECT *
 	  ELSE N''
 	  END
 	+ N' REBUILD WITH(DATA_COMPRESSION = ROW'
-	+ ISNULL(N', ' + @RebuildOptions, N'')
+	+ ISNULL(N', ' + NULLIF(@RebuildOptions, N''), N'')
 	+ N');'
 FROM @Results
 ORDER BY success_rate ASC
