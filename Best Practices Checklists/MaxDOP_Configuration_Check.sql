@@ -21,10 +21,10 @@ SET @ProductVersion = CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(50));
 SET @Major = CAST(LEFT(@ProductVersion, CHARINDEX('.', @ProductVersion)-1) AS INT);
 
 IF @Major < 10
-RAISERROR('This script is intended for SQL Server 2008 or higher. It will not work on version [%s].', 11, 1, @ProductVersion);
+RAISERROR('This script is intended for SQL Server 2008 or higher. It will not work on version [%s].', 16, 1, @ProductVersion);
 
 IF CAST(SERVERPROPERTY('Edition') AS NVARCHAR(50)) = 'Azure SQL'
-RAISERROR('This script is not intended for Azure SQL DB.', 11, 1);
+RAISERROR('This script is not intended for Azure SQL DB.', 16, 1);
 
 -- Get the MaxDOP setting
 SELECT @EffectiveMaxDOP = CAST(value_in_use AS INT)

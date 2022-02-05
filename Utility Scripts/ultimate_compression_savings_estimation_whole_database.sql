@@ -106,7 +106,7 @@ DECLARE
 	-- Threshold parameters controlling recommendation algorithms based on savings estimation check:
 	,@CompressionRatioThreshold		FLOAT		= 45		-- Number between 0 and 100 representing the minimum compressed data ratio, relative to current size, for which a check will pass
 	,@CompressionSizeSavedMBThreshold	FLOAT		= 200		-- Minimum estimated saved space in MB resulting from compression (affects both PAGE and ROW compressions)
-	,@MinimumRatioDifferenceForPage		FLOAT		= 10		-- Minimum difference in percentage between ROW and PAGE compression types, in order to deem PAGE compression preferable
+	,@MinimumRatioDifferenceForPage		FLOAT		= 20		-- Minimum difference in percentage between ROW and PAGE compression types, in order to deem PAGE compression preferable
 	,@MinimumSavingsMBDifferenceForPage	FLOAT		= 40		-- Minimum difference in saved space in MB between ROW and PAGE compression types, in order to deem PAGE compression preferable
 
 	-- Parameters controlling the structure of output scripts:

@@ -158,5 +158,6 @@ INNER JOIN sys.indexes ind2
 ON ind2.object_id = tbl.table_object_id and ind2.index_id = tbl.containing_index_id
 LEFT JOIN sys.dm_db_index_usage_stats AS us1 ON us1.database_id = DB_ID() AND us1.object_id = ind1.object_id AND us1.index_id = ind1.index_id
 LEFT JOIN sys.dm_db_index_usage_stats AS us2 ON us2.database_id = DB_ID() AND us2.object_id = ind2.object_id AND us2.index_id = ind2.index_id
+WHERE ind1.index_id > 0 AND ind2.index_id > 0
 
 --DROP TABLE #FindOnThisDB

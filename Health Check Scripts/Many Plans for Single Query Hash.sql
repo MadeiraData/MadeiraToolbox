@@ -1,7 +1,8 @@
 DECLARE
 	@RCA bit = 1,
 	@MinimumSizeInPlanCacheMB int = 256,
-	@Top int = 10
+	@Top int = 10,
+	@PlanCountThreshold int = 50
 ;
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -17,12 +18,10 @@ DECLARE @Result AS TABLE
  TotalSizeMB decimal(19,2)
 )
 
-DECLARE @DBsCount int, @PlanCountThreshold int;
+DECLARE @DBsCount int;
 SELECT @DBsCount = COUNT(*) FROM sys.databases;
 
-IF 50 > @DBsCount
-	SET @PlanCountThreshold = 50;
-ELSE
+IF @PlanCountThreshold < @DBsCount
 	SET @PlanCountThreshold = @DBsCount * 2;
 
 INSERT INTO @Result

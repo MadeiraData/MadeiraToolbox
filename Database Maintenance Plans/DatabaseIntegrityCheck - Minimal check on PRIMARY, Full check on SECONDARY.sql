@@ -20,8 +20,11 @@ DECLARE
 	@CurrentDatabaseName sysname = 'DemoDB',
 	@SnapshotFolderPath nvarchar(MAX) = NULL, -- optionally force the SECONDARY snapshot to be created in a specific folder (must NOT end with \). If NULL then will use the same folder as the data file(s).
 	@LogToTable	nvarchar(10) = 'Y',
-	@Execute	nvarchar(10) = 'N'
-
+	@Execute	nvarchar(10) = 'N',
+	@PrimaryCommands nvarchar(4000) = 'CHECKDB',
+	@PrimaryTimeLimitSeconds int = NULL,
+	@SecondaryCommands nvarchar(4000) = 'CHECKALLOC,CHECKTABLE',
+	@SecondaryTimeLimitSeconds int = 60 * 60 * 5
 
 SET NOCOUNT, XACT_ABORT, ARITHABORT, QUOTED_IDENTIFIER ON;
 DECLARE @Version int = CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff)
@@ -44,7 +47,8 @@ BEGIN
 
 	EXEC dbo.DatabaseIntegrityCheck
 		@Databases = @CurrentDatabaseName,
-		@CheckCommands = 'CHECKDB',
+		@CheckCommands = @PrimaryCommands,
+		@TimeLimit = @PrimaryTimeLimitSeconds,
 		@PhysicalOnly = 'Y',
 		@NoIndex = 'Y',
 		@ExtendedLogicalChecks = 'N',
@@ -57,7 +61,7 @@ ELSE IF @CurrentAvailabilityGroupRole = 'SECONDARY'
 BEGIN
 	DECLARE @CMD NVARCHAR(MAX), @SnapshotName SYSNAME;
 
-	SET @SnapshotName = @CurrentDatabaseName + '_snapshot_' + CONVERT(nvarchar(25), GETDATE(), 112) + REPLACE(CONVERT(nvarchar(25), GETDATE(), 114),':','');
+	SET @SnapshotName = @CurrentDatabaseName + '_dbcc_' + CONVERT(nvarchar(25), GETDATE(), 112) + REPLACE(CONVERT(nvarchar(25), GETDATE(), 114),':','');
 
 	RAISERROR(N'Availability Group "%s" is "%s". Creating database snapshot "%s"', 0, 1, @CurrentAvailabilityGroup, @CurrentAvailabilityGroupRole, @SnapshotName) WITH NOWAIT;
 	
@@ -83,7 +87,8 @@ BEGIN
 
 	EXEC dbo.DatabaseIntegrityCheck
 		@Databases = @SnapshotName,
-		@CheckCommands = 'CHECKDB',
+		@CheckCommands = @SecondaryCommands,
+		@TimeLimit = @SecondaryTimeLimitSeconds,
 		@PhysicalOnly = 'N',
 		@NoIndex = 'N',
 		@ExtendedLogicalChecks = 'Y',

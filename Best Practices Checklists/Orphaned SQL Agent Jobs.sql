@@ -2,8 +2,7 @@
 Orphaned SQL Agent Jobs
 =======================
 Author: Eitan Blumin
-Create Date: 2021-04-25
-Last Update: 2021-08-09
+Date: 2021-04-25
 Description:
 This script detects any SQL Agent jobs whose owners do not exist as valid server logins.
 The script also checks whether said owners are members of domain groups with sysadmin permissions.
@@ -20,6 +19,7 @@ Therefore, remember to check whether it's okay to change a job's owner to "sa", 
 2. The current owner is a member of the sysadmin server role.
 */
 SET NOCOUNT ON;
+DECLARE @AllowOnlySysadminsAsJobOwners bit = 1
 
 -- Find any Windows Domain Groups which were given sysadmin permissions:
 DECLARE @AdminsByGroup AS TABLE (AccountName sysname, AccountType sysname, privilege sysname, MappedName sysname, GroupPath sysname);
@@ -40,10 +40,15 @@ BEGIN
 	FETCH NEXT FROM Groups INTO @CurrentGroup;
 	IF @@FETCH_STATUS <> 0 BREAK;
 
+	BEGIN TRY
 	INSERT INTO @AdminsByGroup
 	EXEC master..xp_logininfo 
 		@acctname = @CurrentGroup,
 		@option = 'members';
+	END TRY
+	BEGIN CATCH
+		PRINT ERROR_MESSAGE()
+	END CATCH
 END
 
 CLOSE Groups;
@@ -102,4 +107,8 @@ OUTER APPLY
 	WHERE AccountName = SUSER_SNAME(j.owner_sid)
 ) AS g
 WHERE j.enabled = 1
-AND (SUSER_SNAME(j.owner_sid) IS NULL OR L.sid IS NULL OR L.denylogin = 1 OR L.hasaccess = 0)
+AND (
+	SUSER_SNAME(j.owner_sid) IS NULL OR L.sid IS NULL OR L.denylogin = 1 OR L.hasaccess = 0
+	OR
+	(@AllowOnlySysadminsAsJobOwners = 1 AND IS_SRVROLEMEMBER('sysadmin', SUSER_SNAME(j.owner_sid)) = 0)
+)

@@ -4,7 +4,7 @@ Description:	Display information about head blockers in blocking chains
 Scope:			Instance
 Author:			Guy Glantser
 Created:		02/09/2020
-Last Updated:	02/09/2020
+Last Updated:	06/01/2022
 Notes:			Displays information about the head blocker at the task level.
 
 =========================================================================================================================*/
@@ -58,6 +58,8 @@ AS
 		sys.dm_os_waiting_tasks AS BlockedTasks
 	ON
 		BlockingChains.SessionId = BlockedTasks.blocking_session_id
+	AND
+		BlockedTasks.session_id <> BlockedTasks.blocking_session_id
 	AND
 	(
 		BlockingChains.TaskAddress = BlockedTasks.blocking_task_address

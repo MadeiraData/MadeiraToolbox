@@ -1,7 +1,7 @@
 IF OBJECT_ID('tempdb..#sp_help_revlogin2') IS NOT NULL DROP PROCEDURE #sp_help_revlogin2
 GO
 /*********************************************************************************************
-sp_help_revlogin2 V1.0
+sp_help_revlogin2 V1.2
 Eitan Blumin
 
 https://eitanblumin.com | https://madeiradata.com
@@ -24,6 +24,9 @@ Parameters:
     @command_separator
         By default equals to 'GO'. Will be used as a separator between each CREATE LOGIN command.
 *********************************************************************************************
+-- V1.2
+-- 14/12/2021 - added support for Azure SQL DB
+
 -- V1.1
 -- 23/06/2021 - added new optional parameter @login_name
 
@@ -44,34 +47,9 @@ PRINT N'
 /***************************************************/
 -- Generated on: ' + CONVERT(nvarchar(25), GETDATE(),121)
 
-IF OBJECT_ID('sys.server_principals') IS NULL
+IF CONVERT(int, SERVERPROPERTY('EngineEdition')) <> 5 AND OBJECT_ID('sys.server_principals') IS NOT NULL
 BEGIN
-  PRINT N'-- Generated from: sys.database_principals'
-
-  INSERT INTO @Output	
-  SELECT
-   + N'-- Login: ' + [name] + CHAR(13) + CHAR(10)
-   + CASE WHEN type IN ( 'G', 'U')
-     THEN N'CREATE LOGIN ' + QUOTENAME( [name] ) + CHAR(13) + CHAR(10) + ' FROM WINDOWS WITH DEFAULT_DATABASE = ' + QUOTENAME( ISNULL(CONVERT(sysname, LOGINPROPERTY( [name], 'DefaultDatabase')), DB_NAME()) )
-     ELSE N'CREATE LOGIN ' + QUOTENAME( [name] ) + CHAR(13) + CHAR(10) + ' WITH PASSWORD = ' + CONVERT(nvarchar(max), CAST( LOGINPROPERTY( [name], 'PasswordHash' ) AS varbinary (max)), 1)
-  	+ ' HASHED, SID = ' +  CONVERT(nvarchar(max), [sid], 1) + CHAR(13) + CHAR(10) + ', DEFAULT_DATABASE = ' + QUOTENAME( ISNULL(CONVERT(sysname, LOGINPROPERTY( [name], 'DefaultDatabase')), DB_NAME()) )
-   END
-   + CASE WHEN CAST(LOGINPROPERTY( [name], 'HistoryLength' ) AS int) <> 0 THEN N', CHECK_POLICY = ON' ELSE N'' END
-   + CASE WHEN LOGINPROPERTY( [name], 'DaysUntilExpiration' ) IS NOT NULL THEN N', CHECK_EXPIRATION = ON' ELSE N'' END
-   + N';'
-   --, UserCreateScript = N'CREATE USER ' + QUOTENAME([name]) + N' FOR LOGIN ' + QUOTENAME( [name] ) + N';'
-  FROM sys.database_principals AS dp
-  WHERE [sid] IS NOT NULL
-  AND type IN ( 'S', 'G', 'U' )
-  AND (@login_name IS NULL OR @login_name = [name])
-  AND (
-      @include_system_logins = 1
-      OR ([sid] NOT IN (0x00, 0x01) AND [name] NOT LIKE N'##%##')
-      )
-END
-ELSE
-BEGIN
-  PRINT N'-- Generated from: sys.server_principals'
+  PRINT N'-- Generating from: sys.server_principals'
 
   INSERT INTO @Output
   SELECT
@@ -93,6 +71,64 @@ BEGIN
   AND (
       @include_system_logins = 1
       OR ([sid] NOT IN (0x00, 0x01) AND [name] NOT LIKE N'##%##' AND [name] NOT LIKE N'NT SERVICE\%' AND [name] NOT LIKE N'NT AUTHORITY\%')
+      )
+END
+
+
+IF OBJECT_ID('sys.sql_logins') IS NOT NULL AND CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
+BEGIN
+  PRINT N'-- Generating from: sys.sql_logins'
+
+  INSERT INTO @Output
+  SELECT
+   + CHAR(13) + CHAR(10) + N'-- Login: ' + [name] + CHAR(13) + CHAR(10)
+   + CASE WHEN type IN ( 'G', 'U')
+     THEN N'CREATE LOGIN ' + QUOTENAME( login_name ) + CHAR(13) + CHAR(10) + ' FROM WINDOWS WITH DEFAULT_DATABASE = ' + QUOTENAME( ISNULL(default_database_name, DB_NAME()) )
+     ELSE N'CREATE LOGIN ' + QUOTENAME( login_name ) + CHAR(13) + CHAR(10) + ' WITH PASSWORD = ' + CONVERT(nvarchar(max), dp.password_hash, 1)
+  	+ ' HASHED, SID = ' +  CONVERT(nvarchar(max), [sid], 1) + CHAR(13) + CHAR(10) + ', DEFAULT_DATABASE = ' + QUOTENAME( ISNULL(default_database_name, DB_NAME()) )
+   END
+   + CASE WHEN CAST(LOGINPROPERTY( login_name, 'HistoryLength' ) AS int) <> 0 THEN N', CHECK_POLICY = ON' ELSE N'' END
+   + CASE WHEN LOGINPROPERTY( login_name, 'DaysUntilExpiration' ) IS NOT NULL THEN N', CHECK_EXPIRATION = ON' ELSE N'' END
+   + N';'
+   + CASE WHEN dp.is_disabled = 1 THEN CHAR(13) + CHAR(10) + N'ALTER LOGIN ' + QUOTENAME( login_name ) + N' DISABLE;' ELSE N'' END
+  FROM sys.sql_logins AS dp
+  CROSS APPLY ( SELECT [name] AS login_name ) AS l
+  WHERE [sid] IS NOT NULL
+  AND type IN ( 'S', 'G', 'U' )
+  AND (@login_name IS NULL OR @login_name = l.login_name)
+  AND (
+      @include_system_logins = 1
+      OR ([sid] NOT IN (0x00, 0x01) AND [name] NOT LIKE N'##%##' AND [name] NOT LIKE N'NT SERVICE\%' AND [name] NOT LIKE N'NT AUTHORITY\%')
+      )
+END
+ELSE IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
+BEGIN
+	RAISERROR(N'This script does not support Azure SQL User Databases. You must run this from the "master" database.',16,1);
+END
+
+IF CONVERT(int, SERVERPROPERTY('EngineEdition')) <> 5 AND NOT EXISTS (SELECT NULL FROM @Output)
+BEGIN
+  PRINT N'-- Generating from: sys.database_principals'
+
+  INSERT INTO @Output	
+  SELECT
+   + N'-- Login: ' + [name] + CHAR(13) + CHAR(10)
+   + CASE WHEN type IN ( 'G', 'U')
+     THEN N'CREATE LOGIN ' + QUOTENAME( [name] ) + CHAR(13) + CHAR(10) + ' FROM WINDOWS WITH DEFAULT_DATABASE = ' + QUOTENAME( ISNULL(CONVERT(sysname, LOGINPROPERTY( [name], 'DefaultDatabase')), DB_NAME()) )
+     ELSE N'CREATE LOGIN ' + QUOTENAME( [name] ) + CHAR(13) + CHAR(10) + ' WITH PASSWORD = ' + CONVERT(nvarchar(max), CAST( LOGINPROPERTY( [name], 'PasswordHash' ) AS varbinary (max)), 1)
+  	+ ' HASHED, SID = ' +  CONVERT(nvarchar(max), [sid], 1) + CHAR(13) + CHAR(10) + ', DEFAULT_DATABASE = ' + QUOTENAME( ISNULL(CONVERT(sysname, LOGINPROPERTY( [name], 'DefaultDatabase')), DB_NAME()) )
+   END
+   + CASE WHEN CAST(LOGINPROPERTY( [name], 'HistoryLength' ) AS int) <> 0 THEN N', CHECK_POLICY = ON' ELSE N'' END
+   + CASE WHEN LOGINPROPERTY( [name], 'DaysUntilExpiration' ) IS NOT NULL THEN N', CHECK_EXPIRATION = ON' ELSE N'' END
+   + N';'
+   --, UserCreateScript = N'CREATE USER ' + QUOTENAME([name]) + N' FOR LOGIN ' + QUOTENAME( [name] ) + N';'
+  FROM sys.database_principals AS dp
+  WHERE [sid] IS NOT NULL
+  AND type IN ( 'S', 'G', 'U' )
+  AND (@login_name IS NULL OR @login_name = [name])
+  AND (
+      @include_system_logins = 1
+      OR ([sid] NOT IN (0x00, 0x01) AND [name] NOT LIKE N'##%##')
       )
 END
 

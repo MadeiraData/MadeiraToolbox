@@ -40,6 +40,16 @@ Example Usage:
 	AND dat.datetimeColumn < per.EndDate
 	GROUP BY
 		per.StartDate
+		
+	-- Generating using data in a table:
+	SELECT
+		per.StartDate,
+		TotalCount = COUNT(dat.datetimeColumn),
+		TotalSum = SUM(dat.amount)
+	FROM dbo.MyTable AS dat
+	CROSS APPLY [dbo].[GeneratePeriods](dat.EndDate, 'D', dat.DaysBack) AS per
+	GROUP BY
+		per.StartDate
 */
 CREATE OR ALTER FUNCTION [dbo].[GeneratePeriods]
 (

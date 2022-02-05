@@ -14,9 +14,7 @@ DECLARE @TempResult AS TABLE (DatabaseName sysname NOT NULL, SchemaName sysname 
 , RowCounts bigint NULL, TotalSpaceMB money NULL, UsedSpaceMB money NULL, UnusedSpaceMB money NULL
 , UserSeeks int NULL, UserScans int NULL, UserLookups int NULL, UserUpdates int NULL);
 
-SELECT @command = 'IF EXISTS (SELECT * FROM sys.databases WHERE [name] = ''?'' AND state = 0 AND HAS_DBACCESS([name]) = 1 AND database_id > 4 AND is_distributor = 0 AND DATABASEPROPERTYEX([name], ''Updateability'') = ''READ_WRITE'')
-BEGIN
-USE [?];
+SELECT @command = '
 SELECT TOP (' + CONVERT(nvarchar(max), @TopPerDB) + N')
 	DB_NAME() AS DatabaseName,
 	OBJECT_SCHEMA_NAME(i.object_id) AS SchemaName,
@@ -52,11 +50,24 @@ HAVING
 	SUM(p.rows) >= ' + CONVERT(nvarchar(max), @MinimumRowCount) + N'
 	AND (SUM(a.total_pages) - SUM(a.used_pages)) / 128 >= ' + CONVERT(nvarchar(max), @MinimumUnusedSizeMB) + N'
 	AND (SUM(a.used_pages) * 1.0) / SUM(a.total_pages) <= 1 - (' + CONVERT(nvarchar(max), @MinimumUnusedSpacePct) + ' / 100.0)
-ORDER BY TotalSpaceMB DESC
+ORDER BY TotalSpaceMB DESC'
+
+IF SERVERPROPERTY('EngineEdition') = 5
+BEGIN
+	INSERT INTO @TempResult
+	EXEC (@command)
+END
+ELSE
+BEGIN
+	SET @command = N'IF EXISTS (SELECT * FROM sys.databases WHERE [name] = ''?'' AND state = 0 AND HAS_DBACCESS([name]) = 1 AND database_id > 4 AND is_distributor = 0 AND DATABASEPROPERTYEX([name], ''Updateability'') = ''READ_WRITE'')
+BEGIN
+USE [?];
+' + @command + N'
 END'
 
-INSERT INTO @TempResult
-EXEC sp_MSforeachdb @command
+	INSERT INTO @TempResult
+	EXEC sp_MSforeachdb @command
+END
 
 SELECT r.*
 , UnusedSpacePercent = UnusedSpaceMB / TotalSpaceMB * 100

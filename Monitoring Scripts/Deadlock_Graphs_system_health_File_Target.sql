@@ -11,5 +11,5 @@ SELECT
   CAST (event_data AS XML).value('(event/@timestamp)[1]','DATETIME') AS event_timestamp
 , CAST (event_data AS XML).query('(event/data[@name="xml_report"]/value/deadlock)[1]') AS deadlock_graph
 FROM sys.fn_xe_file_target_read_file (@FileName,null,null, null)
-WHERE object_name like '%deadlock%'
+WHERE object_name = 'xml_deadlock_report'
 ORDER BY 1 DESC
