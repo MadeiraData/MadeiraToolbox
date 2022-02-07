@@ -379,10 +379,10 @@ SELECT 'Security', N'Linked Server Security Vulnerability'
 , QUOTENAME(a.name), N'No login mapping configured (anyone can access it)'
 FROM sys.servers a
 INNER JOIN sys.linked_logins b ON b.server_id = a.server_id
-WHERE b.local_principal_id = 0
-AND uses_self_credential = 0
-AND a.server_id <> 0
-AND 1 IN (a.is_data_access_enabled, a.is_rpc_out_enabled);
+WHERE b.local_principal_id = 0 -- default security context
+AND uses_self_credential = 0 -- not use own credentials
+AND a.server_id <> 0 -- not local
+AND (a.is_data_access_enabled = 1 or a.is_distributor = 0);
 
 
 PRINT 'Checking: Not recommended instance security configuration'
