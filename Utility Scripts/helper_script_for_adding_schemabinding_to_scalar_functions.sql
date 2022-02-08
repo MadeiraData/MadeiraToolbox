@@ -11,6 +11,7 @@ The script ignores the following functions:
 - Functions in schemas "sys" and "tSQLt".
 - Functions dependent on synonyms (can be disabled by setting @IgnoreFunctionsDependentOnSynonyms to 0)
 - Functions that have constraints dependent on them (can be disabled by setting @IgnoreFunctionsWithConstraintDependencies to 0)
+- Functions dependent on linked servers (can be disabled by setting @IgnoreFunctionsDependentOnLinkedServers to 0)
 - Functions referencing functions fitting any of the above criteria (recursive).
 
 Instructions:
@@ -31,6 +32,7 @@ DECLARE
 	 @WithDependencies BIT = NULL -- optionally filter only on functions with/without dependencies (1 = with, 0 = without, NULL = all)
 	,@IgnoreFunctionsDependentOnSynonyms BIT = 1 -- optionally filter out functions that depend on synonyms (cannot be schemabound)
 	,@IgnoreFunctionsWithConstraintDependencies BIT = 1 -- optionally filter out functions that have constraints dependant on them (cannot be altered)
+	,@IgnoreFunctionsDependentOnLinkedServers BIT = 1 -- optionally filter out functions that depend on linked servers (cannot be schemabound)
 
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
@@ -48,26 +50,31 @@ CREATE TABLE #temp_Schemabinding
 	[name] AS (QUOTENAME([schema_name]) + N'.' + QUOTENAME([object_name]))
 );
 
-DECLARE @CMD_Template NVARCHAR(MAX), @proc SYSNAME
+DECLARE @CMD_Template NVARCHAR(MAX);
 
 SET @CMD_Template  = N'WITH Exclusions AS
-(
+('
 -- exclude modules invalid for schemabinding
-select d.object_id
++ N'
+SELECT d.referenced_major_id AS object_id
 from sys.sql_dependencies AS d
-WHERE d.referenced_major_id = d.object_id
+WHERE OBJECTPROPERTY(d.referenced_major_id, ''IsScalarFunction'') = 1 AND (
+d.referenced_major_id = d.object_id
 OR OBJECT_DEFINITION(d.referenced_major_id) LIKE N''%sp_OACreate%sp_OA%''
 OR LOWER(OBJECT_DEFINITION(d.referenced_major_id)) LIKE N''%exec%sp_executesql%''
 OR OBJECT_SCHEMA_NAME(d.referenced_major_id) IN (''tSQLt'',''sys'')
+)
 UNION ALL
 select d.referenced_id
 from sys.sql_expression_dependencies AS d
-WHERE d.referencing_id = d.referenced_id
+WHERE OBJECTPROPERTY(d.referenced_id, ''IsScalarFunction'') = 1 AND (
+d.referencing_id = d.referenced_id
 OR OBJECT_DEFINITION(d.referenced_id) LIKE N''%sp_OACreate%sp_OA%''
 OR LOWER(OBJECT_DEFINITION(d.referenced_id)) LIKE N''%exec%sp_executesql%''
-OR OBJECT_SCHEMA_NAME(d.referenced_id) IN (''tSQLt'',''sys'')'
-+ CASE WHEN @IgnoreFunctionsDependentOnSynonyms = 1 THEN N'
+OR OBJECT_SCHEMA_NAME(d.referenced_id) IN (''tSQLt'',''sys'')
+)'
 -- dependant on synonyms
++ CASE WHEN @IgnoreFunctionsDependentOnSynonyms = 1 THEN N'
 UNION ALL
 select d.object_id
 from sys.sql_dependencies AS d
@@ -78,45 +85,52 @@ from sys.sql_expression_dependencies AS d
 INNER JOIN sys.synonyms AS syn ON d.referenced_id = syn.object_id'
 ELSE N''
 END
-+ CASE WHEN @IgnoreFunctionsWithConstraintDependencies = 1 THEN N'
 -- has constraint dependencies
++ CASE WHEN @IgnoreFunctionsWithConstraintDependencies = 1 THEN N'
 UNION ALL
 select d.referenced_major_id
 from sys.sql_dependencies AS d
 INNER JOIN sys.sysconstraints AS con ON d.object_id = con.constid
+WHERE OBJECTPROPERTY(d.referenced_major_id, ''IsScalarFunction'') = 1
 UNION ALL
 select d.referenced_id
 from sys.sql_expression_dependencies AS d
-INNER JOIN sys.sysconstraints AS con ON d.referencing_id = con.constid'
+INNER JOIN sys.sysconstraints AS con ON d.referencing_id = con.constid
+WHERE OBJECTPROPERTY(d.referenced_id, ''IsScalarFunction'') = 1'
 ELSE N''
-END + N'
+END
+-- Recursive depdendencies
++ N'
 ), ExclusionTree1 AS
 (
 select d.object_id
 from sys.sql_dependencies AS d
 INNER JOIN Exclusions AS Tree ON d.referenced_major_id = Tree.object_id
-WHERE d.referenced_major_id <> d.object_id
-
+WHERE OBJECTPROPERTY(d.referenced_major_id, ''IsScalarFunction'') = 1
+AND d.referenced_major_id <> d.object_id
 UNION ALL
-
 select d.object_id
 from sys.sql_dependencies AS d
 INNER JOIN ExclusionTree1 AS Tree ON d.referenced_major_id = Tree.object_id
-WHERE d.referenced_major_id <> d.object_id
-), ExclusionTree2 AS
+WHERE OBJECTPROPERTY(d.referenced_major_id, ''IsScalarFunction'') = 1
+AND d.referenced_major_id <> d.object_id
+)'
+-- Recursive expression-based dependencies
+/*
++ N'
+, ExclusionTree2 AS
 (
 select d.referencing_id AS object_id
 from sys.sql_expression_dependencies AS d
 INNER JOIN Exclusions AS Tree ON d.referenced_id = Tree.object_id
 WHERE d.referencing_id <> d.referenced_id
-
 UNION ALL
-
 select d.referencing_id
 from sys.sql_expression_dependencies AS d
 INNER JOIN ExclusionTree2 AS Tree ON d.referenced_id = Tree.object_id
 WHERE d.referencing_id <> d.referenced_id
-)
+)'*/
++ N'
 SELECT DB_NAME(), OBJECT_SCHEMA_NAME(OB.id), OB.name, MO.[definition]
 , HasDependencies = CASE WHEN EXISTS
 (
@@ -161,14 +175,11 @@ WHERE MO.definition NOT LIKE N''%sp_OACreate%sp_OA%''
 AND LOWER(MO.definition) NOT LIKE N''%exec%sp_executesql%''
 AND OB.name NOT IN (''fn_diagramobjects'')
 AND OBJECT_SCHEMA_NAME(OB.id) NOT IN (''tSQLt'',''sys'')
--- Ignore excluded modules:
 AND OB.id NOT IN (select object_id FROM Exclusions)
--- Ignore modules dependant on excluded modules:
-AND OB.id NOT IN (SELECT object_id FROM ExclusionTree1)
-AND OB.id NOT IN (SELECT object_id FROM ExclusionTree2)
-OPTION(MAXRECURSION 1000)'
+AND OB.id NOT IN (select object_id FROM ExclusionTree1)
+OPTION(MAXRECURSION 100)'
 
-IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
+IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5 -- Azure SQL DB
 BEGIN
 	INSERT INTO #temp_Schemabinding
 	exec (@CMD_Template)
@@ -198,25 +209,27 @@ BEGIN
 
 		INSERT INTO #temp_Schemabinding
 		exec @spExecuteSql @CMD_Template
+
+		RAISERROR(N'Found %d potential functions without schemabinding in database %s',0,1,@@ROWCOUNT, @CurrDB) WITH NOWAIT;
 	END
 
 	CLOSE DBs;
 	DEALLOCATE DBs;
 
 	-- Remove functions that reference linked servers
-	DELETE T
-	FROM #temp_Schemabinding  AS T
-	INNER JOIN sys.servers AS srv
-	ON srv.server_id > 0
-	AND (LOWER(T.[definition]) LIKE N'%' + LOWER(srv.name) + N'.%.%.%' 
-		OR LOWER(T.[definition]) LIKE N'%_' + LOWER(srv.name) + N'_.%.%.%')
-	OPTION (RECOMPILE);
-END
+	IF @IgnoreFunctionsDependentOnLinkedServers = 1
+	BEGIN
+		DELETE T
+		FROM #temp_Schemabinding  AS T
+		INNER JOIN sys.servers AS srv
+		ON srv.server_id > 0
+		AND (LOWER(T.[definition]) LIKE N'%' + LOWER(srv.name) + N'.%.%.%' 
+			OR LOWER(T.[definition]) LIKE N'%_' + LOWER(srv.name) + N'_.%.%.%')
+		OPTION (RECOMPILE);
 
--- Ignore not interesting schemas
-DELETE T
-FROM #temp_Schemabinding  AS T
-WHERE [schema_name] IN ('sys', 'tSQLt')
+		RAISERROR(N'Ignoring %d functions referencing linked servers',0,1,@@ROWCOUNT) WITH NOWAIT;
+	END
+END
 
 -- General summary:
 SELECT 'In server: ' + @@SERVERNAME + ', database: ' + QUOTENAME([database_name]) + ', fuction: ' + [name] + ', schemabinding option is disabled', *
@@ -224,7 +237,7 @@ FROM #temp_Schemabinding
 WHERE (@WithDependencies IS NULL OR @WithDependencies = has_dependencies)
 AND (@IgnoreFunctionsDependentOnSynonyms = 0 OR [has_synonym_dependencies] = 0)
 AND (@IgnoreFunctionsWithConstraintDependencies = 0 OR [has_constraint_dependencies] = 0)
-
+OPTION(RECOMPILE);
 
 IF CONVERT(varchar(4000), SERVERPROPERTY('Edition')) = 'SQL Azure'
 BEGIN
