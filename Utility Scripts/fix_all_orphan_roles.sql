@@ -63,7 +63,7 @@ AND principal_id not in (0,16384,16385,16386,16387,16389,16390,16391,16392,16393
 AND principal_id not in ( SELECT distinct role_principal_id FROM sys.database_role_members )'
 -- ignore valid replication PAL roles
 + CASE WHEN object_id(QUOTENAME(@CurrDB) + '.dbo.syspublications') IS NOT NULL THEN N'
-AND NOT EXISTS (SELECT NULL FROM dbo.syspublications AS p WHERE r.[name] LIKE N''MSReplPAL_' + cast(db_id(@CurrDB) as nvarchar(max)) + N'_'' + cast(p.pubid as nvarchar(10)))
+AND NOT EXISTS (SELECT NULL FROM dbo.syspublications AS p WHERE dp.[name] LIKE N''MSReplPAL_' + cast(db_id(@CurrDB) as nvarchar(max)) + N'_'' + cast(p.pubid as nvarchar(10)))
 ' ELSE N'' END
 + '
 AND is_fixed_role = 0
