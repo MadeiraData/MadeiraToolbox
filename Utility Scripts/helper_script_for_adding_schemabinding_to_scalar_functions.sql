@@ -32,7 +32,7 @@ DECLARE
 	 @WithDependencies BIT = NULL -- optionally filter only on functions with/without dependencies (1 = with, 0 = without, NULL = all)
 	,@IgnoreFunctionsDependentOnSynonyms BIT = 1 -- optionally filter out functions that depend on synonyms (cannot be schemabound)
 	,@IgnoreFunctionsWithConstraintDependencies BIT = 1 -- optionally filter out functions that have constraints dependant on them (cannot be altered)
-	,@IgnoreFunctionsDependentOnLinkedServers BIT = 1 -- optionally filter out functions that depend on linked servers (cannot be schemabound)
+	,@IgnoreFunctionsDependentOnLinkedServers BIT = 0 -- optionally filter out functions that possibly depend on linked servers (cannot be schemabound)
 
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET NOCOUNT ON;
