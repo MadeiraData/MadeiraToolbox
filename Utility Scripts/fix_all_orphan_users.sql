@@ -1,13 +1,14 @@
 /*
-Author: Eitan Blumin | https://eitanblumin.com
+Author: Eitan Blumin | https://eitanblumin.com | https://madeiradata.com
 Date Created: 2018-01-02
-Last Update: 2021-08-09
+Last Update: 2022-02-22
 Description:
 	Fix All Orphaned Users Within Current Database, or all databases in the instance.
 	Handles 3 possible use-cases:
 	1. Login with same name as user exists - generate ALTER LOGIN to map the user to the login.
-	2. No login with same name exists - generate DROP USER to delete the orphan user.
-	3. Orphan user is [dbo] - change the database owner to SA (or whatever SA was renamed to)
+	2. Login with a different name but the same sid exists - generate ALTER LOGIN to map the user to the login.
+	3. No login with same name exists - generate DROP USER to delete the orphan user.
+	4. Orphan user is [dbo] - change the database owner to SA (or whatever SA was renamed to)
 
 	The script also tries to detect automatically whether a user is a member of a Windows Group.
 
@@ -100,6 +101,8 @@ CASE WHEN UserName = 'dbo' THEN
 	+ CASE WHEN LoginExists = 1 THEN N' CREATE USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(UserName) + N'; ALTER ROLE [db_owner] ADD USER ' + QUOTENAME(UserName) + N';'
 	ELSE N'' END
 	+ N'-- assign orphaned [dbo] to [sa]'
+WHEN SUSER_ID(l.LoginName) IS NOT NULL THEN
+	N'USE ' + QUOTENAME(DBName) + N'; ALTER USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(l.LoginName) + N'; -- existing login found with the same sid'
 WHEN LoginExists = 0 THEN
 	N'USE ' + QUOTENAME(DBName) + N'; ' + ISNULL(OwnedSchemas, N'') + N' DROP USER ' + QUOTENAME(UserName) + N'; -- no existing login found'
 ELSE
