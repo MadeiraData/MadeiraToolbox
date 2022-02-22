@@ -6,29 +6,29 @@ This is a condensed SQL Server Checkup of most common and impactful best practic
 Some of the checks are based on BP_Check.sql in Tiger Toolbox (by Pedro Lopez)
 */
 DECLARE
-	@NumOfMinutesBackToCheck INT = 360,
-	@MinutesBackToCheck INT = 360,
-	@DaysBackToCheck INT = 10,
-	@MinAdHocSizeInMB INT = 200,
-	@MinAdHocPercent INT = 25,
-	@FreespaceMinimumMB INT = 1024,
-	@FreespaceMinimumPercent INT = 10,
-	@UnsentLogThresholdKB INT = 2048,
-	@UnrestoredLogThresholdKB INT = 2048,
-	@TransactionDelayThresholdMil INT = 1000,
-	@MaxSQLErrorLogSize INT = 100
+	@NumOfMinutesBackToCheck int = 360,
+	@MinutesBackToCheck int = 360,
+	@DaysBackToCheck int = 10,
+	@MinAdHocSizeInMB int = 200,
+	@MinAdHocPercent int = 25,
+	@FreespaceMinimumMB int = 1024,
+	@FreespaceMinimumPercent int = 10,
+	@UnsentLogThresholdKB int = 2048,
+	@UnrestoredLogThresholdKB int = 2048,
+	@TransactionDelayThresholdMil int = 1000,
+	@MaxSQLErrorLogSize int = 100
 
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SET DEADLOCK_PRIORITY LOW;
 SET LOCK_TIMEOUT 30;
 
-DECLARE @Alerts AS TABLE
+DECLARE @Alerts AS table
 (
-	Category NVARCHAR(1000),
-	SubCategory NVARCHAR(MAX),
-	ObjectName NVARCHAR(MAX),
-	Details NVARCHAR(MAX)
+	Category nvarchar(1000),
+	SubCategory nvarchar(MAX),
+	ObjectName nvarchar(MAX),
+	Details nvarchar(MAX)
 );
 
 IF CONVERT(int, SERVERPROPERTY('EngineEdition')) <> 5
