@@ -12,6 +12,7 @@ DECLARE
 	, @FileNameQualifier			VARCHAR(4000)	= 'MyDB_%.trn'
 	, @DatabaseName					SYSNAME			= 'MyDB'
 	, @PerformRecovery				BIT				= 0
+	, @StandByFilePath				varchar(4000)		= NULL --'C:\MSSQL\DATA\MyDB_StandbyFile.undo'
 
 SET NOCOUNT ON;
 
@@ -41,10 +42,12 @@ AND FileName LIKE @FileNameQualifier
 ORDER BY FileName
 
 OPEN CM
-FETCH NEXT FROM CM INTO @CurrPath
 
-WHILE @@FETCH_STATUS = 0
+WHILE 1=1
 BEGIN
+	FETCH NEXT FROM CM INTO @CurrPath
+	IF @@FETCH_STATUS <> 0 BREAK;
+
 	-- Prepare and execute RESTORE LOG command
 	SET @CMD = N'RESTORE LOG ' + QUOTENAME(@DatabaseName) + N' FROM  
 DISK = N''' + @TransactionLogBackupFolder + @CurrPath + N''' WITH  
@@ -52,8 +55,6 @@ FILE = 1,  NORECOVERY,  NOUNLOAD,  STATS = 10'
 	
 	RAISERROR(@CMD,0,1) WITH NOWAIT;
 	EXEC(@CMD);
-	
-	FETCH NEXT FROM CM INTO @CurrPath
 END
 
 CLOSE CM
@@ -63,6 +64,13 @@ DEALLOCATE CM
 IF @PerformRecovery = 1
 BEGIN
 	SET @CMD = N'RESTORE LOG ' + QUOTENAME(@DatabaseName) + N' WITH RECOVERY'
+	RAISERROR(@CMD,0,1) WITH NOWAIT;
+	EXEC(@CMD);
+END
+-- Attempt to restore with standby if needed
+ELSE IF @StandByFilePath IS NOT NULL
+BEGIN
+	SET @CMD = N'RESTORE LOG ' + QUOTENAME(@DatabaseName) + N' WITH STANDBY=''' + @StandByFilePath + N''''
 	RAISERROR(@CMD,0,1) WITH NOWAIT;
 	EXEC(@CMD);
 END
