@@ -15,26 +15,30 @@ DECLARE
 
 SET NOCOUNT ON;
 
-DECLARE @Output AS TABLE (Msg NVARCHAR(MAX));
 DECLARE @CMD VARCHAR(4000)
 
 -- Add backslash at end of path if doesn't exist already
 IF RIGHT(@TransactionLogBackupFolder, 1) <> '\'
 	SET @TransactionLogBackupFolder = @TransactionLogBackupFolder + '\'
 
--- Prepare and execute dir command
-SET @CMD = 'dir /b "' + @TransactionLogBackupFolder + N'"'
+DECLARE @FileList TABLE
+(FileName nvarchar(500)
+,depth int
+,isFile int)
 
-INSERT INTO @Output
-EXEC xp_cmdshell @CMD
+INSERT INTO @FileList
+EXEC xp_dirtree @TransactionLogBackupFolder,1,1
 
 -- Loop through all files that comply with the specified qualifier
 DECLARE @CurrPath NVARCHAR(MAX)
-DECLARE CM CURSOR FOR
-SELECT *
-FROM @Output
-WHERE Msg LIKE @FileNameQualifier
-ORDER BY Msg
+DECLARE CM CURSOR
+LOCAL FAST_FORWARD
+FOR
+SELECT FileName
+FROM @FileList
+WHERE isFile=1
+AND FileName LIKE @FileNameQualifier
+ORDER BY FileName
 
 OPEN CM
 FETCH NEXT FROM CM INTO @CurrPath
