@@ -60,9 +60,9 @@ DECLARE @EnableRevokeSimulation_ForWithGrantOption bit = 0;
 
 IF @CloneDatabaseName_ForRevokeSimulation IS NOT NULL AND @EnableRevokeSimulation_To_CheckForAffectedUsers = 1
 BEGIN
-	IF SERVERPROPERTY('Edition') = 'SQL Azure'
+	IF SERVERPROPERTY('Edition') = 'SQL Azure' OR (CONVERT(VARCHAR, (@@microsoftversion / 0x1000000) & 0xff)) < 11
 	BEGIN
-		RAISERROR(N'CLONEDATABASE is not supported by this edition of SQL Server.',16,1);
+		RAISERROR(N'Sorry, CLONEDATABASE is not supported by this version of SQL Server.',16,1);
 		SET @EnableRevokeSimulation_To_CheckForAffectedUsers = 0;
 	END
 	ELSE IF DB_ID(@CloneDatabaseName_ForRevokeSimulation) IS NOT NULL
