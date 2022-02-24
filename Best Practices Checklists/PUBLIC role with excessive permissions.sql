@@ -196,6 +196,8 @@ IF @@ROWCOUNT > 0
   AND usr.principal_id <> 1 AND [sid] > 0x01
   AND type IN (''A'', ''E'', ''S'', ''U'')';
 
+IF @Verbose = 1 RAISERROR(N'Finding vulnerable securables...',0,1) WITH NOWAIT;
+
 DECLARE DBs CURSOR
 LOCAL FAST_FORWARD
 FOR
@@ -218,6 +220,7 @@ BEGIN
   SET @spExecuteSQL = QUOTENAME(@CurrDB) + N'..sp_executesql';
   
   EXEC @spExecuteSQL @CMD WITH RECOMPILE; -- don't cache exec plans
+  RAISERROR(N'Found %d vulnerable securable(s) for database "%s"',0,1,@@ROWCOUNT,@CurrDB) WITH NOWAIT;
   
 END
 
@@ -234,8 +237,9 @@ CREATE TABLE #results
 IF @EnableRevokeSimulation_To_CheckForAffectedUsers = 1
 BEGIN
 DECLARE @CurrSecurableId int, @CurrUsername sysname, @CurrRevokeCmd nvarchar(MAX), @CurrGrantCmd nvarchar(MAX), @CurrState sysname
+DECLARE @CMD2 nvarchar(MAX)
 
-	SET @CMD = N'EXECUTE AS USER = @Username;
+SET @CMD = N'EXECUTE AS USER = @Username;
 
 INSERT INTO #results (SecurableId, UserName)
 SELECT @CurrSecurableId, @Username
@@ -256,13 +260,13 @@ LOCAL FAST_FORWARD
 FOR
 SELECT id
 , permission_state
-, RevokeCmd = N'USE ' + QUOTENAME([database_name]) + N'; REVOKE ' + [permission] + ' ON '
+, RevokeCmd = N'REVOKE ' + [permission] + ' ON '
 + ISNULL(NULLIF([object_type], N'OBJECT OR COLUMN')
 + '::' + QUOTENAME([object_name]), [object_name]) + ISNULL(N'(' + sub_object_name + N')','')
 + N' FROM [public]'
 + CASE WHEN permission_state = 'GRANT' THEN N'' ELSE N' CASCADE' END
 + N';'
-, GrantCmd = N'USE ' + QUOTENAME([database_name]) + N'; GRANT ' + [permission] + ' ON '
+, GrantCmd = N'GRANT ' + [permission] + ' ON '
 + ISNULL(NULLIF([object_type], N'OBJECT OR COLUMN')
 + '::' + QUOTENAME([object_name]), [object_name]) + ISNULL(N'(' + sub_object_name + N')','')
 + N' TO [public]'
@@ -283,13 +287,18 @@ BEGIN
 		-- Clone target database without data
 		DBCC CLONEDATABASE(@CurrDB, @CloneDatabaseName_ForRevokeSimulation);
 
-		SET @spExecuteSql = QUOTENAME(@CloneDatabaseName_ForRevokeSimulation) + N'..sp_executesql'
+		-- Enable the cloned database to be writeable
+		SET @CMD2 = N'ALTER DATABASE ' + QUOTENAME(@CloneDatabaseName_ForRevokeSimulation) + N' SET READ_WRITE WITH NO_WAIT;'
+		IF @Verbose = 1 RAISERROR(N'%s',0,1,@CMD2) WITH NOWAIT;
+		EXEC (@CMD2);
+
+		SET @spExecuteSQL = QUOTENAME(@CloneDatabaseName_ForRevokeSimulation) + N'..sp_executesql'
 	END
 	ELSE
 	BEGIN
-		SET @spExecuteSql = QUOTENAME(@CurrDB) + N'..sp_executesql'
+		SET @spExecuteSQL = QUOTENAME(@CurrDB) + N'..sp_executesql'
 	END
-
+	
 	DECLARE UsersToCheck CURSOR
 	LOCAL FAST_FORWARD
 	FOR
@@ -306,7 +315,7 @@ BEGIN
 		FETCH NEXT FROM UsersToCheck INTO @CurrUsername;
 		IF @@FETCH_STATUS <> 0 BREAK;
 
-		IF @Verbose = 1 RAISERROR(N'-- Checking for username "%s" in database "%s" --', 0,1, @CurrUsername, @CurrDB) WITH NOWAIT;
+		IF @Verbose = 1 RAISERROR(N'-- Checking for username "%s" in database "%s" (%s) --', 0,1, @CurrUsername, @CurrDB, @spExecuteSQL) WITH NOWAIT;
 
 		DECLARE @RCount int;
 
@@ -314,41 +323,41 @@ BEGIN
 			BEGIN TRAN;
 			
 			IF @Verbose = 1 PRINT @CurrRevokeCmd;
-			EXEC @spExecuteSql @CurrRevokeCmd;
+			EXEC @spExecuteSQL @CurrRevokeCmd;
 
 			IF @Verbose = 1 PRINT @CMD;
-			EXEC @spExecuteSql @CMD, N'@Username sysname, @CurrSecurableId int, @RCount int OUTPUT', @CurrUsername, @CurrSecurableId, @RCount OUTPUT;
+			EXEC @spExecuteSQL @CMD, N'@Username sysname, @CurrSecurableId int, @RCount int OUTPUT', @CurrUsername, @CurrSecurableId, @RCount OUTPUT;
 
 			IF @Verbose = 1 
 			BEGIN
 				IF @RCount = 0
-					PRINT N'-- OK --'
+					RAISERROR(N'-- OK --',0,1) WITH NOWAIT;
 				ELSE
-					PRINT N'-- !!! WARNING !!! --'
+					RAISERROR(N'-- !!! WARNING !!! --',0,1) WITH NOWAIT;
 			END
 
 			COMMIT TRAN;
 		END TRY
 		BEGIN CATCH
-			PRINT N'ERROR: ' + ERROR_MESSAGE();
+			PRINT N'ERROR at line ' + CONVERT(nvarchar(MAX), ERROR_LINE()) + N': ' + ERROR_MESSAGE();
 			WHILE @@TRANCOUNT > 0 ROLLBACK;
 		END CATCH
 
 		REVERT;
 		
 		IF @Verbose = 1 PRINT @CurrGrantCmd;
-		EXEC @spExecuteSql @CurrGrantCmd;
+		EXEC @spExecuteSQL @CurrGrantCmd;
 
 	END
 
 	CLOSE UsersToCheck;
 	DEALLOCATE UsersToCheck;
 	
-	IF @CloneDatabaseName_ForRevokeSimulation IS NOT NULL
+	IF @CloneDatabaseName_ForRevokeSimulation IS NOT NULL AND DB_ID(@CloneDatabaseName_ForRevokeSimulation) IS NOT NULL
 	BEGIN
 		-- Drop cloned database
-		DECLARE @CMD2 nvarchar(MAX)
 		SET @CMD2 = N'DROP DATABASE ' + QUOTENAME(@CloneDatabaseName_ForRevokeSimulation)
+		IF @Verbose = 1 RAISERROR(N'%s',0,1,@CMD2) WITH NOWAIT;
 		EXEC(@CMD2);
 	END
 END
