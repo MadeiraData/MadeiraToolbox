@@ -20,8 +20,8 @@ os = ['windows','apple','android','linux']
 
 num_rows = 100
 
-data_df = pd.DataFrame(np.random.randint(0,100,size=(10, 1)), columns=['id'])
-
+data_df = pd.DataFrame(np.random.randint(0,100,size=(10, 1)), columns=['id_int'])
+data_df["id"] = df.apply(lambda _: f'{uuid.uuid4()}', axis=1)
 data_df["deviceType"] = np.random.choice(deviceType, size=len(data_df))
 data_df['ownerId'] = 77
 data_df['schemaType'] = 'devices'
@@ -31,7 +31,9 @@ data_df['macAddress'] = df.apply(lambda _: f'{uuid.uuid4()}', axis=1)
 
 display(data_df)
 
-data_df.write.format("cosmos.oltp")\
+sparkDF=spark.createDataFrame(data_df[columns])
+
+sparkDF.write.format("cosmos.oltp")\
     .option("spark.synapse.linkedService", "<enter linked service name>")\
     .option("spark.cosmos.container", "<enter container name>")\
     .mode('append')\
