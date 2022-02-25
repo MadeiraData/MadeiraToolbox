@@ -1,7 +1,7 @@
 # the below script is generating documents for CosmosDB container
 # document looks as following
 # {
-#    "id": "77_912",    #this field is a unique id
+#    "id": "27a25aab-f3ce-4bd4-b9f8-69fb40b2d234",    #this field is a unique device id
 #    "ownerId": 77,     #this field is used as a partitioning key
 #    "schemaType": "devices",
 #    "deviceType": "laptop",
@@ -14,9 +14,9 @@ import random
 import numpy as np
 
 
-columns = ['id', 'ownerId', 'schemaType','deviceType','macAddress','os']
-deviceType = ['laptop','pc','tablet','cellphone']
-os = ['windows','apple','android','linux']
+columns = ['id', 'ownerId', 'schemaType', 'deviceType', 'macAddress', 'os']
+deviceType = ['laptop', 'pc', 'tablet', 'cellphone']
+os = ['windows', 'apple', 'android', 'linux']
 
 num_rows = 100
 
