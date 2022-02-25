@@ -18,13 +18,18 @@ columns = ['id', 'ownerId', 'schemaType','deviceType','macAddress','os']
 deviceType = ['laptop','pc','tablet','cellphone']
 os = ['windows','apple','android','linux']
 
-data_df = spark.createDataFrame([(
-                f'77_{np.random.randint(99,100000,size=(10, 1))}',
-                77,
-                'devices',
-                random.choice(deviceType),
-                f'{uuid.uuid4()}',
-                random.choice(os))], columns)
+num_rows = 100
+
+data_df = pd.DataFrame(np.random.randint(0,100,size=(10, 1)), columns=['id'])
+
+data_df["deviceType"] = np.random.choice(deviceType, size=len(data_df))
+data_df['ownerId'] = 77
+data_df['schemaType'] = 'devices'
+data_df['os']= np.random.choice(os, size=len(data_df))
+data_df['macAddress'] = df.apply(lambda _: f'{uuid.uuid4()}', axis=1)
+
+
+display(data_df)
 
 data_df.write.format("cosmos.oltp")\
     .option("spark.synapse.linkedService", "<enter linked service name>")\
