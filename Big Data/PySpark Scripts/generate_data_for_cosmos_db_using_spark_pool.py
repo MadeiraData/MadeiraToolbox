@@ -11,18 +11,20 @@
 
 import uuid
 import random
+import numpy as np
 
 
-columns = ['id', 'ownerId', 'schemaType', 'deviceType', 'macAddress', 'os']
-deviceType = ['laptop', 'pc', 'tablet', 'cellphone']
-os = ['windows', 'apple', 'android', 'linux']
+columns = ['id', 'ownerId', 'schemaType','deviceType','macAddress','os']
+deviceType = ['laptop','pc','tablet','cellphone']
+os = ['windows','apple','android','linux']
 
-data_df = spark.createDataFrame([("77_99", 77, 'devices', random.choice(deviceType), uuid.uuid4(), random.choice(os))], columns)
-
-for i in range(100,100000):
-    newid = f'77_{i}'
-    newRow = spark.createDataFrame([(newid, 77, 'devices', random.choice(deviceType), uuid.uuid4(), random.choice(os))], columns)
-    data_df = data_df.union(newRow)
+data_df = spark.createDataFrame([(
+                f'77_{np.random.randint(99,100000,size=(10, 1))}',
+                77,
+                'devices',
+                random.choice(deviceType),
+                f'{uuid.uuid4()}',
+                random.choice(os))], columns)
 
 data_df.write.format("cosmos.oltp")\
     .option("spark.synapse.linkedService", "<enter linked service name>")\
