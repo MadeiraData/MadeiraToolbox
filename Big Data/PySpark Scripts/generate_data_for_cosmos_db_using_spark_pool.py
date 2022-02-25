@@ -1,3 +1,14 @@
+# the below script is generating documents for CosmosDB container
+# document looks as following
+# {
+#    "id": "77_912",    #this field is a unique id
+#    "ownerId": 77,     #this field is used as a partitioning key
+#    "schemaType": "devices",
+#    "deviceType": "laptop",
+#    "macAddress": "23007a78-0000-0100-0000-621887c80000",
+#    "os": "windows",
+# }
+
 import uuid
 import random
 
