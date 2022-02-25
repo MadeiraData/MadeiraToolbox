@@ -1,0 +1,3 @@
+The script can be found in the following path:
+
+"\Madeira Toolbox\Utility Scripts\Partitioning\Create partition function and partition scheme.sql"

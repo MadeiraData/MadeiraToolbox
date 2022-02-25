@@ -1,26 +1,63 @@
 /*
-Author: Eitan Blumin | https://eitanblumin.com
+Author: Eitan Blumin | https://eitanblumin.com | https://madeiradata.com
 Date Created: 2018-01-02
-Last Update: 2021-08-09
+Last Update: 2022-02-22
 Description:
 	Fix All Orphaned Users Within Current Database, or all databases in the instance.
 	Handles 3 possible use-cases:
 	1. Login with same name as user exists - generate ALTER LOGIN to map the user to the login.
-	2. No login with same name exists - generate DROP USER to delete the orphan user.
-	3. Orphan user is [dbo] - change the database owner to SA (or whatever SA was renamed to)
+	2. Login with a different name but the same sid exists - generate ALTER LOGIN to map the user to the login.
+	3. No login with same name exists - generate DROP USER to delete the orphan user.
+	4. Orphan user is [dbo] - change the database owner to SA (or whatever SA was renamed to)
 
 	The script also tries to detect automatically whether a user is a member of a Windows Group.
 
 More info: https://eitanblumin.com/2018/10/31/t-sql-script-to-fix-orphaned-db-users-easily/
 */
 DECLARE
-	    @Database		SYSNAME		= NULL	-- Filter by a specific database. Leave NULL for all databases.
-	 ,  @WriteableDBsOnly	BIT		= 0	-- Ignore read-only databases or not.
+	    @Database			SYSNAME	= NULL	-- Filter by a specific database. Leave NULL for all databases.
+	 ,  @WriteableDBsOnly		BIT	= 0	-- Ignore read-only databases or not.
+	 ,  @DropEmptyOwnedSchemas	bit	= 0	-- Drop schemas without objects if an orphan user owns them. Otherwise, change owner to [dbo].
 
 SET NOCOUNT ON;
 
 -- Variable declaration
-DECLARE @user NVARCHAR(MAX), @loginExists BIT, @saName SYSNAME, @ownedSchemas NVARCHAR(MAX);
+DECLARE @saName SYSNAME, @Cmd NVARCHAR(MAX);
+
+SET @Cmd = 'IF HAS_DBACCESS(''?'') = 1'
++ CASE WHEN DB_ID(@Database) IS NOT NULL THEN N'
+AND DB_ID(''?'') = DB_ID(''' + @Database + ''')'
+ELSE N'' END
++ CASE WHEN @WriteableDBsOnly = 1 THEN N'
+AND DATABASEPROPERTYEX(''?'',''Updateability'') = ''READ_WRITE'''
+ELSE N'' END
++ N'
+SELECT ''?'', dp.name AS user_name
+, dp.[sid]
+, CASE WHEN dp.name IN (SELECT name COLLATE database_default FROM sys.server_principals) THEN 1 ELSE 0 END AS LoginExists
+, OwnedSchemas = (
+SELECT cmd + N''; ''
+FROM
+(
+SELECT cmd = ''ALTER AUTHORIZATION ON SCHEMA::'' + QUOTENAME(sch.name) + N'' TO [dbo]''
+FROM [?].sys.schemas AS sch
+WHERE sch.principal_id = dp.principal_id'
++ CASE WHEN @DropEmptyOwnedSchemas = 1 THEN N'
+AND EXISTS (SELECT NULL FROM [?].sys.objects AS obj WHERE obj.schema_id = sch.schema_id)
+UNION ALL
+SELECT ''DROP SCHEMA '' + QUOTENAME(sch.name)
+FROM [?].sys.schemas AS sch
+WHERE sch.principal_id = dp.principal_id
+AND NOT EXISTS (SELECT NULL FROM [?].sys.objects AS obj WHERE obj.schema_id = sch.schema_id)'
+ELSE N'' END + N'
+) AS s
+FOR XML PATH ('''')
+)
+FROM [?].sys.database_principals AS dp 
+LEFT JOIN sys.server_principals AS sp ON dp.SID = sp.SID 
+WHERE sp.SID IS NULL 
+AND dp.type IN (''S'',''U'',''G'') AND dp.sid > 0x01
+AND dp.authentication_type <> 0;'
 
 -- Find the actual name of the "sa" login
 SELECT @saName = SUSER_NAME(0x01);
@@ -57,33 +94,9 @@ END
 CLOSE Groups;
 DEALLOCATE Groups;
 
-DECLARE @tmp AS TABLE(DBName SYSNAME NULL, UserName NVARCHAR(MAX), [sid] VARBINARY(128), LoginExists BIT, OwnedSchemas NVARCHAR(MAX));
+DECLARE @tmp AS TABLE(DBName SYSNAME NULL, UserName SYSNAME, [sid] VARBINARY(128), LoginExists BIT, OwnedSchemas NVARCHAR(MAX));
 INSERT INTO @tmp
-exec sp_MSforeachdb 'IF HAS_DBACCESS(''?'') = 1
-SELECT ''?'', dp.name AS user_name
-, dp.[sid]
-, CASE WHEN dp.name IN (SELECT name COLLATE database_default FROM sys.server_principals) THEN 1 ELSE 0 END AS LoginExists
-, OwnedSchemas = (
-SELECT cmd + N''; ''
-FROM
-(
-SELECT cmd = ''ALTER AUTHORIZATION ON SCHEMA::'' + QUOTENAME(sch.name) + N'' TO [dbo]''
-FROM [?].sys.schemas AS sch
-WHERE sch.principal_id = dp.principal_id
-AND EXISTS (SELECT NULL FROM [?].sys.objects AS obj WHERE obj.schema_id = sch.schema_id)
-UNION ALL
-SELECT ''DROP SCHEMA '' + QUOTENAME(sch.name)
-FROM [?].sys.schemas AS sch
-WHERE sch.principal_id = dp.principal_id
-AND NOT EXISTS (SELECT NULL FROM [?].sys.objects AS obj WHERE obj.schema_id = sch.schema_id)
-) AS s
-FOR XML PATH ('''')
-)
-FROM [?].sys.database_principals AS dp 
-LEFT JOIN sys.server_principals AS sp ON dp.SID = sp.SID 
-WHERE sp.SID IS NULL 
-AND dp.type IN (''S'',''U'',''G'') AND dp.sid > 0x01
-AND dp.authentication_type <> 0;'
+exec sp_MSforeachdb @Cmd
 
 
 SELECT DBWriteable = CASE WHEN DATABASEPROPERTYEX(DBName,'Updateability') = 'READ_WRITE' THEN 1 ELSE 0 END
@@ -100,6 +113,8 @@ CASE WHEN UserName = 'dbo' THEN
 	+ CASE WHEN LoginExists = 1 THEN N' CREATE USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(UserName) + N'; ALTER ROLE [db_owner] ADD USER ' + QUOTENAME(UserName) + N';'
 	ELSE N'' END
 	+ N'-- assign orphaned [dbo] to [sa]'
+WHEN SUSER_ID(l.LoginName) IS NOT NULL THEN
+	N'USE ' + QUOTENAME(DBName) + N'; ALTER USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(l.LoginName) + N'; -- existing login found with the same sid'
 WHEN LoginExists = 0 THEN
 	N'USE ' + QUOTENAME(DBName) + N'; ' + ISNULL(OwnedSchemas, N'') + N' DROP USER ' + QUOTENAME(UserName) + N'; -- no existing login found'
 ELSE
@@ -119,8 +134,6 @@ END + ISNULL(N', but the login ' + QUOTENAME(l.LoginName) + N' is a member of: '
 FROM @tmp
 CROSS APPLY
 (VALUES(COALESCE(SUSER_SNAME([sid]), SUSER_SNAME(SUSER_SID(UserName)), UserName))) AS l(LoginName)
-WHERE (DBName = @Database OR @Database IS NULL)
-AND (@WriteableDBsOnly = 0 OR DATABASEPROPERTYEX(DBName,'Updateability') = 'READ_WRITE')
 ORDER BY DBWriteable DESC, DBName, UserName
 
 IF @@ROWCOUNT = 0 PRINT N'No orphan users found!'

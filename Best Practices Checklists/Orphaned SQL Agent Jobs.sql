@@ -65,6 +65,7 @@ SELECT
 CASE WHEN SUSER_SNAME(j.owner_sid) IS NULL THEN N'Account/Login does not exist'
 WHEN L.sid IS NULL THEN N'Not found in server logins'
 WHEN L.denylogin = 1 OR L.hasaccess = 0 THEN N'Login has no server access'
+WHEN (@AllowOnlySysadminsAsJobOwners = 1 AND IS_SRVROLEMEMBER('sysadmin', SUSER_SNAME(j.owner_sid)) = 0) THEN N'Owner is not sysadmin'
 ELSE N'OK (wait, why are you seeing this?)'
 END
 , RemediationCmd = N'EXEC msdb.dbo.sp_update_job @job_name=N' + QUOTENAME(j.name,N'''') + N' , @owner_login_name=N' + QUOTENAME(SUSER_SNAME(0x01), N'''')
@@ -91,6 +92,7 @@ OUTER APPLY
 	, last_outcome_message = jh.message
 	FROM msdb.dbo.sysjobhistory AS jh
 	WHERE jh.job_id = j.job_id
+	AND jh.run_date > 0
 	ORDER BY jh.run_date DESC, jh.run_time DESC
 ) AS hist
 OUTER APPLY
@@ -98,6 +100,7 @@ OUTER APPLY
 	SELECT TOP (1) msdb.dbo.agent_datetime(jsch.next_run_date, jsch.next_run_time) AS next_run_date_time
 	FROM msdb.dbo.sysjobschedules AS jsch
 	WHERE jsch.job_id = j.job_id
+	AND jsch.next_run_date > 0
 	ORDER BY jsch.next_run_date ASC, jsch.next_run_time ASC
 ) AS sch
 OUTER APPLY
