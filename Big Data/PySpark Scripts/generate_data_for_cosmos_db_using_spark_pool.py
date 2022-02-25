@@ -21,12 +21,12 @@ os = ['windows','apple','android','linux']
 num_rows = 100
 
 data_df = pd.DataFrame(np.random.randint(0,100,size=(10, 1)), columns=['id_int'])
-data_df["id"] = df.apply(lambda _: f'{uuid.uuid4()}', axis=1)
+data_df["id"] = data_df.apply(lambda _: f'{uuid.uuid4()}', axis=1)
 data_df["deviceType"] = np.random.choice(deviceType, size=len(data_df))
 data_df['ownerId'] = 77
 data_df['schemaType'] = 'devices'
 data_df['os']= np.random.choice(os, size=len(data_df))
-data_df['macAddress'] = df.apply(lambda _: f'{uuid.uuid4()}', axis=1)
+data_df['macAddress'] = data_df.apply(lambda _: f'{uuid.uuid4()}', axis=1)
 
 
 display(data_df)
