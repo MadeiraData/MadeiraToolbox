@@ -1,10 +1,17 @@
+SET NOCOUNT ON;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+DECLARE
+	@IncludeDisabledFKs bit = 0
+
 IF OBJECT_ID('tempdb..#tmp') IS NOT NULL DROP TABLE #tmp;
 CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IsDisabled BIT, FullTableName AS QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName), UntrustedObject SYSNAME);
 
 DECLARE @CMD NVARCHAR(MAX)
 SET @CMD = N'SELECT DB_NAME(), OBJECT_SCHEMA_NAME(parent_object_id), OBJECT_NAME(parent_object_id), [name], is_disabled
 FROM sys.foreign_keys
-WHERE (is_not_trusted = 1 OR is_disabled = 1) AND is_not_for_replication = 0;'
+WHERE (is_not_trusted = 1 '
++ CASE WHEN @IncludeDisabledFKs = 1 THEN N'OR is_disabled = 1' ELSE N'AND is_disabled = 0' END + N'
+) AND is_not_for_replication = 0;'
 
 IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
 BEGIN
