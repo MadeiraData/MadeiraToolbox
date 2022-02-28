@@ -43,7 +43,7 @@ FROM
 WHERE interval IS NOT NULL
 GROUP BY interval
 
-DECLARE @ActualMaxValue $(PartitionKeyDataType), @MissingIntervals int;
+DECLARE @ActualMaxValue $(PartitionKeyDataType), @MissingIntervals float;
 
 IF @MaxValueOverride IS NULL
 BEGIN
@@ -58,7 +58,7 @@ END
 SET @CMD = N'SET @LastPartitionNumber = $PARTITION.' + QUOTENAME(@PartitionFunctionName) + N'(@ActualMaxValue)'
 EXEC sp_executesql @CMD, N'@LastPartitionNumber int OUTPUT, @ActualMaxValue $(PartitionKeyDataType)', @LastPartitionNumber OUTPUT, @ActualMaxValue
 
-SET @MissingIntervals = CEILING((@ActualMaxValue - @MaxPartitionRangeValue) / @PartitionRangeInterval) + @BufferIntervals
+SET @MissingIntervals = CEILING(CONVERT(float, @ActualMaxValue - @MaxPartitionRangeValue) / CONVERT(float, @PartitionRangeInterval)) + @BufferIntervals
 
 SET @Msg = CONCAT(
   N'-- @PartitionRangeInterval: ', @PartitionRangeInterval

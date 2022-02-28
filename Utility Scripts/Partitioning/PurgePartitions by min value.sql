@@ -1,15 +1,13 @@
-:setvar PartitionKeyDataType bigint
+:setvar PartitionKeyDataType datetime
 GO
 /*
 -- Example usage:
+DECLARE @MinDateValueToKeep datetime = DATEADD(year, -1, GETDATE())
 
 EXEC dbo.[PurgePartitions_$(PartitionKeyDataType)]
-	  @FirstFileGroup = 'FG_Partitions_1'
-	, @SecondFileGroup = 'FG_Partitions_2'
-	, @PartitionFunctionName = 'PRT_FN_MyFunction'
-	, @MaxValueFromTable = '[dbo].[MyTable]'
-	, @MaxValueFromColumn = '[BigIntColumn]'
-	, @BufferIntervals = 200
+	  @PartitionFunctionName = 'PRT_FN_MyFunction'
+	, @MinValueToKeep = @MinDateValueToKeep
+	, @TruncateOldPartitions = 1
 	, @DebugOnly = 0
 */
 CREATE OR ALTER PROCEDURE dbo.[PurgePartitions_$(PartitionKeyDataType)]
@@ -26,7 +24,7 @@ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 DECLARE @PartitionFunctionId int, @CurrentRangeCount int, @LastPartitionNumber int;
 DECLARE @Msg nvarchar(max), @CMD nvarchar(max)
 
-select @PartitionFunctionId = function_id
+SELECT @PartitionFunctionId = function_id
 FROM sys.partition_functions
 WHERE name = @PartitionFunctionName
 
@@ -50,11 +48,13 @@ BEGIN
 		FOR
 		SELECT p.object_id
 		FROM sys.partitions AS p
+		INNER JOIN sys.indexes AS ix ON ix.object_id = p.object_id AND ix.index_id = p.index_id
 		INNER JOIN sys.partition_schemes AS ps ON ix.data_space_id = ps.data_space_id
 		WHERE p.partition_number = 1 -- first partition
 		AND p.index_id <= 1 -- clustered or heap only
 		AND p.[rows] > 0 -- not empty
 		AND ps.function_id = @PartitionFunctionId
+		GROUP BY p.object_id
 
 		OPEN Tabs;
 
@@ -65,7 +65,7 @@ BEGIN
 
 			SET @CMD = N'TRUNCATE TABLE ' + QUOTENAME(OBJECT_SCHEMA_NAME(@CurrObjectId)) + N'.' + QUOTENAME(OBJECT_NAME(@CurrObjectId)) + N' WITH (PARTITIONS (1));'
 			RAISERROR(@CMD,0,1) WITH NOWAIT;
-			EXEC(@CMD);
+			IF @DebugOnly = 0 EXEC(@CMD);
 		END
 	
 		CLOSE Tabs;
@@ -76,8 +76,11 @@ BEGIN
 	SET @CMD = 'SET QUOTED_IDENTIFIER ON;
 ALTER PARTITION FUNCTION ' + QUOTENAME(@PartitionFunctionName) + '() MERGE RANGE (@MinPartitionRangeValue);'
 	
+	PRINT CONCAT(N'@MinPartitionRangeValue: ', @MinPartitionRangeValue)
 	RAISERROR(@CMD,0,1) WITH NOWAIT;
-	EXEC sp_executesql @CMD, N'@MinPartitionRangeValue $(PartitionKeyDataType)', @MinPartitionRangeValue;
+	IF @DebugOnly = 0 EXEC sp_executesql @CMD, N'@MinPartitionRangeValue $(PartitionKeyDataType)', @MinPartitionRangeValue;
+	
+	IF @DebugOnly = 1 BREAK;
 END
 
 SET @Msg = CONCAT(CONVERT(nvarchar(24), GETDATE(), 121), N' - Done.')
