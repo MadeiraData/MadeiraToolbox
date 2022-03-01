@@ -8,15 +8,15 @@ Write-Host "PowerShell HTTP trigger function processed a request."
 
 #Set Variables:
 
-$UserName = $Request.Body.UserName # <============ Will be defined int the ADF settings / body
-$Password = $Request.Body.Password # <============ Will be defined int the ADF settings / body
+$UserName = $Request.Body.UserName # <============ Will be defined in the ADF settings / body
+$Password = $Request.Body.Password # <============ Will be defined in the ADF settings / body
 
 $ServerInstance = 'adf-demo-eric.database.windows.net' # <============ Insert your Server Name
 $Database = 'master' 
 $Query = 'SELECT name FROM sys.databases WHERE database_id > 1'
 $TargetTenants = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database -UserName $UserName -Password $Password -Query $Query
 
-$Query = 'create table dbo.Test555 (Id int)' # <============ Insert your command between the brackets
+$Query = '' # <============ Insert your command between the brackets
 
 #Set a foreach loop for each of the Target Tenants:
 
