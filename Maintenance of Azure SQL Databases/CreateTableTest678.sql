@@ -1,0 +1,1 @@
+create table [dbo].[Test678] (id int)
