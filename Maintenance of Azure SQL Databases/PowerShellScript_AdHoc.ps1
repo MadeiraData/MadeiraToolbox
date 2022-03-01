@@ -16,7 +16,7 @@ $Database = 'master'
 $Query = 'SELECT name FROM sys.databases WHERE database_id > 1'
 $TargetTenants = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database -UserName $UserName -Password $Password -Query $Query
 
-$Query = '' # <============ Insert your command between the brackets
+$Query = 'create table dbo.Test567 (Id int)' # <============ Insert your command between the brackets
 
 #Set a foreach loop for each of the Target Tenants:
 
