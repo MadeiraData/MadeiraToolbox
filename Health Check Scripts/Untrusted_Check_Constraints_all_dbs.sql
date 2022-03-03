@@ -16,6 +16,7 @@ WHERE (is_not_trusted = 1'
 
 IF CONVERT(int, SERVERPROPERTY('EngineEdition')) = 5
 BEGIN
+	IF DATABASEPROPERTYEX(DB_NAME(), 'Updateability') = 'READ_WRITE'
 	INSERT INTO #tmp(DBName, SchemaName, TableName, UntrustedObject, IsDisabled)
 	EXEC(@CMD)
 END
