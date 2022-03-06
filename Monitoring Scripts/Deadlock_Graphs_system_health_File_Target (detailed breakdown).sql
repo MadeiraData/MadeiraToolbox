@@ -107,7 +107,8 @@ LEFT JOIN Victims v
 ON (d.deadlock_processes.value('@id','NVARCHAR(20)')) = v.deadlock_victim
 )
 
-SELECT p.process_id, CASE WHEN v.deadlock_victim IS NULL THEN 'No' ELSE 'Yes' END AS is_Victim,r.resource_objectname,r.resource_owner_id, r.resource_owner_mode, 
+SELECT r.deadlock_time, p.process_id,
+CASE WHEN v.deadlock_victim IS NULL THEN 'No' ELSE 'Yes' END AS is_Victim,r.resource_objectname,r.resource_owner_id, r.resource_owner_mode, 
 ISNULL(r.resource_owner_requestType,'accepted') AS resource_owner_requestType,
 r.resource_waiter_id, r.resource_waiter_mode,r.resource_waiter_requestType,
 r.resource_fileid, r.resource_pageid, r.resource_keyid, r.resource_WaitType,
@@ -118,9 +119,5 @@ p.process_clientapp AS owner_process_clientapp, p.process_hostname AS owner_proc
 p.process_loginname as owner_process_loginname,
 p.process_isolationlevel AS owner_process_isolationlevel
 FROM resources r
-JOIN Processes p
-on
-r.resource_owner_id = p.process_id
-LEFT JOIN Victims v
-on
-p.process_id = v.deadlock_victim
+JOIN Processes p ON r.resource_owner_id = p.process_id
+LEFT JOIN Victims v ON p.process_id = v.deadlock_victim
