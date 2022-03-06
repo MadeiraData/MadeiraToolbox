@@ -10,8 +10,22 @@ SET @base_tracefilename = left( @curr_tracefilename,len(@curr_tracefilename) - @
 
 PRINT @base_tracefilename
 
-select StartTime, convert(xml, TextData) AS Deadlock_Graph, ServerName
+SELECT event_timestamp
+,event_data.value('(event/data/value/deadlock/process-list/process/executionStack/frame/@procname)[1]','SYSNAME') AS deadlock_procedure
+,event_data.query('.') AS deadlock_graph
+,victimProcess.victim_process_xml
+,victim_process_xml.value('(process/inputbuf/text())[1]','nvarchar(max)') AS victimInputBuf
+FROM
+(
+select StartTime AS event_timestamp, convert(xml, TextData) AS event_data
 from ::fn_trace_gettable(@base_tracefilename,default)
 WHERE TextData IS NOT NULL
-AND TextData LIKE N'%deadlock%'
-order by 1 desc
+AND TextData LIKE N'%<deadlock>%'
+) AS d
+CROSS APPLY
+(SELECT victim_process_xml = event_data.query('
+for $victimId in distinct-values(/event/data[@name=''xml_report'']/value/deadlock/victim-list/victimProcess/@id)
+	return /event/data[@name=''xml_report'']/value/deadlock/process-list/process[@id = $victimId]
+')
+) AS victimProcess
+ORDER BY 1 DESC

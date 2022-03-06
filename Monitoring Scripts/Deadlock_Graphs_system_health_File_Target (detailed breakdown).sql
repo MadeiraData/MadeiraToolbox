@@ -23,6 +23,7 @@ AND s.name = 'system_health'
 IF OBJECT_ID('tempdb..#XMLDATA') IS NOT NULL DROP TABLE #XMLDATA
 
 SELECT CAST (event_data AS XML) AS event_data
+, CAST (event_data AS XML).value('(event/@timestamp)[1]','DATETIME') AS deadlock_time
 INTO #XMLDATA
 FROM    sys.fn_xe_file_target_read_file
 	(@FileName,null,null, null)
@@ -30,7 +31,8 @@ WHERE object_name = 'xml_deadlock_report'
 
 SELECT @@ROWCOUNT AS DeadlockCountInFile
 
-
+CREATE CLUSTERED INDEX IX ON #XMLDATA (deadlock_time)
+--WITH (DATA_COMPRESSION = PAGE);
 
 
 -- Selects important data for each deadlock
@@ -39,7 +41,8 @@ SELECT @@ROWCOUNT AS DeadlockCountInFile
 
 SELECT	
 		ROW_NUMBER() OVER ( ORDER BY event_data.value('(event/@timestamp)[1]','DATETIME')) AS id,
-		event_data.value('(event/@timestamp)[1]','DATETIME') AS deadlock_time,
+		deadlock_time,
+		--event_data.value('(event/@timestamp)[1]','DATETIME') AS deadlock_time,
 		event_data.value('(event/data/value/deadlock/process-list/process/executionStack/frame/@procname)[1]','SYSNAME') AS deadlock_procedure,
 		event_data.query('(event/data[@name="xml_report"]/value/deadlock)[1]') AS deadlock_graph,
 		event_data.query('(event/data/value/deadlock/victim-list)[1]') AS deadlock_victim,
@@ -48,9 +51,9 @@ SELECT
 
 FROM #XMLDATA
 
-),resources AS(
+), resources AS(
  
-SELECT id,deadlock_time,
+SELECT id, deadlock_time, deadlock_resources_all.query('.') AS deadlock_graph,
 	d.deadlock_resources.value('@objectname','NVARCHAR(200)') AS resource_objectname,
 	d.deadlock_resources.value('@dbid','INT') AS resource_dbid,
 	d.deadlock_resources.value('@mode','NVARCHAR(10)') AS resource_mode,
@@ -73,13 +76,14 @@ CROSS APPLY  deadlock_resources_all.nodes('/resource-list/ridlock,/resource-list
 ), Victims AS (
 
 SELECT 
-	deadlock_victim.value('(victim-list/victimProcess/@id)[1]','NVARCHAR(20)') AS deadlock_victim
+	deadlock_victim.value('(victim-list/victimProcess/@id)[1]','NVARCHAR(20)') AS deadlock_victim,
+	deadlock_time
 FROM
 	AllDeadlocks
 
 ), Processes AS (
 
-SELECT id,
+SELECT id, a.deadlock_time,
 	CASE 
 	WHEN v.deadlock_victim  IS NOT NULL THEN 'Victim'
 	ELSE 'Killer' 
@@ -105,9 +109,12 @@ FROM AllDeadlocks a
 CROSS APPLY  deadlock_processes_all.nodes('/process-list/process') AS d(deadlock_processes)
 LEFT JOIN Victims v
 ON (d.deadlock_processes.value('@id','NVARCHAR(20)')) = v.deadlock_victim
+AND a.deadlock_time = v.deadlock_time
 )
 
-SELECT r.deadlock_time, p.process_id,
+SELECT r.deadlock_time,
+r.deadlock_graph,
+p.process_id,
 CASE WHEN v.deadlock_victim IS NULL THEN 'No' ELSE 'Yes' END AS is_Victim,r.resource_objectname,r.resource_owner_id, r.resource_owner_mode, 
 ISNULL(r.resource_owner_requestType,'accepted') AS resource_owner_requestType,
 r.resource_waiter_id, r.resource_waiter_mode,r.resource_waiter_requestType,
@@ -119,5 +126,6 @@ p.process_clientapp AS owner_process_clientapp, p.process_hostname AS owner_proc
 p.process_loginname as owner_process_loginname,
 p.process_isolationlevel AS owner_process_isolationlevel
 FROM resources r
-JOIN Processes p ON r.resource_owner_id = p.process_id
-LEFT JOIN Victims v ON p.process_id = v.deadlock_victim
+JOIN Processes p ON r.resource_owner_id = p.process_id AND r.deadlock_time = p.deadlock_time
+LEFT JOIN Victims v ON p.process_id = v.deadlock_victim AND p.deadlock_time = v.deadlock_time
+--WHERE r.deadlock_time BETWEEN DATEADD(dd,-1,GETUTCDATE()) AND GETUTCDATE()
