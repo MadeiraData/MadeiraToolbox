@@ -53,7 +53,7 @@ FROM #XMLDATA
 
 ), resources AS(
  
-SELECT id, deadlock_time, deadlock_resources_all.query('.') AS deadlock_graph,
+SELECT id, deadlock_time, AllDeadlocks.deadlock_graph,
 	d.deadlock_resources.value('@objectname','NVARCHAR(200)') AS resource_objectname,
 	d.deadlock_resources.value('@dbid','INT') AS resource_dbid,
 	d.deadlock_resources.value('@mode','NVARCHAR(10)') AS resource_mode,
