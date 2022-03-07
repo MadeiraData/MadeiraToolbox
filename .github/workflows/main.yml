@@ -29,10 +29,9 @@ jobs:
       # Use a simple runner to output added files
       - id: added_files_list
         run: |
-          echo "::set-output name=addedfiles::"
           mapfile -d ',' -t added_files < <(printf '%s,' '${{ steps.files.outputs.added }}')
           for added_file in "${added_files[@]}"; do
-            echo "<br/>New file: <b><a target="_blank" href="https://github.com/MadeiraData/MadeiraToolbox/blob/master/${added_file}">${added_file}</a></b>"
+            echo "::set-output name=addedfiles--${added_file}::<br/>New file: <b>https://github.com/${{github.repository}}/blob/master/${added_file}</b>"
           done
       # Send e-mail about changed files
       - name: Announcerr
@@ -46,7 +45,7 @@ jobs:
           to: ${{secrets.MAIL_RECIPIENTS}}
           from: ${{secrets.MAIL_FROM}}
           subject: New files added to MadeiraToolbox
-          body: Commits with new file(s) were pushed into repository ${{github.repository}} ! <br/>Author - <b>${{ github.event.pusher.name }}</b><br/> <h4>Added files</h4>${{ steps.files.outputs.added }}<br/><h4>All affected files</h4>${{ steps.files.outputs.all }}
+          body: Commits with new file(s) were pushed into repository <a target="_blank" href="https://github.com/${{github.repository}}">${{github.repository}}</a> ! <br/>Author - <b>${{ github.event.pusher.name }}</b><br/>${{join(steps.added_files_list.outputs.*, '<br/>')}}<br/> <h4>Added files</h4>${{ steps.files.outputs.added }}<br/><h4>All affected files</h4>${{ steps.files.outputs.all }}
           # Optional content type (defaults to text/plain):
           content_type: text/html
           # Optional attachments:
