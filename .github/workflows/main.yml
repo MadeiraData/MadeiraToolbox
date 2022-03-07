@@ -32,7 +32,7 @@ jobs:
           echo "::set-output name=addedfiles::"
           mapfile -d ',' -t added_files < <(printf '%s,' '${{ steps.files.outputs.added }}')
           for added_file in "${added_files[@]}"; do
-            echo "<br/>New file: <b>${added_file}</b>"
+            echo "<br/>New file: <b><a target="_blank" href="https://github.com/MadeiraData/MadeiraToolbox/blob/master/${added_file}">${added_file}</a></b>"
           done
       # Send e-mail about changed files
       - name: Announcerr
