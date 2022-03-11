@@ -9,7 +9,7 @@ Weak passwords list is based on: https://github.com/danielmiessler/SecLists/tree
 Added replace permuration on main password list for common characters replace 'a' with '@', '3' with '#', 's' with '$', 'o' with '*'
 */
 DECLARE
-	@BringThePain		bit = 0 /*do not bring the pain*/
+	@BringThePain		bit = 0 /*This will compute millions of possible passwords*/
 ,	@OutputPasswords	bit = 0
 
 SET NOCOUNT ON;
@@ -38,9 +38,8 @@ BEGIN
 	PRINT N'This script is not supported on this SQL Server edition.';
 	SET NOEXEC ON;
 END
---15945 full set
---6491 original
---12446 shortened set
+--6491 original passwords
+--87000 new set
  
 DECLARE @RCount int
 
@@ -258,25 +257,31 @@ FROM GeneratedPasswords
 OPTION (RECOMPILE); -- avoid saving this in plan cache
 
 
+
 --Add modifiers to existing password list
 INSERT INTO #pwd
 --  (Uppercase First letter)
 SELECT DISTINCT
  UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1) [TxtWord]
 FROM #pwd
+WHERE LEN(generatedPwd) > 2 and generatedPwd LIKE '%[A-Z]%'
 UNION ALL
 --  (Uppercase First letter plus replace a for @, 3 for #, 4 for $, o for *)
 SELECT  REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1),'a','@')generatedPwd
 FROM #pwd
+WHERE LEN(generatedPwd) > 3 AND generatedPwd like '%a%'
 UNION ALL
 SELECT  REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1), '3' ,'#') generatedPwd
 FROM #pwd
+WHERE LEN(generatedPwd) > 3 AND generatedPwd like '%3%'
 UNION ALL
 SELECT  REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1), 's', '$') generatedPwd
 FROM #pwd
+WHERE LEN(generatedPwd) > 3 AND generatedPwd like '%s%'
 UNION ALL
 SELECT  REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1), 'o','*') generatedPwd
 FROM #pwd
+WHERE LEN(generatedPwd) > 3 AND generatedPwd like '%o%'
 UNION ALL
 SELECT  REPLACE(REPLACE(REPLACE(REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1)
 ,'a','@')
@@ -285,6 +290,7 @@ SELECT  REPLACE(REPLACE(REPLACE(REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(gene
 , 'o','*')
  generatedPwd
 FROM #pwd
+WHERE LEN(generatedPwd) > 3
 OPTION (RECOMPILE); -- avoid saving this in plan cache
 
 SET @RCount = @RCount + @@ROWCOUNT;
@@ -402,9 +408,22 @@ DEALLOCATE DBs;
 
 SET NOEXEC OFF;
 
+
 SELECT Deviation
      , LoginName
      , ServerRoles
      , ServerPermissions
      , DBAccess
-FROM #logins;
+	 , activesessions.Connections [This many active sessions]
+	 , activesessions.Hosts [On this many hosts]
+FROM #logins
+LEFT OUTER JOIN (
+select login_name,COUNT(DISTINCT host_name) [Hosts], count(1) [Connections] from sys.dm_exec_sessions
+GROUP BY  login_name
+) activesessions ON activesessions.login_name COLLATE DATABASE_DEFAULT = #logins.LoginName COLLATE DATABASE_DEFAULT
+
+OPTION (RECOMPILE); -- avoid saving this in plan cache
+
+--Clean up
+IF OBJECT_ID('tempdb..#pwd') IS NOT NULL DROP TABLE #pwd;
+IF OBJECT_ID('tempdb..#logins') IS NOT NULL DROP TABLE #logins;
