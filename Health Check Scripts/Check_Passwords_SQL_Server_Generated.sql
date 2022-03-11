@@ -9,7 +9,7 @@ Weak passwords list is based on: https://github.com/danielmiessler/SecLists/tree
 Added replace permuration on main password list for common characters replace 'a' with '@', '3' with '#', 's' with '$', 'o' with '*'
 */
 DECLARE
-	@BringThePain		bit = 0 /*This will compute millions of possible passwords*/
+	@BringThePain		bit = 1 /*0 does around 33k passwords already. This will compute 989k on pain. 8 minutes on 8 cores*/
 ,	@OutputPasswords	bit = 0
 
 SET NOCOUNT ON;
