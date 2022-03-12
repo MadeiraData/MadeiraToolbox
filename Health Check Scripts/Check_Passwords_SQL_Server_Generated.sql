@@ -6,25 +6,36 @@ Date: 2020-09-02
 Weak passwords list is based on: https://github.com/danielmiessler/SecLists/tree/master/Passwords
 */
 DECLARE
-	@BringThePain		bit = 0
-,	@OutputPasswords	bit = 0
+	@IncludeModifiers	bit = 1 /* set to 1 to add permutations of the main password list, replacing 'a' with '@', '3' with '#', 's' with '$', 'o' with '*' */
+,	@BringThePain		bit = 0 /* set to 1 to compute additional 3-part permutations */
+,	@OutputPasswords	bit = 0 /* set to 1 to display the passwords in the output */
+,	@GenerateOnly		bit = 0 /* set to 1 to only generate passwords without checking the logins */
+
+/*
+Time and count estimations on a machine with 8 cores:
+=====================================================
+modifiers disabled, bring the pain disabled: ~21k distinct passwords, less than 1 second
+modifiers enabled, bring the pain disabled: ~61k distinct passwords, less than 1 second
+modifiers disabled, bring the pain enabled: ~1.3 million distinct passwords, 3 seconds
+modifiers enabled, bring the pain enabled: ~4.5 million distinct passwords, 30 seconds
+
+These execution times are only for the generation of the passwords themselves.
+Total execution time may increase significantly based on number of logins to check.
+*/
 
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
 IF OBJECT_ID('tempdb..#pwd') IS NOT NULL DROP TABLE #pwd;
-CREATE TABLE #pwd
-(
-generatedPwd nvarchar(4000) COLLATE Latin1_General_BIN NOT NULL
-);
+CREATE TABLE #pwd (generatedPwd nvarchar(4000) COLLATE Latin1_General_BIN NOT NULL);
 
 IF OBJECT_ID('tempdb..#logins') IS NOT NULL DROP TABLE #logins;
 CREATE TABLE #logins
 (
-Deviation varchar(256),
+Deviation varchar(256) NULL,
 LoginSID varbinary(4000) NULL,
 LoginPrincipleId int NULL,
-LoginName sysname,
+LoginName sysname NOT NULL,
 ServerRoles varchar(8000) NULL,
 ServerPermissions varchar(8000) NULL,
 DBAccess varchar(MAX) NULL
@@ -35,6 +46,8 @@ BEGIN
 	PRINT N'This script is not supported on this SQL Server edition.';
 	SET NOEXEC ON;
 END
+--6491 original passwords
+--87000 new set
 
 DECLARE @RCount int
 
@@ -42,569 +55,18 @@ DECLARE @RCount int
 INSERT INTO #pwd WITH (TABLOCKX)
 SELECT [value]
 FROM (VALUES
- ('1234321')
-,('qweewq')
-,('101010')
-,('10203')
-,('123123123')
-,('147258369')
-,('1qaz2wsx')
-,('789456123')
-,('jordan23')
-,('#SAPassword!')
-,('$easyWinArt4')
-,('$ei$micMicro')
-,('*ARIS!1dm9n#')
-,('123698745')
-,('134679')
-,('142536')
-,('1q2w3e')
-,('1q2w3e4r')
-,('1q2w3e4r5t')
-,('20100728')
-,('25251325')
-,('42Emerson42Eme')
-,('5201314')
-,('686584')
-,('a1b2c3d4')
-,('a801016')
-,('aaron431')
-,('admin')
-,('Administrator1')
-,('AIMS')
-,('alexander')
-,('amanda')
-,('andrea')
-,('andrew')
-,('angel1')
-,('anhyeuem')
-,('anthony')
-,('ashley')
-,('azerty')
-,('bailey')
-,('Bangbang123')
-,('baseball')
-,('basketball')
-,('batman')
-,('blackcoffee333')
-,('blink182')
-,('BPMS')
-,('buster')
-,('butterfly')
-,('capassword')
-,('Cardio.Perfect')
-,('charlie')
-,('chatbooks')
-,('cheese')
-,('chocolate')
-,('cic')
-,('cic!23456789')
-,('computer')
-,('cookie')
-,('daniel')
-,('DBA!sa@EMSDB123')
-,('default')
-,('Dr8gedog')
-,('dragon')
-,('evite')
-,('family')
-,('flower')
-,('gabriel')
-,('ginger')
-,('gnos')
-,('hannah')
-,('hunter')
-,('i2b2demodata')
-,('i2b2demodata2')
-,('i2b2hive')
-,('i2b2metadata')
-,('i2b2metadata2')
-,('i2b2workdata')
-,('i2b2workdata2')
-,('israel')
-,('jacket025')
-,('jakcgt333')
-,('jennifer')
-,('jessica')
-,('jesus1')
-,('jinjer')
-,('jobandtalent')
-,('joshua')
-,('justin')
-,('killer')
-,('letmein')
-,('lovely')
-,('loveme')
-,('M3d!aP0rtal')
-,('madison')
-,('maggieown')
-,('master')
-,('matthew')
-,('maxadmin')
-,('maxreg')
-,('medocheck123')
-,('michelle')
-,('Million2')
-,('monkey')
-,('MULTIMEDIA')
-,('mxintadm')
-,('myspace1')
-,('naruto')
-,('netxms')
-,('nicole')
-,('ohmnamah23')
-,('omgpop')
-,('opengts')
-,('P@$$w0rd')
-,('P@ssw0rd')
-,('Pa$$w0rd')
-,('party')
-,('Pass@123')
-,('passw0rd')
-,('peanut')
-,('pepper')
-,('picture1')
-,('pokemon')
-,('PracticeUser1')
-,('purple')
-,('pwAdmin')
-,('pwddbo')
-,('pwPower')
-,('pwUser')
-,('q1w2e3')
-,('q1w2e3r4')
-,('robert')
-,('RPSsql12345')
-,('samantha')
-,('Sample123')
-,('samsung')
-,('SECAdmin1')
-,('SecurityMaster08')
-,('senha')
-,('sha256')
-,('shadow')
-,('SilkCentral12!34')
-,('skf_admin1')
-,('soccer')
-,('splendidcrm2005')
-,('sqlserver')
-,('starwars')
-,('stream-1')
-,('summer')
-,('sunshine')
-,('superadmin')
-,('superman')
-,('taylor')
-,('thomas')
-,('tigger')
-,('trinity')
-,('trustno1')
-,('unknown')
-,('V4in$ight')
-,('vampire')
-,('vantage12!')
-,('wasadmin')
-,('welcome')
-,('whatever')
-,('wwAdmin')
-,('wwPower')
-,('wwUser')
-,('x4ivygA51F')
-,('yugioh')
-,('zing')
-,('4128')
-,('5150')
-,('8675309')
-,('abgrtyu')
-,('access')
-,('access14')
-,('action')
-,('albert')
-,('alex')
-,('alexis')
-,('amateur')
-,('angel')
-,('angela')
-,('angels')
-,('animal')
-,('apollo')
-,('apple')
-,('apples')
-,('arsenal')
-,('arthur')
-,('asshole')
-,('august')
-,('austin')
-,('baby')
-,('badboy')
-,('banana')
-,('barney')
-,('beach')
-,('bear')
-,('beaver')
-,('beavis')
-,('beer')
-,('bigcock')
-,('bigdaddy')
-,('bigdick')
-,('bigdog')
-,('bigtits')
-,('bill')
-,('billy')
-,('birdie')
-,('bitch')
-,('bitches')
-,('biteme')
-,('black')
-,('blazer')
-,('blonde')
-,('blondes')
-,('blowjob')
-,('blowme')
-,('blue')
-,('bond007')
-,('bonnie')
-,('booboo')
-,('boobs')
-,('booger')
-,('boomer')
-,('booty')
-,('boston')
-,('brandon')
-,('brandy')
-,('braves')
-,('brazil')
-,('brian')
-,('bronco')
-,('broncos')
-,('bubba')
-,('buddy')
-,('bulldog')
-,('butter')
-,('butthead')
-,('calvin')
-,('camaro')
-,('cameron')
-,('canada')
-,('captain')
-,('carlos')
-,('carter')
-,('casper')
-,('charles')
-,('chelsea')
-,('chester')
-,('chevy')
-,('chicago')
-,('chicken')
-,('chris')
-,('cocacola')
-,('cock')
-,('coffee')
-,('college')
-,('compaq')
-,('cool')
-,('cooper')
-,('corvette')
-,('cowboy')
-,('cowboys')
-,('cream')
-,('crystal')
-,('cumming')
-,('cumshot')
-,('cunt')
-,('dakota')
-,('dallas')
-,('danielle')
-,('dave')
-,('david')
-,('debbie')
-,('dennis')
-,('diablo')
-,('diamond')
-,('dick')
-,('dirty')
-,('doctor')
-,('doggie')
-,('dolphin')
-,('dolphins')
-,('donald')
-,('dreams')
-,('driver')
-,('eagle')
-,('eagle1')
-,('eagles')
-,('edward')
-,('einstein')
-,('enjoy')
-,('enter')
-,('eric')
-,('erotic')
-,('extreme')
-,('falcon')
-,('fender')
-,('ferrari')
-,('fire')
-,('firebird')
-,('fish')
-,('fishing')
-,('florida')
-,('flyers')
-,('ford')
-,('forever')
-,('frank')
-,('fred')
-,('freddy')
-,('freedom')
-,('fuck')
-,('fucked')
-,('fucker')
-,('fucking')
-,('fuckme')
-,('gandalf')
-,('gateway')
-,('gators')
-,('gemini')
-,('george')
-,('giants')
-,('girl')
-,('girls')
-,('golden')
-,('golf')
-,('golfer')
-,('gordon')
-,('great')
-,('green')
-,('gregory')
-,('guitar')
-,('gunner')
-,('hammer')
-,('happy')
-,('hardcore')
-,('harley')
-,('heather')
-,('helpme')
-,('hentai')
-,('hockey')
-,('hooters')
-,('horney')
-,('horny')
-,('hotdog')
-,('house')
-,('hunting')
-,('iceman')
-,('internet')
-,('iwantu')
-,('jack')
-,('jackie')
-,('jackson')
-,('jaguar')
-,('jake')
-,('james')
-,('japan')
-,('jasmine')
-,('jason')
-,('jasper')
-,('jeremy')
-,('john')
-,('johnny')
-,('johnson')
-,('joseph')
-,('juice')
-,('junior')
-,('kelly')
-,('kevin')
-,('king')
-,('kitty')
-,('knight')
-,('ladies')
-,('lakers')
-,('lauren')
-,('leather')
-,('legend')
-,('little')
-,('london')
-,('lover')
-,('lovers')
-,('lucky')
-,('maddog')
-,('maggie')
-,('magic')
-,('magnum')
-,('marine')
-,('mark')
-,('marlboro')
-,('martin')
-,('marvin')
-,('matrix')
-,('matt')
-,('maverick')
-,('maxwell')
-,('melissa')
-,('member')
-,('mercedes')
-,('merlin')
-,('mickey')
-,('midnight')
-,('mike')
-,('miller')
-,('mine')
-,('mistress')
-,('money')
-,('monica')
-,('monster')
-,('morgan')
-,('mother')
-,('mountain')
-,('movie')
-,('muffin')
-,('murphy')
-,('music')
-,('mustang')
-,('naked')
-,('nascar')
-,('nathan')
-,('naughty')
-,('ncc1701')
-,('newyork')
-,('nicholas')
-,('nipple')
-,('nipples')
-,('oliver')
-,('orange')
-,('ou812')
-,('packers')
-,('panther')
-,('panties')
-,('paris')
-,('parker')
-,('pass')
-,('patrick')
-,('paul')
-,('peaches')
-,('penis')
-,('peter')
-,('phantom')
-,('phoenix')
-,('player')
-,('please')
-,('pookie')
-,('porn')
-,('porno')
-,('porsche')
-,('power')
-,('prince')
-,('private')
-,('pussies')
-,('pussy')
-,('rabbit')
-,('rachel')
-,('racing')
-,('raiders')
-,('rainbow')
-,('ranger')
-,('rangers')
-,('rebecca')
-,('redskins')
-,('redsox')
-,('redwings')
-,('richard')
-,('rock')
-,('rocket')
-,('rosebud')
-,('runner')
-,('rush2112')
-,('russia')
-,('sammy')
-,('samson')
-,('sandra')
-,('saturn')
-,('scooby')
-,('scooter')
-,('scorpio')
-,('scorpion')
-,('scott')
-,('secret')
-,('sexsex')
-,('sexy')
-,('shannon')
-,('shaved')
-,('shit')
-,('sierra')
-,('silver')
-,('skippy')
-,('slayer')
-,('slut')
-,('smith')
-,('smokey')
-,('snoopy')
-,('sophie')
-,('spanky')
-,('sparky')
-,('spider')
-,('squirt')
-,('srinivas')
-,('star')
-,('stars')
-,('startrek')
-,('steelers')
-,('steve')
-,('steven')
-,('sticky')
-,('stupid')
-,('success')
-,('suckit')
-,('super')
-,('surfer')
-,('swimming')
-,('sydney')
-,('teens')
-,('tennis')
-,('teresa')
-,('test')
-,('tester')
-,('testing')
-,('theman')
-,('thunder')
-,('thx1138')
-,('tiffany')
-,('tiger')
-,('tigers')
-,('time')
-,('tits')
-,('tomcat')
-,('topgun')
-,('toyota')
-,('travis')
-,('trouble')
-,('tucker')
-,('turtle')
-,('united')
-,('vagina')
-,('victor')
-,('victoria')
-,('video')
-,('viking')
-,('viper')
-,('voodoo')
-,('voyager')
-,('walter')
-,('warrior')
-,('white')
-,('william')
-,('willie')
-,('wilson')
-,('winner')
-,('winston')
-,('winter')
-,('wizard')
-,('wolf')
-,('women')
-,('xavier')
-,('yamaha')
-,('yankee')
-,('yankees')
-,('yellow')
-,('young')) AS v([value])
+ ('!manage'),('!qaz2wsx'),('!root'),('!~!1'),('#1bitch'),('#1pimp'),('#SAPassword!'),('#l@$ak#.lk;0@P'),('#onda!'),('#onda#'),('#onda$'),('#onda%'),('#onda&'),('#onda*'),('#onda0'),('#onda1'),('#onda2'),('#onda3'),('#onda4'),('#onda5'),('#onda6'),('#onda7'),('#onda8'),('#onda9'),('#onda?'),('#onda@'),('#onda^'),('$HEX'),('$SRV'),('$chwarzepumpe'),('$easyWinArt4'),('$ei$micMicro'),('$emperfi!'),('$emperfi#'),('$emperfi$'),('$emperfi%'),('$emperfi&'),('$emperfi*'),('$emperfi0'),('$emperfi1'),('$emperfi2'),('$emperfi3'),('$emperfi4'),('$emperfi5'),('$emperfi6'),('$emperfi7'),('$emperfi8'),('$emperfi9'),('$emperfi?'),('$emperfi@'),('$emperfi^'),('$secure$'),('$tarwars!'),('$tarwars#'),('$tarwars$'),('$tarwars%'),('$tarwars&'),('$tarwars*'),('$tarwars0'),('$tarwars1'),('$tarwars2'),('$tarwars3'),('$tarwars4'),('$tarwars5'),('$tarwars6'),('$tarwars7'),('$tarwars8'),('$tarwars9'),('$tarwars?'),('$tarwars@'),('$tarwars^'),('$uzuki!'),('$uzuki#'),('$uzuki$'),('$uzuki%'),('$uzuki&'),('$uzuki*'),('$uzuki0'),('$uzuki1'),('$uzuki2'),('$uzuki3'),('$uzuki4'),('$uzuki5'),('$uzuki6'),('$uzuki7'),('$uzuki8'),('$uzuki9'),('$uzuki?'),('$uzuki@'),('$uzuki^'),('&#2336;'),('&#9679;&#9679;&#9679;&#9679;&#96'),('&hearts;'),('(caclulated)'),('(random password)'),('(unknown)'),(')'),('* * #'),('*****'),('******'),('*123456'),('*3noguru'),('*ARIS!1dm9n#'),('+ikbalang!'),('+ikbalang$'),('+ikbalang&'),('+ikbalang*'),('+ikbalang@'),('+ikbalang^'),('-'),('.'),('......'),('.adgjm'),('.adgjmptw'),('000000a'),('00000a'),('000webhost'),('011584wb'),('040191flo'),('0508rabbit88'),('051004Cami'),('06012005d'),('0P3N'),('0th'),('0werty!'),('0werty#'),('0werty$'),('0werty%'),('0werty&'),('0werty*'),('0werty0'),('0werty1'),('0werty2'),('0werty3'),('0werty4'),('0werty5'),('0werty6'),('0werty7'),('0werty8'),('0werty9'),('0werty?'),('0werty@'),('0werty^'),('1//2'),('100000'),('1000000'),('1001'),('100198'),('100200'),('100200300'),('10023'),('100500'),('10101'),('101010'),('1010101'),('10101010'),('101101'),('101112'),('1011980'),('10203'),('1020304'),('102030405'),('10203040506'),('1022'),('1026steven8'),('102938'),('1029384756'),('10393Ravens52'),('1048050I'),('10577'),('1064'),('10Vournl'),('110011'),('110110'),('110119'),('110120'),('110688'),('111000'),('1111111a'),('111111a'),('111111q'),('111112'),('11111a'),('11111q'),('11112222'),('111126688'),('1111oo11'),('1111qqqq'),('111213'),('111222'),('111222333'),('111222tianya'),('111333'),('111999'),('111aaa'),('111qqq'),('112112'),('112211'),('1122334'),('112233a'),('112233q'),('112358'),('11235813'),('1123581321'),('113113'),('113355'),('114477'),('115599'),('11597'),('119119'),('120120'),('121121'),('121200kk'),('1212121212'),('1212123'),('121212a'),('121283'),('121314'),('12131415'),('1213141516'),('122112'),('12211221'),('122333'),('123000'),('1230123'),('12301230'),('123098'),('1231230'),('1231231'),('12312312'),('123123123'),('123123a'),('123123q'),('123123qwe'),('1232123'),('123213nba'),('1233210'),('123321123'),('123321123321'),('123321a'),('123321q'),('1234509876'),('1234554321'),('12345654321'),('123456654321'),('123456789*'),('1234567890-'),('1234567890-='),('12345678900987600000'),('12345678901'),('1234567890a'),('1234567890q'),('123456789123456000'),('123456789987654000'),('123456789c'),('123456789d'),('123456789e'),('123456789f'),('123456789g'),('123456789h'),('123456789i'),('123456789j'),('123456789k'),('123456789l'),('123456789m'),('123456789n'),('123456789o'),('123456789p'),('123456789q'),('12345678m'),('12345678q'),('123456798'),('1234567Ks123'),('1234567d'),('1234567j'),('1234567m'),('1234567q'),('123456@'),('123456aaa'),('123456as'),('123456c'),('123456d'),('123456e'),('123456f'),('123456g'),('123456h'),('123456i'),('123456j'),('123456k'),('123456l'),('123456m'),('123456n'),('123456o'),('123456p'),('123456q'),('123456qq'),('123456x'),('12345abcde'),('12345c'),('12345cmt'),('12345d'),('12345e'),('12345ecg'),('12345f'),('12345g'),('12345h'),('12345j'),('12345k'),('12345l'),('12345m'),('12345n'),('12345p'),('12345q'),('123465'),('12348765'),('123567'),('1235789'),('123654789'),('123654a'),('123698'),('1236987'),('12369874'),('123698741'),('123698745'),('123789456'),('123890'),('123???'),('123a123'),('123a456'),('123aaa'),('123abc123'),('123admin321'),('123asd123'),('123hfjdk147'),('123kid'),('123qwe123'),('123qwe123qwe'),('123qweasd'),('123qweasdzxc'),('123soleil'),('123stella'),('124103817'),('12413'),('124578'),('125125'),('128500'),('12871'),('12characters'),('12qw23we'),('12qw34er'),('12qwas'),('12tigers'),('131415'),('131420'),('131421'),('1314520'),('1314521'),('132132'),('1322222'),('132435'),('13243546'),('132456'),('132465'),('1342'),('134679'),('134679852'),('135246'),('13579'),('135790'),('135791'),('1357911'),('1357913579'),('135792468'),('1357924680'),('135798642'),('1366613'),('14121412'),('1415126t'),('141516'),('142536'),('142857'),('143143'),('14344'),('145236'),('14531453'),('1468d1991bc'),('147258369'),('1475369'),('1475963'),('147852369'),('14789'),('147896'),('1478963'),('14789632'),('147896321'),('147896325'),('148068885'),('14881488'),('1502'),('151515'),('15151515'),('15201204'),('153624'),('15426378'),('159159159'),('159263'),('159632'),('1596321'),('159753123'),('15975338'),('159753456'),('159753a'),('1598753'),('15af5c3d4a'),('16117'),('161616'),('162534'),('166816'),('168168'),('168ASD168'),('171717'),('172839'),('18140815'),('181818'),('18436572'),('1851'),('18atcskD2W'),('19031903'),('19051905'),('19071907'),('191919'),('19191919'),('192837'),('192837465'),('19411945'),('1945'),('1962'),('19631963'),('1964'),('19641964'),('1965'),('19651965'),('1966'),('19661966'),('1967'),('19671967'),('1968'),('19681968'),('1969'),('19691969'),('1970'),('19701970'),('1971'),('19711971'),('1972'),('19721972'),('1973'),('19731973'),('1974'),('19741974'),('1975'),('19750407'),('19751975'),('1976'),('19761976'),('1977'),('19771977'),('1978'),('19781978'),('1979'),('19791979'),('198'),('1980'),('198000'),('19801980'),('1981'),('19811981'),('1982'),('19821982'),('1983'),('19831983'),('1984'),('19841984'),('1985'),('198500'),('19851985'),('1986'),('198600'),('19861986'),('19871006'),('19871987'),('1988'),('19881988'),('198888'),('1989'),('19891989'),('1990'),('19901990'),('1991'),('19911991'),('1992'),('19920706'),('19921992'),('1993'),('19931993'),('1994'),('1994.098'),('19941994'),('1995'),('19951995'),('1996'),('19961996'),('1997'),('19971997'),('199743had'),('1998'),('19981998'),('1999'),('19991999'),('1?2?3?'),('1?2?3?4?'),('1Antysecas'),('1Fr2rfq7xL'),('1RRWTTOOI'),('1a1a1a'),('1a2b3c'),('1a2b3c4d'),('1a2b3c4d5e'),('1a2s3d'),('1a2s3d4f'),('1a2s3d4f5g'),('1andonly'),('1angel'),('1anthony'),('1asshole'),('1at39jg4MTM'),('1b78ef23aa2506f41feecfcc45b66038'),('1bitch'),('1blood'),('1butterfly'),('1chance'),('1chicken'),('1cookie'),('1daddy'),('1diamond'),('1dragon'),('1family'),('1fucker'),('1g2baMFm'),('1g2w3e4r'),('1hottie'),('1jesus'),('1love1'),('1love2hate'),('1loveme'),('1lover'),('1loveu'),('1loveyou'),('1melissa'),('1million'),('1mommy'),('1money'),('1monkey'),('1mother'),('1myspace'),('1newpass2'),('1nigga'),('1o7tOr91'),('1of12JOEjoe'),('1ofakind'),('1onenewman'),('1player'),('1pussy'),('1q1q1q'),('1q1q1q1q'),('1q2q3q'),('1q2w3e'),('1q2w3e4'),('1q2w3e4r'),('1q2w3e4r5'),('1q2w3e4r5t'),('1q2w3e4r5t6y'),('1q2w3e4r5t6y7u'),('1q2w3e4r5t6y7u8i'),('1q2w3e4r5t6y7u8i9o'),('1q2w3e4r5t6y7u8i9o0p'),('1qa2ws'),('1qa2ws3ed'),('1qay2wsx'),('1qaz!QAZ'),('1qaz2wsx'),('1qaz2wsx3edc'),('1qaz@wsx'),('1qazxc'),('1qazxsw2'),('1qazxsw23edc'),('1qazzaq1'),('1savage1'),('1secret'),('1sunshine'),('1superman'),('1t2o3b4i5a6s'),('1truelove'),('1v7Upjw3nT'),('1z2x3c'),('1z2x3c4v'),('1zeyA846'),('1zn6FpN01x'),('200000'),('20002000'),('2000Cbr600'),('2001'),('20012001'),('2002'),('20022002'),('2003'),('20032003'),('2004'),('20042004'),('2005'),('20052005'),('2006'),('20062006'),('2007'),('20072007'),('2008'),('200801121'),('20082008'),('20082009'),('2009'),('20092009'),('20100728'),('20102010'),('2011'),('20112011'),('2012comeer'),('201314'),('20202'),('202020'),('20202020'),('203040'),('20701868'),('21122112'),('211314'),('212223'),('21241036'),('2128506'),('214365'),('222111'),('222333'),('223322'),('22332323'),('223344'),('22334455'),('223456'),('224466'),('22446688'),('224756am'),('225588'),('22594'),('228228'),('23232323'),('232425'),('234'),('234234'),('23456'),('234567'),('2345678'),('23456789'),('235689'),('235842035'),('23646'),('2391ndst'),('23jordan'),('23rmitkb'),('2405love'),('240653C9467E45'),('2424'),('242424'),('24242424'),('242526'),('2468'),('24680'),('246810'),('24681012'),('246813579'),('24682468'),('24Banc81'),('2501'),('251314'),('25251325'),('256256'),('258000'),('25800852'),('25802580'),('25Isaac25'),('262626'),('26451'),('266344'),('270brk44'),('272727'),('27ollerct'),('2800'),('282828'),('290966'),('29111991'),('292929'),('29rsavoy'),('2WSXcde'),('2WSXcder'),('2blessed'),('2bornot2b'),('2children'),('2cool4u'),('2cute4u'),('2fast4u'),('2gether'),('2girls'),('2good4u'),('2hot4u'),('2lovers'),('2sexy4u'),('2sweet'),('2wsx3edc'),('3.1415926'),('30303'),('303030'),('3098z'),('313131'),('314159'),('31415926'),('31994'),('319f4d26e3c536b5dd871bb2c52e3178'),('321321321'),('321654987'),('323232'),('32555110'),('333222'),('333444'),('333555'),('333666'),('333777'),('333999'),('3344520'),('334455'),('336477188'),('336699'),('3367amorc'),('33939'),('343434'),('345678'),('3477'),('353535'),('35612'),('36250629Za'),('3634819zhang'),('363636'),('36892'),('369258147'),('36951'),('36982'),('369852147'),('36mafia'),('37104'),('37135'),('37165'),('37196'),('37226'),('373737'),('37500'),('38157'),('383838'),('393041123'),('393939'),('3953538'),('39x9DRxL'),('3Odi15ngxB'),('3ascotel'),('3awhitby'),('3children'),('3d8Cubaj2E'),('3ep5w2u'),('3girls'),('3rJs1la2qE'),('3rJs1la7qE'),('3rJs5la8qE'),('3uhuuezvd'),('3ware'),('40057'),('40269'),('40330'),('40404'),('404040'),('40452'),('40603'),('40634'),('40695'),('406Mainst'),('40756'),('40848'),('40969'),('41000'),('41061'),('41091'),('41244'),('412497samloo'),('4128'),('4133'),('41334'),('41365'),('414141'),('41426'),('415263'),('41730'),('41791'),('41821'),('4200'),('420420'),('42064'),('42095'),('420weed'),('42156'),('421uiopy258'),('424242'),('42461'),('42522'),('42795'),('42826'),('42887'),('42Emerson42Eme'),('43160'),('43191'),('43222933'),('43252'),('434343'),('43770'),('43922'),('440709380'),('44256'),('44287'),('44348'),('44378'),('444555'),('445566'),('44621'),('44652'),('44713'),('44743'),('44986'),('45017'),('45078'),('45108'),('45383'),('45444'),('454545'),('45454545'),('456123789'),('456456456'),('456789123'),('45809'),('46174'),('464646'),('46905'),('474747'),('476730751'),('4815162342'),('484848'),('49rhino44'),('4Dgifts'),('4character'),('4children'),('4e5ftvkp'),('4everlove'),('4f2f69af'),('4getme2'),('4l0a6n8k6'),('4lpha!'),('4lpha#'),('4lpha$'),('4lpha%'),('4lpha&'),('4lpha*'),('4lpha0'),('4lpha1'),('4lpha2'),('4lpha3'),('4lpha4'),('4lpha5'),('4lpha6'),('4lpha7'),('4lpha8'),('4lpha9'),('4lpha?'),('4lpha@'),('4lpha^'),('4lt415um'),('4myspace'),('4mytrouble'),('4pp!3'),('4pp!e'),('4pp13'),('4pp1e'),('4ppi3'),('4ppie'),('4ppl3'),('4pple'),('4pp|3'),('4pp|e'),('4runner'),('4tas'),('503mrpelon'),('50505'),('505050'),('50833000'),('50cent'),('5150'),('51505150'),('515151'),('518518'),('520025'),('5201314'),('520520'),('520530'),('5211314'),('521521'),('525252'),('52lini4t'),('535353'),('543210'),('54321Tbag'),('545454'),('5482++'),('5532361cnjqrf'),('555556'),('55555a'),('555666'),('555777'),('555888'),('556677'),('565656'),('56565656'),('5678'),('56789'),('567890'),('575757'),('5777364'),('57chevy'),('57gbzb'),('584520'),('5845201314'),('585858'),('589589'),('589721'),('595959'),('5X1CJdsb9p'),('5X2000'),('5avril1996'),('5emperfi!'),('5emperfi#'),('5emperfi$'),('5emperfi%'),('5emperfi&'),('5emperfi*'),('5emperfi0'),('5emperfi1'),('5emperfi2'),('5emperfi3'),('5emperfi4'),('5emperfi5'),('5emperfi6'),('5emperfi7'),('5emperfi8'),('5emperfi9'),('5emperfi?'),('5emperfi@'),('5emperfi^'),('5eraphim'),('5hsU75kpoT'),('5plK4L5Uc7'),('5poppin')
+,('5tarwars!'),('5tarwars#'),('5tarwars$'),('5tarwars%'),('5tarwars&'),('5tarwars*'),('5tarwars0'),('5tarwars1'),('5tarwars2'),('5tarwars3'),('5tarwars4'),('5tarwars5'),('5tarwars6'),('5tarwars7'),('5tarwars8'),('5tarwars9'),('5tarwars?'),('5tarwars@'),('5tarwars^')
+,('5uzuki!'),('5uzuki#'),('5uzuki$'),('5uzuki%'),('5uzuki&'),('5uzuki*'),('5uzuki0'),('5uzuki1'),('5uzuki2'),('5uzuki3'),('5uzuki4'),('5uzuki5'),('5uzuki6'),('5uzuki7'),('5uzuki8'),('5uzuki9'),('5uzuki?'),('5uzuki@'),('5uzuki^'),('60606'),('606060'),('6071992'),('616161'),('619619'),('626262'),('634142554'),('635241'),('636363'),('643tmxdr48'),('646464'),('6543210'),('654321a'),('656565'),('666333'),('666555'),('666666a'),('666777'),('666888'),('666999'),('667788'),('671987Rr'),('676767'),('686584'),('686868'),('69camaro'),('69cougar'),('6V21wbgad'),('6anana!'),('6anana#'),('6anana$'),('6anana%'),('6anana&'),('6anana*'),('6anana0'),('6anana1'),('6anana2'),('6anana3'),('6anana4'),('6anana5'),('6anana6'),('6anana7'),('6anana8'),('6anana9'),('6anana?'),('6anana@'),('6anana^'),('6ankaccount!'),('6ankaccount#'),('6ankaccount$'),('6ankaccount%'),('6ankaccount&'),('6ankaccount*'),('6ankaccount0'),('6ankaccount1'),('6ankaccount2'),('6ankaccount3'),('6ankaccount4'),('6ankaccount5'),('6ankaccount6'),('6ankaccount7'),('6ankaccount8'),('6ankaccount9'),('6ankaccount?'),('6ankaccount@'),('6ankaccount^'),('6aseball!'),('6aseball#'),('6aseball$'),('6aseball%'),('6aseball&'),('6aseball*'),('6aseball0'),('6aseball1'),('6aseball2'),('6aseball3'),('6aseball4'),('6aseball5'),('6aseball6'),('6aseball7'),('6aseball8'),('6aseball9'),('6aseball?'),('6aseball@'),('6aseball^'),('7007'),('7061992'),('70707'),('707070'),('70809'),('709394'),('717171'),('7253497a5e31bd64'),('727'),('727272'),('73501505'),('737373'),('74107410'),('74108520'),('7412369'),('741258963'),('741852963'),('744'),('747474'),('748596'),('753159aS'),('757575'),('767676'),('7753191'),('7758258'),('7758520'),('7758521'),('777555'),('777666'),('7777777a'),('777888'),('777999'),('778899'),('780813'),('784512'),('78677867a'),('786786'),('786786786'),('787878'),('787898'),('789456123'),('7894561230'),('7895123'),('7896321'),('78963214'),('789632145'),('789654123'),('789789789'),('7912Bethany'),('79264833pc'),('7936'),('794613'),('797979'),('798465132741lL'),('7ikbalang!'),('7ikbalang#'),('7ikbalang$'),('7ikbalang%'),('7ikbalang&'),('7ikbalang*'),('7ikbalang0'),('7ikbalang1'),('7ikbalang2'),('7ikbalang3'),('7ikbalang4'),('7ikbalang5'),('7ikbalang6'),('7ikbalang7'),('7ikbalang8'),('7ikbalang9'),('7ikbalang?'),('7ikbalang@'),('7ikbalang^'),('7uGd5HIp2J'),('804139aq'),('80808'),('808080'),('8111'),('818181'),('827ccb0eea8a706c4c34a16891f84e7b'),('828282'),('8429'),('84lumber'),('85208520'),('8522003'),('858585'),('8675309'),('868686'),('86transam'),('87654321q'),('878787'),('885522'),('888999'),('895623'),('898989'),('89poiu89'),('8PHroWZ624'),('8RttoTriz'),('8anana!'),('8anana#'),('8anana$'),('8anana%'),('8anana&'),('8anana*'),('8anana0'),('8anana1'),('8anana2'),('8anana3'),('8anana4'),('8anana5'),('8anana6'),('8anana7'),('8anana8'),('8anana9'),('8anana?'),('8anana@'),('8anana^'),('8ankaccount!'),('8ankaccount#'),('8ankaccount$'),('8ankaccount%'),('8ankaccount&'),('8ankaccount*'),('8ankaccount0'),('8ankaccount1'),('8ankaccount2'),('8ankaccount3'),('8ankaccount4'),('8ankaccount5'),('8ankaccount6'),('8ankaccount7'),('8ankaccount8'),('8ankaccount9'),('8ankaccount?'),('8ankaccount@'),('8ankaccount^'),('8aseball!'),('8aseball#'),('8aseball$'),('8aseball%'),('8aseball&'),('8aseball*'),('8aseball0'),('8aseball1'),('8aseball2'),('8aseball3'),('8aseball4'),('8aseball5'),('8aseball6'),('8aseball7'),('8aseball8'),('8aseball9'),('8aseball?'),('8aseball@'),('8aseball^'),('8d8swybas'),('8ix6S1fceH'),('90210'),('906090'),('90807'),('90909'),('909090'),('90945414'),('9111961'),('911911'),('91555feu'),('91780yoyo'),('9293709b13'),('9379992'),('959595'),('963258741'),('963852741'),('96833284xdd'),('969696'),('980099'),('986532'),('987456321'),('98765'),('9876543'),('98765432'),('9876543210'),('987654321a'),('987654321q'),('9885dsp07'),('989898'),('9958123'),('996633'),('9981manN'),('9986448320'),('9988'),('998877'),('999000'),('999666'),('999888'),('99GHeiok'),('9Rahxona'),('9k12ak12337'),('9werty!'),('9werty#'),('9werty$'),('9werty%'),('9werty&'),('9werty*'),('9werty0'),('9werty1'),('9werty2'),('9werty3'),('9werty4'),('9werty5'),('9werty6'),('9werty7'),('9werty8'),('9werty9'),('9werty?'),('9werty@'),('9werty^'),(':'),(':12345678'),(':Administrator'),(':admin'),(':password'),('<N/A>'),('<blank>'),('<password>'),('??????@mail.ru'),('?award'),('@bigmir.net'),('@dsl_xilno'),('@lpha!'),('@lpha#'),('@lpha$'),('@lpha%'),('@lpha&'),('@lpha*'),('@lpha0'),('@lpha1'),('@lpha2'),('@lpha3'),('@lpha4'),('@lpha5'),('@lpha6'),('@lpha7'),('@lpha8'),('@lpha9'),('@lpha?'),('@lpha@'),('@lpha^'),('@pp!3'),('@pp!e'),('@pp13'),('@pp1e'),('@ppi3'),('@ppie'),('@ppl3'),('@pple'),('@pp|3'),('@pp|e'),('A.M.I'),('A156k1s1'),('ADLDEMO'),('AHL'),('AHM'),('AIMS'),('AIROPLANE'),('AK'),('AKAXWn'),('ALLIN1'),('ALLIN1MAIL'),('ALLINONE'),('ALR'),('AM'),('AMF'),('AMI'),('AMI!SW'),('AMI.KEY'),('AMI.KEZ'),('AMI?SW'),('AMIAMI'),('AMIDECOD'),('AMIPSWD'),('AMISETUP'),('AMI_SW'),('AMI~'),('AMS'),('AMV'),('AMW'),('ANS#150'),('ANYCOM'),('AP'),('APC'),('APPLSYS'),('APPS'),('APPUSER'),('AQ'),('AQDEMO'),('AQJAVA'),('AQUSER'),('AR'),('AR#Admin#'),('ARCHIVIST'),('ASF'),('ASG'),('ASL'),('ASN'),('ASO'),('ASP'),('AST'),('AUDIOUSER'),('AUTORAID'),('AWARD SW'),('AWARD?SW'),('AWARD_PW'),('AWARD_SW'),('AX'),('Aa010010'),('Aa16332468'),('AaBbCcDd'),('Ab7367732'),('Abc12abc'),('Adin1023'),('Adine1515'),('Aditya'),('Admin1'),('Admin5'),('Administrative'),('Adrahs12'),('Advance'),('Airaya'),('AitbISP4eCiG'),('Aiypwzqp1996'),('Alanfearon10'),('Albero123'),('Alex1Emma9'),('Alfie2009'),('Alphabeta12'),('AlpheusDigital1010'),('Amanda123'),('Amazing123'),('Anderson11'),('Andrew98'),('Anissa2401'),('Anjali'),('Anomaly1'),('Anorexicgoat1'),('Anthony03'),('Anuradha'),('Aramis83'),('Arbogabe1'),('Archana'),('Arizona1'),('Arsenal1'),('Arstms24'),('Asante'),('Asdfasdf1'),('Asdqwe123'),('Ashish'),('Ashley97'),('Assasin1291'),('Asshole01'),('Atlantica33'),('AvOk2609'),('Avalanche123'),('Award'),('Awesome01'),('Az3r0th101'),('BACKUP'),('BASE'),('BATCH'),('BC4J'),('BIC'),('BIGO'),('BIL'),('BIM'),('BIOS'),('BIOSPASS'),('BIS'),('BIV'),('BIX'),('BLUEDOG123'),('BNE'),('BOM'),('BPMS'),('BRIDGE'),('BRIO_ADMIN'),('BSC'),('BackupU$r'),('Bahrain91'),('Bailey2007'),('Bajs12345'),('Bakugan123'),('Baller_07'),('Balloons3'),('Balto1925'),('Barricade'),('Bayrep123'),('Bearsfan1'),('Beaser94'),('Belize69'),('Belle123'),('Bentley1'),('Bermuda1'),('Bigblue12'),('Bigfish1'),('Bigj1975'),('Bigro5572'),('Billyboy12'),('Blablabla1'),('Blackland2'),('Blah1blah'),('Bm123456'),('Bobby7777'),('Bobinsk1'),('Bobstar25'),('Bobtido3398'),('Bombers99'),('Bowie001'),('Brady5126'),('Brahma25'),('Brandbi1'),('Brandon98'),('Brazil9438'),('BrianA06'),('Brooklyn269'),('Buddy007'),('Budlet123'),('Bulldog33'),('Buzzkill1'),('C0lby123'),('C0rnwall'),('C4c3c2c1'),('C707978d'),('C8H10N4O2'),('CAROLIAN'),('CATALOG'),('CCC'),('CCT'),('CDEMO82'),('CDEMOCOR'),('CDEMORID'),('CDEMOUCB'),('CE'),('CENTRA'),('CHANGE_ON_INSTALL'),('CHEY_ARCHSVR'),('CIDS'),('CIS'),('CISINFO'),('CISSUS'),('CLERK'),('CLN'),('CLOTH'),('CMEAumn'),('CMI'),('CMOSPWD'),('CMSBATCH'),('CN'),('CNAS'),('COGNOS'),('COMPIERE'),('CONCAT'),('CONV'),('CRP'),('CS'),('CSC'),('CSD'),('CSE'),('CSF'),('CSI'),('CSL'),('CSM'),('CSMIG'),('CSP'),('CSR'),('CSS'),('CTXDEMO'),('CTXSYS'),('CTX_123'),('CUA'),('CUE'),('CUF'),('CUG'),('CUI'),('CUN'),('CUP'),('CUS'),('CVFootball63'),('CZ'),('Calen2467'),('Calibre225'),('Canada12'),('Caniceiceman11'),('CantTouchThis'),('Caprisun1'),('Cardio.Perfect'),('Carlos66'),('Carvalho83500'),('CasioM20U'),('Celtic3307'),('Challenger2015'),('Chantelle145'),('Chappell88'),('Charlieluca1'),('Chelsea123'),('Cheron01'),('Chester123'),('CheyenneAM2'),('Chicago1'),('Chinaman420'),('Chloes103'),('CipiRipi1988'),('Cisco'),('Cisco router'),('Clasher35'),('Claytonwcar1'),('Clerius1'),('Cloverfields1'),('Cocacola123'),('Col2ogro2'),('Cole123456'),('Colinwidow2001'),('College079'),('Compaq2000'),('Compleri'),('Confound1'),('Congress'),('Conman123'),('Conscript22'),('Contad0r'),('Cooldude123'),('Cooper04'),('Copper99'),('Cra1gvar'),('Craftr4'),('Cranbrook99'),('Crumcake1'),('Cu3rv02251'),('Cummins12v1'),('D-Link'),('DBA!sa@EMSDB'),('DBDCCIC'),('DBSNMP'),('DCL'),('DDD'),('DDR'),('DECMAIL'),('DECNET'),('DEMO8'),('DEMO9'),('DES'),('DEV2000_DEMOS'),('DIOSESFIEL'),('DIP'),('DISC'),('DISCOVERER_ADMIN'),('DNA'),('DOM'),('DPP'),('DSGATEWAY'),('DSL'),('DSSYS'),('DV5800'),('D_SYSPW'),('D_SYSTPW'),('DaBobo2000'),('Daewuu'),('Dallas182'),('Dallas32'),('Dallas41'),('Damir888'),('Danielle1'),('Danilo1991'),('Dannysuh19499'),('Danthe1man'),('Dargo123'),('DarkerThanBlack'),('Darklord123'),('Dattols91'),('Daytec'),('Dblier454'),('Dboyblue02'),('Dcc83xrd'),('DeathNote2'),('Deepak'),('Delco1979'),('Delldell12'),('Delyreous1'),('Denise18'),('Dennis12'),('Denny008'),('Derekjeter2'),('Destruction0'),('Deyesh80'),('Diablo12'),('Dimitrios2016'),('Dinesh'),('Disturbed1'),('Dlakiss'),('Dmdavil0'),('Dnmdaman123'),('Dogattack1'),('Donum999'),('Doreen75'),('Dottie123'),('Dragon202'),('Dragonball1'),('Drgedog'),('Drogba1991'),('Ducati02'),('Dudley63'),('Durham28'),('Dv1296dv'),('EAA'),('EAM'),('EC'),('ECX'),('EDR'),('EGO'),('EJSADMIN'),('EMP'),('EM_MONITOR'),('ENG'),('ENI'),('ENkimloi87'),('ESTORE'),('EVENT'),('EVM'),('EXFSYS'),('Egenskap1'),('EhKoh'),('Einekleinemaus7'),('Eishtmo123'),('El908301'),('Elieelie1'),('Elijah2014'),('Ell42014'),('Emerson1'),('End User'),('Erihau123'),('Erindale30'),('Ew1fresh'),('Exabyte'),('Exigent'),('FA'),('FAX'),('FAXUSER'),('FAXWORKS'),('FEM'),('FIELD'),('FIELD.SUPPORT'),('FII'),('FLM'),('FND'),('FNDPUB'),('FOOBAR'),('FORSE'),('FPA'),('FPT'),('FQRGCS'),('FRM'),('FTE'),('FTP'),('FUN'),('FV'),('Fact4EMC'),('Falcons12'),('Falcons1986'),('Farango01'),('Ferrari1'),('Fiery.1'),('Filip2003'),('Fireport'),('Flameon59'),('Flapjack32'),('Florence0'),('Football1771'),('Football49'),('Football56'),('Forestry3'),('Forever1'),('Foster2004'),('Foxio2002'),('Frandy89'),('Freebee70'),('Fremont1'),('Fresh2def'),('Friday998'),('Frittenfett23'),('Frogger01'),('Frostmourne95'),('Fuddman123'),('FuzzBuzz01'),('G0ldeneye'),('G2721987'),('GCS'),('GHG'),('GL'),('GMA'),('GMD'),('GME'),('GMF'),('GMI'),('GML'),('GMO'),('GMP'),('GMS'),('GPFD'),('GPLD'),('GR'),('GUESTGUE'),('GUESTGUEST'),('GWrv'),('Gadegaard1'),('Gamefreak69'),('Gamefreek1'),('Gamer1234'),('Ganda2010'),('Ganesh'),('Garfield17'),('Gaurav'),('Gayathri'),('Gazelem1804'),('Geardog'),('Geckoman5'),('Gemmablue1'),('Genesis128'),('Genkides1'),('Germania4405'),('Giabella2012'),('Giants44'),('Gilang1409'),('Ginny123'),('Glasgow1996'),('GlobalAdmin'),('Gnusmas1'),('Gold1512'),('Good4you'),('Google101'),('Google123'),('Grabski72'),('Grandma123'),('Groupd'),('Gshock101'),('Gunmaster7'),('Gutter11'),('HCPARK'),('HELGA-S'),('HEWITT RAND'),('HLT'),('HLW'),('HOST'),('HP'),('HPDESK'),('HPLASER'),('HPOFFICE'),('HPOFFICE DATA'),('HPONLY'),('HPP187'),('HPP187 SYS'),('HPP189'),('HPP196'),('HPWORD PUB'),('HR'),('HRI'),('HXC'),('HXT'),('Halo3odst'),('HammarbY97'),('Handball1'),('Hannover96'),('Hansol123'),('Hanuman'),('Har12ry7'),('Hariom'),('Harper1884'),('Harsha'),('Hearts1874'),('Heathfield2015'),('Hejmeddig123'),('Hello6748'),('Helpdesk'),('Hghggh78'),('Hh014211'),('Hoangtien123'),('Hockey666'),('Hookah123'),('Horred12'),('Huskies1'),('Hussain123'),('HvWDuBjX'),('Hyrule11'),('IA'),('IBA'),('IBC'),('IBE'),('IBM'),('IBP'),('IBU'),('IBW'),('IBY'),('ICX'),('IEB'),('IEC'),('IEM'),('IEO'),('IES'),('IEU'),('IEX'),('IGC'),('IGF'),('IGI'),('IGS'),('IGW'),('ILMI'),('IMAGEUSER'),('IMC'),('IMEDIA'),('IMT'),('INGRES'),('INL'),('INSTANCE'),('INTX3'),('INV'),('INVALID'),('IP'),('IPA'),('IPD'),('IPM'),('ISC'),('ISPMODE'),('IS_$hostname'),('ITA'),('ITF3000'),('ITG'),('IZU'),('Iamacowboy1'),('Icarium1988'),('Iceland1'),('Ilikegames1'),('IloveGuns133'),('Iluilu68'),('Imadome123'),('ImageFolio'),('Imagine1'),('Immergruen1412'),('ImmjieSa13'),('Intel'),('Ipittydafoo1'),('Italia12'),('J1moW0cp'),('JA'),('JDE'),('JE'),('JETSPEED'),('JG'),('JL'),('JMF'),('JMUSER'),('JTF'),('JTI'),('JTM'),('JTS'),('JVfpBXm'),('Jackal09'),('Jacob2005'),('Jacob2105'),('Jadelee5'),('Jakethesnake12'),('Jakobritchea95'),('Jamespaul0506'),('Jamuel1205'),('Janitza'),('JasPer403421'),('Jesus777'),('Jewish11'),('Jin19850911'),('Joanne02'),('Jobro500'),('Joelstav1'),('Johannes11'),('Jokita12'),('Jordan23'),('Joseph2001'),('Josephena2'),('Joshua0930'),('Jpc319197'),('Jsky8427'),('JuanMata10'),('Julmat17'),('Jump1009'),('June272011'),('Juninho7'),('Justice123'),('Juventini08'),('Jw04251997'),('K3502tip'),('KEYSCAN')
+,('Kahl4ever'),('Kaneda2298'),('Karthik'),('Kassanova1'),('Keijo100'),('Kelley21'),('KenKen13'),('Kevin1011'),('Khushi'),('Kibbles2'),('Kickflip1'),('Killerv1l'),('Killyou6198'),('Kingjayback1'),('Kipper12'),('Klavier0'),('Klokdeth1'),('Komel123lol'),('Kottonmouth1'),('Krishna'),('Kusc0915'),('Kuuipo55'),('Kyra1Cole2'),('L2LDEMO'),('LARA2006'),('LASER'),('LASERWRITER'),('LBACSYS'),('LCS pwd 03'),('LINK'),('LNS'),('LOTUS'),('LR-ISDN'),('Lakshmi'),('Lalala77'),('Lamborghini1'),('Last 4 digits of VIN'),('LazyHazy1'),('LdapPassword_1'),('Lealuka12'),('Leanne21'),('Lemonade20'),('Lena2013'),('Lestat123'),('Lextasy1'),('Liebert'),('Lili2012'),('Lillord1'),('Lilman2109'),('Lincoln1'),('Linerider12'),('Lishuo123'),('Lizzie13'),('Logitech1'),('Lolcheses1'),('Lolwut22'),('London777'),('Louis007'),('Lounaj83'),('Luderw9701'),('Luis5847'),('M00nshine'),('MAIL'),('MAILER'),('MAINT'),('MANAGER.SYS'),('MBIU0'),('MBMANAGER'),('MBWATCH'),('MCUrv'),('MCUser1'),('MDDATA'),('MDDEMO'),('MDSYS'),('MFG'),('MGDSYS'),('MGR'),('MGR.SYS'),('MGWUSER'),('MIGRATE'),('MMMaggie'),('MMO2'),('MOREAU'),('MPE'),('MRP'),('MSC'),('MSD'),('MSHOME'),('MSO'),('MSR'),('MST'),('MServer'),('MTH'),('MTRPW'),('MTSSYS'),('MTS_PASSWORD'),('MTYSYS'),('MULTIMEDIA'),('MUMBLEFRATZ'),('MWA'),('MXAGENT'),('Madara30082001'),('MagiMFP'),('Mahesh'),('Mail2027'),('Malinmv04'),('Mamamia123'),('Mammy021'),('Mamsen123'),('Manish'),('Manisha'),('Manman11'),('Manuel2003'),('Manutd07'),('Manutd86'),('Manzoor1'),('MaprCheM'),('Maria1970'),('Marie1974'),('Marina01'),('Marshall5599'),('Martina0'),('Martinique1'),('Marty101'),('Masonic-2309'),('Mat13579'),('Math16mars'),('Matt9595'),('Matthew1006'),('Mattman1'),('Maxx261280'),('Md!aPrtal'),('Megadeth1'),('Megamanx8'),('Megaparol'),('Megatron11'),('Melkorka44'),('Meman850'),('Menara'),('Merrill10'),('Metal123'),('Meteor1992'),('Mexico08'),('Michael1'),('Midnight252'),('Mightykobe7414'),('Mikemike007'),('Milad2001'),('Millie1996'),('Milsemn64'),('MiniAP'),('Mithrandir311'),('Mnanaszko1'),('Modlin9789'),('Mohammed_1'),('Mondidi1er'),('Moneyjd23'),('Monkey52'),('Monster15'),('Monster55'),('Montymax7'),('Morgan415'),('Morical987'),('Motherboard10'),('Movingup8'),('Mrfixit0'),('MuZhlo9n%8!G'),('Mua''dib'),('Muchalu922984'),('Muffins1'),('Muse!Admin'),('Musi%1921'),('Musii%1921'),('Mypasswordis12'),('Myspace1'),('N00bslayer'),('N1cholas'),('NAMES'),('NAU'),('NETBASE'),('NETCON'),('NETFRAME'),('NETMGR'),('NETNONPRIV'),('NETPRIV'),('NETSERVER'),('NEWINGRES'),('NEWS'),('NEpatriots12'),('NF'),('NFI'),('NICONEX'),('NONPRIV'),('NULL'),('Naji1979'),('Nantim14'),('Nantucket2'),('Nascar57'),('Naveen'),('Naziright1'),('NeXT'),('Nelson13'),('Neminemi1'),('NetCache'),('NetICs'),('NetSeq'),('NetSurvibox'),('NetVCR'),('Never4get'),('Nextel007'),('Niall777'),('Nick1234'),('NickCastro123'),('Nickutra1'),('Nicole196'),('Nikhil'),('Nikita2004'),('No'),('Nolimits4me'),('Nonos93500'),('Noob4life'),('Number1son'),('Nyjets26'),('OAS_PUBLIC'),('OCITEST'),('OCM_3XP1R3D'),('OCS'),('ODM'),('ODSCOMMON'),('OE'),('OEMADM'),('OEMREP'),('OEM_TEMP'),('OIJ05hhb'),('OKB'),('OKC'),('OKE'),('OKI'),('OKL'),('OKO'),('OKR'),('OKS'),('OKX'),('OLAPDBA'),('OLAPSYS'),('ONT'),('OO'),('OP.OPERATOR'),('OPENSPIRIT'),('OPERATIONS'),('OPERATNS'),('OPERVAX'),('OPI'),('ORACLE_OCM'),('ORAREGSYS'),('ORASSO'),('ORDDATA'),('ORDPLUGINS'),('ORDSYS'),('OSM'),('OSP22'),('OTA'),('OUTLN'),('OWA'),('OWA_PUBLIC'),('OWBSYS'),('OWNER'),('OZF'),('OZP'),('OZS'),('Oakham97'),('Oblivion1'),('OcPOOok'),('Oddjob12'),('Odenton1'),('Ohio1234'),('OkiLAN'),('Omcs1129'),('Omni'),('Opaenoma1'),('Oper'),('Ordeni31'),('Oregon15'),('Oreo2301'),('Oscar3053'),('Oscar930117'),('Ourladies1983'),('Owerty!'),('Owerty#'),('Owerty$'),('Owerty%'),('Owerty&'),('Owerty*'),('Owerty0'),('Owerty1'),('Owerty2'),('Owerty3'),('Owerty4'),('Owerty5'),('Owerty6'),('Owerty7'),('Owerty8'),('Owerty9'),('Owerty?'),('Owerty@'),('Owerty^'),('Ozzi1man'),('P3294z4h'),('P@$$wrd'),('P@55w0rd!'),('P@sswrd'),('PASSW0RD'),('PBX'),('PDP11'),('PDP8'),('PE#GZPTZMSE'),('PERFSTAT'),('PFT'),('PIZZA123'),('PJI'),('PJM'),('PLEX'),('PM'),('PMI'),('PN'),('PO'),('PO7'),('PO8'),('POA'),('POM'),('PON'),('PORTAL30'),('PORTAL30_DEMO'),('PORTAL30_PUBLIC'),('PORTAL30_SSO'),('PORTAL30_SSO_PS'),('PORTAL30_SSO_PUBLIC'),('PORTAL31'),('POS'),('POST'),('POSTMASTER'),('POWERCARTUSER'),('PRIMARY'),('PRINT'),('PRIV'),('PRODCICS'),('PRODDTA'),('PROG'),('PRP'),('PRat'),('PSA'),('PSB'),('PSP'),('PUB'),('PUBSUB'),('PUBSUB1'),('PV'),('Pa$$wrd'),('Pace2014'),('Palindrome'),('Panchovanilla1'),('Pandasare1'),('Pandro3k'),('Pankaj'),('Panopticon83'),('Papawopper1'),('Parsons72'),('PartickThistle0'),('Pass@'),('Password2303'),('Patate77'),('Patrick6'),('Payamps0922'),('Pedro1995'),('Pengpeng1'),('Pepperoni1'),('Petsrock4'),('Phantom1'),('Pierre71'),('Pigeon23'),('Pikito01'),('Pizzas12'),('Ploxxer1'),('PlsChgMe!'),('Plycem0102'),('Podpod10'),('Pokemon09'),('Pokey203'),('Politie4'),('PolniyPizdec'),('Polrty'),('Poonam'),('Poopface12'),('Popcorn354'),('Portedehal43d'),('Portland02'),('Posterie'),('Potter94'),('Ppenguinzz33'),('PracticeUser'),('Pradeep'),('Prakash'),('Prasad'),('Prashant'),('Praveen'),('Primetime1'),('Princess1'),('Prindle1'),('Priyanka'),('Professo98'),('Protector'),('Punchdrunk1'),('Punisher82'),('Pyr0maniac'),('Pyromancie1'),('Q54arwms'),('QA'),('QDBA'),('QDI'),('QNX'),('QOT'),('QP'),('QPR'),('QRM'),('QS'),('QSRV'),('QS_ADM'),('QS_CB'),('QS_CBADM'),('QS_CS'),('QS_ES'),('QS_OS'),('QS_WS'),('Qazwsx09'),('Qazwsxedc99'),('R0bin1978'),('R1QTPS'),('RAV'),('RE'),('REGO'),('REMOTE'),('REPADMIN'),('REPORT'),('REP_OWNER'),('RG'),('RHX'),('RIP000'),('RJE'),('RLA'),('RLM'),('RM'),('RMAIL'),('RMAN'),('ROBELLE'),('ROOT500'),('RPSsql'),('RRS'),('RSAAppliance'),('RSX'),('Ra123412'),('Racecar13'),('Rad1at0r'),('Rahul'),('Rainbow76'),('Rajesh'),('Rajkumar'),('Rakesh'),('Ramesh'),('RandyMoss81'),('Rashmi'),('Raynor2002'),('Read5259'),('Realsocal123'),('Record12'),('RedOctober17'),('Reddog77'),('Redman11'),('Redwings4'),('Refresh1'),('Relisys6'),('Revenge123'),('Richard1'),('Riley2015'),('Rileydog1'),('Rjh232ca'),('RoVer123'),('Rodopi'),('Roflcopter1'),('Rog6241464'),('Rolynde7'),('Rookie12'),('Rosebowl4138'),('Roxybuster09'),('Royalty9'),('Rugerp95'),('Ruizhenzhang1'),('Runescape1'),('Runner12'),('Ryan1967'),('Rygbec13'),('S6aVVNwJ'),('SABRE'),('SAP'),('SAPR3'),('SDOS_ICSAP'),('SDsu1314'),('SECAdmin'),('SECDEMO'),('SECONDARY'),('SECRET123'),('SENTINEL'),('SER'),('SERVICECONSUMER1'),('SH'),('SHELVES'),('SITEMINDER'),('SI_INFORMTN_SCHEMA'),('SKIFFY'),('SKY_FOX'),('SLIDEPW'),('SMDR'),('SPATIAL_CSW_ADMIN_USR'),('SPATIAL_WFS_ADMIN_USR'),('SQL'),('SSA'),('SSP'),('STARTER'),('STEEL'),('STRAT_PASSWD'),('SUPERSECRET'),('SWITCHES_SW'),('SWPRO'),('SWUSER'),('SW_AWARD'),('SYMPA'),('SYS'),('SYS1'),('SYSA'),('SYSMAINT'),('SYSTEST'),('SYSTEST_CLIG'),('SY_MB'),('SZYX'),('SZkQcCTwY'),('Sabara12'),('Sachin'),('Safeholes11'),('Saints2010'),('Sairam'),('Salocin14'),('Sam19950107'),('Sample'),('Samsung1'),('Samsunghi92'),('Sandberg1405'),('Sandeep'),('Sandhya'),('Sandman1015'),('Sanhain0302'),('Sani2579'),('Sanjay'),('Santiago1'),('Santosh'),('Sc00bydoo'),('Scarlett1'),('Scooby212'),('Se3yxRy4'),('Sealion1'),('SecurityMaster'),('Sephiroth3'),('Serv4EMC'),('Seveball12'),('Sextan88'),('Shakantaj1'),('Shaojuntan01'),('Shoemakb136'),('Shotgun1'),('Shutupman1'),('Silitkebo2'),('SilkCentral!'),('Simon1984'),('Simran'),('Siriwan5'),('Skadouch3'),('Skag1t22'),('Skagen01'),('Skate12345'),('Skeeter19'),('Slmmsk25'),('Sm1l1ng18'),('Smiley145'),('Smokevin123'),('Snazbot97'),('Sniperviper1'),('SnuFG5'),('Soccer03'),('Soccerhead1'),('Sojdlgaljg'),('Somville34'),('Sonata305'),('Souleater123'),('Southerland007'),('Sp131313'),('SpIp'),('Spacve'),('Spanky69'),('Spartan117'),('Speedlink1'),('Spiderman123'),('Spookje1'),('Starwars10'),('Status'),('Steel1190'),('Steelers17'),('Steelers43'),('Stinker89'),('Strawhat1'),('Stygian01'),('Suikoden108'),('Summer2005'),('Sunny'),('Sunshine1'),('Supereag1es1976'),('Superman1999'),('Superman24'),('Suresh'),('Susanne1000'),('Sweety'),('Swimmer4'),('Sxyz'),('Symbol'),('Syracusa7'),('Sysop'),('T1g3rW00d5'),('T4mbunan'),('TAHITI'),('TANDBERG'),('TCH'),('TDOS_ICSAP'),('TELEDEMO'),('TELESUP'),('TENmanUFactOryPOWER'),('TESTPILOT'),('TJM'),('TLS pwd 03'),('TOAD'),('TOPBUTTON'),('TRACE'),('TSDEV'),('TSEUG'),('TSUSER'),('TT37820ellipsis'),('TTPTHA'),('TURBINE'),('Taco1122'),('TakamineG3'),('Talkingdeath625'),('Tanglewood29'),('Tangmere1'),('Tarakanita25'),('Tarheels23'),('Tarquinjock1'),('Tatertot1'),('TeamFortress2'),('Technology98'),('Tekken45'),('Telechargement'),('Telecom'),('Telefonica1'),('TempPassWord'),('Templars1995'),('Tennis900'),('Terence02'),('Texas1993'),('Thanks121'),('TheEnd05'),('Thematulaklives1'),('Thesoup1'),('Thong6612'),('Thongthong4'),('Tiggercutie11'),('Tinkle'),('Tiny'),('Tissekatt1'),('TnkMkVX'),('Trampoline11'),('Trbo3801'),('Trintech'),('Triplane7'),('TrippLite'),('Trisou123'),('Tsukasa888'),('Tumsr1ws'),('TzqF'),('U9grd6oV'),('UETP'),('UI-PSWD-01'),('UI-PSWD-02'),('UQMed123'),('USERP'),('USER_TEMPLATE'),('UTLESTAT'),('Ufa'),('Ultimate95'),('Unidesk1'),('UsdopaA'),('VAX'),('VCSRV'),('VEA'),('VEH'),('VESOFT'),('VIDEO USER'),('VIF_DEV_PWD'),('VIRUSER'),('VMS'),('VQsaBLPzLa'),('VRR1'),('VTAM'),('VTcc2014'),('VWTR5Mlo'),('Vador2002'),('Val3ncia'),('Vextrex'),('Viaopalo3'),('Vin$ight'),('Vincent22'),('Visbak123'),('Vishal'),('Voetbal213'),('Voyager7'),('VutRa4aW'),('Vvosges_88'),('WANGTEK'),('WEBCAL01'),('WEBDB'),('WEBREAD'),('WINDOWS_PASSTHRU'),('WINSABRE'),('WIP'),('WKSYS'),('WLAN_AP'),('WMS'),('WMSYS'),('WOOD'),('WORD'),('WPS'),('WSH'),('WSM'),('WWWUSER'),('WaUbvOQ'),('Wallflower17'),('Warhammer1'),('Warriors7'),('Warworm0'),('Watts103'),('WebBoard'),('Webber04'),('Wenatchee5036'),('Were1234'),('WhatThat170'),('Wizard007'),('WtXnalfW'),('WtnalfW'),('X#1833'),('X85www1985'),('XBLhInTBw'),('XDO'),('XDP'),('XLA'),('XLE'),('XLSERVER'),('XLUymMMJ'),('XNB'),('XNC'),('XNI'),('XNM'),('XNP'),('XNS'),('XPRT'),('XTR'),('Xanadu34'),('Y2351925'),('YAgjecc'),('YES'),('YY'),('YfDbUfNjH'),('Youandme9'),('Ytcoop5137'),('Yuuichi21'),('ZAAADA'),('ZFA'),('ZPB'),('ZSA'),('ZX'),('Zambia13'),('Zarinana123'),('Zas21345'),('Zenith'),('Zy900522'),('[^_^]'),('_Cisco'),('a00000'),('a000000'),('a11111'),('a111111'),('a1111111'),('a112233'),('a121212'),('a123123'),('a123321'),('a123456a'),('a1b2c3'),('a1b2c3d4'),('a1b2c3d4e5'),('a1l2e3c4'),('a1s2d3'),('a1s2d3f4'),('a1s2d3f4g5'),('a23456'),('a654321'),('a666666'),('a801016'),('a838hfiD'),('a987654321'),('aLLy'),('aPAf'),('aa123123'),('aaa111'),('aaa123'),('aaa123123'),('aaa123456'),('aaaa1111'),('aaaaa1'),('aaaaaa1'),('aaaaaaa1'),('aaaaaaaaa1'),('aaabbb'),('aaabbb2'),('aaasss'),('aabbcc'),('aaliyah'),('aaliyah1'),('aammii'),('aardvark'),('aaron'),('abby'),('abcde'),('abcdef'),('abcdefg'),('abcdefgh'),('abcdefghij'),('abdullah'),('aberdeen'),('abgrtyu'),('abhishek'),('abigail'),('abparker1'),('abracadabra'),('abraham'),('abrakadabra'),('abxcll284yA'),('acc'),('acc0untant'),('access'),('accord'),('account'),('accounting'),('ace'),('acer'),('acft1tm1vb'),('acmilan'),('action'),('acuario'),('ad210679'),('adam'),('adaptec'),('addison'),('adelaide'),('adelina'),('adeline'),('adfexc'),('adgjmp'),('adgjmptw'),('adidas'),('adm'),('admin000'),('admin256'),('admin_1'),('adminadmin123'),('administrator'),('adminpass'),('adminpwd'),('adminttd'),('admn'),('admpw'),('adrian'),('adriana'),('adriano'),('adrien'),('adsl1234'),('adslolitec'),('adslroot'),('adtran'),('advcomm500349'),('adventure'),('aerosmith'),('aezakmi'),('africa'),('agent'),('agnieszka'),('agosto'),('agustin'),('ahetzip8'),('ahmed'),('ahov'),('aiden'),('aikido'),('airborne'),('airforce'),('airplane'),('ajroot01'),('akatsuki'),('akopa'),('akopian123'),('alabama'),('alaska'),('albatros'),('albert'),('alberto'),('albina'),('ale'),('alegria'),('alejandra'),('alejandro'),('aleksandr'),('aleksandra'),('aleksey'),('alenka'),('alessandra'),('alessandro'),('alessia'),('alessio'),('alex'),('alexa'),('alexalex'),('alexander'),('alexander9'),('alexandr'),('alexandra'),('alexandre'),('alexandria'),('alexandru'),('alexia'),('alexis'),('alfarome'),('alfaromeo'),('alfonso'),('alfred'),('alfredo'),('algerie'),('ali'),('aliali'),('alibaba'),('alice'),('alicia'),('alien'),('aliens'),('alina'),('alinka'),('alisha'),('alison'),('alladin'),('allah'),('allen'),('allie'),('allison'),('allone'),('allot'),('allstar'),('almighty'),('almond'),('alondra'),('alonso'),('alpha$'),('alpha%'),('alpha&'),('alpha*'),('alpha?'),('alpha@'),('alpha^'),('alphacom'),('alpine'),('alsomali4'),('alucard'),('alvaro'),('alvrin1992'),('always'),('alyssa'),('amadeus'),('amalia')
+,('amanda'),('amandine'),('amarillo'),('amateur'),('amazing'),('amazon'),('amber'),('ambitious108'),('amelia'),('amelie'),('america'),('american'),('amerika'),('amigas'),('amigos'),('amigosw1'),('amistad'),('amor'),('amorcito'),('amore'),('amoremio'),('amores'),('amormio'),('amour'),('amoure'),('amours'),('amsterdam'),('amy'),('ana'),('anaconda'),('anakin'),('anamaria'),('ananas'),('anandua123'),('anarchy'),('anastasia'),('anastasia10'),('anastasiya'),('anderson'),('andre'),('andrea'),('andreas'),('andreea'),('andrei'),('andrej'),('andres'),('andrew'),('andrey'),('andromeda'),('andy'),('angel'),('angela'),('angelbaby'),('angeles'),('angelica'),('angelika'),('angelina'),('angeline'),('angelique'),('angelita'),('angelito'),('angelo'),('angels'),('angelus'),('angie'),('anhyeuem'),('anicust'),('animal'),('animals'),('anime'),('animerocks3'),('anita'),('anjing'),('ankara'),('anna'),('anna0000'),('annabelle'),('annalisa'),('annamaria'),('anne'),('annette'),('annie'),('anon'),('anon2541'),('anonymous'),('ansosa03'),('answer'),('antares'),('anthony'),('antoine'),('anton'),('antonella'),('antonia'),('antonio'),('antony'),('anubis'),('any'),('any@'),('anything'),('aobo'),('aol'),('apache'),('aparker'),('apocalypse1'),('apollo'),('app!3'),('app!e'),('app13'),('app1e'),('appi3'),('appie'),('appl3'),('apple'),('apple560'),('applepie'),('apples'),('app|3'),('app|e'),('april'),('aprilia'),('aptx'),('aquarius'),('aqwzsx'),('aragorn'),('aras1999'),('archer'),('archie'),('architect'),('area'),('arena007'),('aresares12'),('argentina'),('ariana'),('ariane'),('arianna'),('ariel'),('arizona'),('arlene'),('arma12898'),('armagedon'),('armando'),('armani'),('armstrong'),('arnaud'),('arnold'),('arschloch'),('arsenal'),('arsenal93'),('artem'),('artemis'),('artemka'),('arthur'),('articon'),('artist'),('artur'),('arturo'),('asasas'),('ascend'),('asdasdasd'),('asddsa'),('asdf159357'),('asdfds'),('asdffdsa'),('asdfg'),('asdfghj'),('asdfghjk'),('asdfghjkl:'),('asdfghjkl;'),('asdfghjkl;&#;'),('asdfjkl:'),('asdfjkl;'),('asdrerpad'),('asecret'),('ash'),('ashlee'),('ashleigh'),('ashley'),('ashley!'),('ashton'),('asopydoo1'),('aspire'),('aspirine'),('asroma'),('ass'),('assasin'),('assass'),('assassin'),('asshole'),('asshole!'),('assman'),('asterix'),('astonvilla'),('astrid'),('at4400'),('atc123'),('atc456'),('atha7FUt'),('athena'),('atlanta'),('atlantis'),('atlars'),('atong1314'),('attack'),('attila'),('attitude'),('aubrey'),('auburn'),('audia'),('audrey'),('august'),('aurelie'),('aurelien'),('aurora'),('aurore'),('aussie'),('austin'),('australia'),('author'),('autocad'),('autumn'),('avalon'),('avatar'),('award.sw'),('award_?'),('award_ps'),('awesome'),('awesome101'),('awesome123'),('awful'),('awkward'),('awsome'),('ax400'),('axio'),('axis2'),('ayesha'),('azamat'),('azazaz'),('azerty'),('azertyu'),('azertyui'),('azertyuiop'),('azsxdc'),('azsxdcfv'),('aztnm'),('b43764376'),('b6875646'),('bYT0zuA5'),('baba1967'),('babatunde'),('babe'),('babies'),('baboon92'),('baby'),('babybaby'),('babyblue'),('babyboo'),('babyboy'),('babycakes'),('babydoll'),('babyface'),('babygurl'),('babyko'),('babylon'),('babylove'),('babyphat'),('bacardi'),('bacchus'),('backdoor'),('backspace'),('backuponly1'),('backuprestore1'),('bacon'),('badass'),('badbitch'),('badboy'),('badbug01'),('badg3r5'),('badger'),('badger65'),('badgirl'),('badminton'),('badoo'),('baffle46'),('bagabu'),('bagels01'),('bagira'),('bailey'),('bailout1'),('baker'),('balaji'),('balance'),('balla'),('baller'),('ballet'),('ballin'),('balls'),('bam'),('bambam'),('bambino'),('bamboo'),('banana$'),('banana%'),('banana&'),('banana*'),('banana?'),('banana@'),('banana^'),('banane'),('bandit'),('bangalore'),('bangbang'),('bangladesh'),('bankaccount$'),('bankaccount%'),('bankaccount&'),('bankaccount*'),('bankaccount?'),('bankaccount@'),('bankaccount^'),('banshee'),('baragon64'),('barbados'),('barbara'),('barbie'),('barcelona'),('barkley'),('barney'),('barney:'),('barsik'),('bartek'),('baseball$'),('baseball%'),('baseball&'),('baseball*'),('baseball?'),('baseball@'),('baseball^'),('baseballer123'),('basisk'),('basket'),('basketbal'),('basketball'),('bassman'),('bastard'),('batista'),('batman'),('batman1986'),('battle'),('battlefield'),('bautista'),('baxter'),('bayern'),('bball'),('bbbbbb'),('bbs'),('bciimpw'),('bcimpw'),('bcmspw'),('bcnaspw'),('bcpb'),('bd050111'),('beach'),('beaches'),('beagle'),('beaner'),('beanie'),('bear'),('bear0404'),('bear3876'),('bearbear'),('bears'),('bearshare'),('beast'),('beatles'),('beatrice'),('beatriz'),('beautiful'),('beauty'),('beaver'),('beavis'),('bebe'),('becca'),('beckham'),('becky'),('beer'),('beerbeer'),('beethoven'),('beetle'),('behappy'),('believe'),('belinda'),('bell9'),('bella'),('belle'),('belle4432'),('bellissima'),('beloved'),('ben'),('benben'),('bender'),('benfica'),('bengals'),('benito'),('benjamin'),('benji'),('bennett'),('bennour82'),('benny'),('benoit'),('benson'),('bentley'),('berlin'),('bernadette'),('bernard'),('bernardo'),('bernie'),('bertha'),('bertie'),('besiktas'),('bessie'),('best'),('bestfriend'),('bethany'),('better'),('betty'),('bettyboop'),('beverly'),('bewan'),('beyonce'),('bfdbfcbdcffeade'),('bhbirf'),('bhf'),('bianca'),('big'),('bigbang'),('bigben'),('bigbird'),('bigboss'),('bigboy'),('bigcock'),('bigdaddy'),('bigdick'),('bigdog'),('bigfoot'),('biggie'),('bighead'),('bigmac'),('bigman'),('bigmoney'),('bigpimpin'),('bigred'),('bigsexy'),('bigtits'),('bill'),('billabong'),('billie'),('billy'),('billybob'),('bin'),('bingo'),('bintang'),('bintec'),('biodata'),('biology'),('bionicle'),('biosstar'),('biostar'),('birago62'),('birdhouse751'),('birdie'),('birdman'),('birthday'),('biscuit'),('bishop'),('bismillah'),('bitch'),('bitch!'),('bitchass'),('bitches'),('bitchy'),('biteme'),('bjk'),('bklmbk'),('black'),('black1'),('black2007'),('blackberry'),('blackbird'),('blackcat'),('blackcoffee'),('blackdog'),('blackie'),('blackjack'),('blackman'),('blackops'),('blackrose'),('blacksheepwall'),('blackworld'),('blacky'),('blade'),('blade2012'),('blades'),('blah'),('blahblah'),('blake'),('blanca'),('blank'),('blaster'),('blaze'),('blazer'),('bleach'),('blender'),('blessed'),('blessing'),('blessings'),('blingbling'),('blink'),('blizzard'),('blobby29'),('blonde'),('blondes'),('blondie'),('blood'),('bloods'),('bloody'),('bloody85'),('blossom'),('blowjob'),('blowme'),('blue'),('blue0000ff'),('blueberry'),('bluebird'),('blueblue'),('blueeyes'),('bluefish'),('bluemoon'),('bluepw'),('bluesky'),('bmxlife'),('bo2thebo'),('bob'),('bobbie'),('bobbob'),('bobby'),('bobcat'),('bobmarley'),('bobo'),('bobobo'),('boca raton'),('bogart'),('bogdan'),('bollocks'),('bologna'),('bomber'),('bonbon'),('bond'),('bonehead'),('bones'),('bonethugs'),('bonheur'),('bonita'),('bonjour'),('bonjovi'),('bonnie'),('boo'),('boobear'),('boobie'),('boobies'),('booboo'),('boobs'),('booger'),('boogie'),('boogie123'),('bookmark'),('bookworm'),('boomboom'),('boomer'),('boots'),('booty'),('bordeaux'),('boricua'),('boris'),('borussia'),('bosco'),('boss'),('bossman'),('bossy'),('boston'),('boubou'),('bounty'),('bowling'),('bowwow'),('boxcar'),('boxer4life'),('boxing'),('boy'),('boyscout94'),('bozo'),('bozpjxmj1'),('bpel'),('bradford'),('bradley'),('brady'),('brandi'),('brandon'),('brandy'),('brasil'),('bratz'),('braveheart'),('braves'),('brayden'),('brazil'),('breanna'),('brenda'),('brendan'),('bretagne'),('brian'),('briana'),('brianna'),('briciola'),('bridget'),('bright'),('brightmail'),('brighton'),('brigitte'),('bristol'),('britney'),('britt'),('brittany'),('brittney'),('broadband'),('broadway'),('brocade1'),('broken'),('bronco'),('broncos'),('brooke'),('brooklyn'),('brooks'),('brother'),('brothers'),('brown'),('brownie'),('browns'),('browsepw'),('bruce'),('brucelee'),('bruins'),('bruno'),('brutus'),('bryan'),('bryant'),('bscirc'),('bsns1053'),('bsxpass'),('buali123'),('bubba'),('bubble'),('bubblegum'),('bubbles'),('bucket01'),('buckeye'),('buckeyes'),('budapest'),('buddha'),('buddy'),('buddy1227'),('buddyboy'),('budlight'),('budweiser'),('buffalo'),('buffy'),('bugger'),('bugsbunny'),('builtin'),('bulldog'),('bulldog28'),('bulldogs'),('bulldogs209'),('bullet'),('bulls'),('bullshit'),('bumblebee'),('bumv34Xv'),('bunnies'),('bunny'),('burger'),('burrito'),('burton'),('bushido'),('business'),('busted'),('buster'),('butch'),('butler'),('butt'),('butter'),('buttercup'),('butterfly'),('butthead'),('butthole'),('button'),('buttons'),('bw.com'),('by9nenR4'),('bzc278a1'),('c'),('c.ronaldo'),('ca989622'),('caballo'),('cabbage'),('cable-docsis'),('caca'),('cacadmin'),('cachorro'),('cactus'),('cadillac'),('caesar'),('caitlin'),('caleb'),('caliente'),('calif0rnia'),('california'),('calimero'),('calin2404'),('caline'),('callie'),('callofduty'),('callum'),('calvin'),('camaro'),('camaroz'),('cambiami'),('cambodia1'),('cambridge'),('camelot'),('camera'),('camero'),('cameron'),('camila'),('camilla'),('camille'),('camilo'),('campbell'),('canada'),('cancel'),('cancer'),('cancun'),('candice'),('candle'),('candy'),('candycane'),('candygirl'),('candyman'),('canela'),('cannabis'),('cannon'),('cantik'),('cantona'),('canyon'),('caonima'),('capassword'),('capoeira'),('capone'),('caprice'),('capricorn'),('capslock'),('captain'),('car'),('caramel'),('caramelo'),('carbon'),('carbon92'),('cardinal'),('cardinals'),('carebear'),('career'),('carina'),('carla'),('carlitos'),('carlos'),('carlotta'),('carmel'),('carmela'),('carmelo'),('carmen'),('carnage84'),('carol'),('carole'),('carolina'),('caroline'),('carolyn'),('carpediem'),('carrie'),('carrot'),('carson'),('carter'),('cartman'),('cartoon'),('carver2059'),('casablanca'),('casanova'),('cascade'),('casey'),('cashmoney'),('casino'),('casio123'),('caso2931'),('casper'),('cassandra'),('cassidy'),('cassie'),('cassie14me'),('castillo'),('castle'),('castro'),('cat'),('cat0dogs'),('catalina'),('catania'),('catarina'),('catcat'),('catch'),('catdog'),('caterina'),('catfish'),('catherine'),('cathy'),('cats'),('catwoman'),('cavalier'),('cavallo'),('cazzo'),('cazzone'),('cbr'),('cc'),('cccccc'),('ccrusr'),('cdjuly13'),('cdtnbr'),('cdtnkfyf'),('cecile'),('cecilia'),('cedric'),('celeron'),('celeste'),('celica'),('celina'),('celine'),('cellit'),('cellphone'),('celtic'),('celtics'),('center'),('central'),('cepetsugih'),('cephas69'),('cerise'),('cesar'),('cesxuf7r'),('cevthrb'),('cfitymrf'),('cga041190'),('cgadmin'),('cgfhnfr'),('cgy66quy'),('cha'),('chacha'),('champ'),('champagne'),('champion'),('chance'),('chandler'),('chandra'),('chanel'),('change'),('changeit'),('changeme'),('changeme!'),('changeme2'),('changeonfirstlogin'),('changethis'),('chantal'),('chaos'),('charger'),('chargers'),('charity'),('charlene'),('charles'),('charlet13'),('charley'),('charlie'),('charlie6179'),('charlotte'),('charly'),('charmed'),('chase'),('chatbooks'),('chaton'),('cheater'),('cheche'),('checkfs'),('checkfsys'),('checksys'),('cheer'),('cheese'),('cheese!'),('cheesecake'),('cheetah'),('chelsea'),('chelseafc'),('chemical'),('chemistry'),('chengyu1314'),('chenkl2416'),('cherie'),('cherokee'),('cherries'),('cherry'),('cheryl'),('chester'),('cheval'),('chevelle'),('chevrolet'),('chevy'),('chevys'),('chewy'),('cheyenne'),('chiara'),('chicago'),('chicca'),('chicco'),('chicco91'),('chichi'),('chicken'),('chicken!'),('chickens'),('chico'),('chihuahua'),('chikoo40'),('children'),('chillin'),('china'),('chinese'),('chino'),('chinpira0324'),('chipie'),('chipper'),('chiquita'),('chivas'),('chivas#'),('chloe'),('chocolat'),('chocolate'),('chocolate!'),('chopper'),('chosen'),('chouchou'),('choupette'),('chris'),('chrisb'),('chrisbrown'),('chrissy'),('christ'),('christelle'),('christian'),('christian1'),('christina'),('christine'),('christmas'),('christophe'),('christopher'),('christy'),('chronic'),('chubby'),('chuck'),('chucky'),('church'),('ciao'),('ciaociao'),('ciara'),('cic'),('cic!'),('ciccio'),('cimbom'),('cinderella'),('cindy'),('cinema'),('cinnamon'),('cintaku'),('cior3652'),('citel'),('citroen'),('ciwuxe'),('cj:'),('cjkysirj'),('cjkywt'),('cjmasterinf'),('claire')
+,('clapham1'),('clara'),('clarence'),('clarinet'),('clarissa'),('class'),('classic'),('classof'),('claude'),('claudia'),('claudio'),('clayton'),('clement'),('clemson'),('cleopatra'),('cleveland'),('client'),('clifford'),('clinton'),('cloud'),('clover'),('clowns'),('cmaker'),('cme'),('cms500'),('cobra'),('cocacola'),('cock'),('coco'),('coco1234'),('cocoa'),('cocody88'),('coconut'),('cody'),('coffee'),('coffee66'),('cojones1'),('col1ma'),('coldplay'),('coleman'),('colleen'),('college'),('collin'),('collins'),('colocolo'),('colombia'),('colorado'),('colt'),('colton'),('colts'),('columbia'),('columbus'),('comcast'),('comcomcom'),('comeon'),('comfort'),('coming'),('commando'),('company'),('compaq'),('compton'),('computador'),('computer'),('computer2'),('concrete'),('condo'),('condor'),('conejo'),('conexant'),('confused'),('connect'),('conner'),('connie'),('connor'),('conrad'),('console'),('contact'),('contessa'),('contrasena'),('contraseña'),('control'),('converge'),('converse'),('cookie'),('cookiemons'),('cookies'),('cooking'),('cool'),('coolboy'),('coolcat'),('coolcool'),('cooldude'),('cooler'),('coolgirl'),('coolguy'),('coolio'),('coolkid'),('coolman'),('cooper'),('copper'),('corazon'),('cordoba'),('corecess'),('corey'),('corinne'),('corolla'),('corona'),('corrado'),('correct'),('corvette'),('cory2812'),('cosmo'),('cosmos'),('cotton'),('coucou'),('cougar'),('counter'),('counter33'),('country'),('couponSC'),('courage'),('courtney'),('cowboy'),('cowboys'),('cowgirl'),('coyote'),('cqpulRZ'),('cr0wmt 911'),('crack'),('cracker'),('crackhead'),('craft'),('craftpw'),('craig'),('crash'),('crazy'),('crazycat2'),('crazyone1'),('crazyu'),('cream'),('create'),('creation'),('creative'),('crepusculo'),('crevette'),('crf14958'),('crftpw'),('cricket'),('cricri'),('crimson'),('criplife'),('cristal'),('cristian'),('cristiano'),('cristina'),('cristo'),('crjhgbjy'),('crosby'),('crosby87'),('crossover3'),('cruzazul'),('cryptic1'),('crystal'),('cthutq'),('cubiche1'),('cubs'),('cucciola'),('cucciolo'),('cucciolone'),('cuddles'),('cumming'),('cumshot'),('cunt'),('cupcake'),('cupcakes'),('curtis'),('custpw'),('cute'),('cuteako'),('cutegirl'),('cutie'),('cutiepie'),('cxfcnmt'),('cynthia'),('czz'),('d'),('d.e.b.u.g'),('d1scovery'),('d3007009'),('dIWtgm'),('dZufqdN'),('dad'),('dadada'),('daddy'),('daddysgirl'),('dadmin'),('dadmin01'),('dadmin:dadmin01'),('daedalus'),('daemon'),('daewoo'),('daisy'),('dakides13'),('dakota'),('dalejr'),('dalila'),('dallas'),('dalton'),('damian'),('damien'),('damien08'),('damien33'),('damilola'),('damin'),('dan'),('dance'),('dancer'),('dancing'),('dandan'),('danger'),('dangerous'),('dani'),('danica'),('daniel'),('daniela'),('daniele'),('daniella'),('danielle'),('daniels'),('daniil'),('danila'),('danilo'),('danneman95'),('danny'),('dannyboy'),('dante'),('daphne'),('daredevil'),('darina'),('darius'),('dark'),('darkangel'),('darkness'),('darkside'),('darkstar'),('darlene'),('darling'),('darren'),('darren10'),('darwin'),('dating'),('daughter'),('dauphin'),('dave'),('david'),('davide'),('davids'),('davidson'),('davox'),('dawson'),('dayana'),('dayday'),('daytona'),('db2fenc1'),('db2inst1'),('db301192'),('dbase'),('dbpass'),('dbrnjh'),('dbrnjhbz'),('dcunited1'),('ddcdfbeecfe'),('dddd'),('dddddd'),('deadman'),('deadseed11'),('deanna'),('dearbook'),('death'),('deathnote'),('debbie'),('debora'),('deborah'),('december'),('dedewang'),('dee'),('deedee'),('deejay'),('deerhunter'),('default'),('default.password'),('defender'),('deftones'),('delete'),('delfin'),('delfino'),('dell'),('delphine'),('delpiero'),('delta'),('demo'),('demo123'),('demon'),('demonking6'),('demons'),('demos'),('denert378'),('denis'),('denise'),('deniska'),('dennis'),('dens8709'),('denver'),('derek'),('derhiir1'),('derrick'),('desert'),('deshone1'),('design'),('designer'),('desire'),('desiree'),('deska123'),('desmond'),('desperado'),('destiny'),('detmond'),('detroit'),('deutschland'),('dev'),('device'),('devil'),('devils'),('devin'),('devon'),('dexter'),('dfcbkbq'),('dfgFhgVGFh'),('dfkthbz'),('dfkthf'),('dfktynbyf'),('dfq132foc'),('dfvgbh'),('dharma'),('dhs3mt'),('dhs3pms'),('diablo'),('diag:danger'),('diamant'),('diamante'),('diamond'),('diamonds'),('diana'),('diane'),('dianne'),('diciembre'),('dick'),('dickhead'),('didier'),('diego'),('diesel'),('dieseldog7'),('dietcoke'),('digger'),('digimon'),('digital'),('dilbert'),('dillon'),('dima'),('dimitri'),('dimitri21'),('dimples'),('dinamo'),('dingdong'),('dinosaur'),('diosesamor'),('dipset'),('director'),('dirtbike'),('dirty'),('discover'),('discovery'),('disney'),('distrib0'),('disttech'),('disturbed'),('divine'),('dixie'),('djembe12'),('djil5089'),('djonet'),('dkflbckfd'),('dkflbr'),('dkflbvbh'),('dlWzzjS'),('dmitriy'),('dmr99'),('dn_04rjc'),('dni'),('dnnadmin'),('dnnhost'),('doberman'),('doctor'),('dodge'),('dodger'),('dodgers'),('dog'),('dogdog'),('doggie'),('doggy'),('doggy1234'),('dogs'),('dollar'),('dolly'),('dolores'),('dolphin'),('dolphin1'),('dolphins'),('domenico'),('domingo'),('dominic'),('dominican'),('dominik'),('dominika'),('dominique'),('domino'),('donald'),('donalrules10'),('dondon'),('donkey'),('donna'),('donnie'),('donovan'),('dontforget'),('dontget'),('doodle'),('doodoo'),('dookie'),('dookie22'),('doom6194'),('doraemon'),('dorian'),('dorothy'),('dortmund'),('dos'),('dottie'),('doudou'),('douglas'),('download'),('dpbk'),('dr.pepper'),('draadloos'),('dracula'),('dragon'),('dragon123'),('dragon99'),('dragonage5'),('dragonball'),('dragonballz'),('dragonfly'),('dragons'),('dragoon'),('dragoon777'),('drake'),('dream'),('dreamer'),('dreams'),('dreams5150'),('driver'),('drjynfrnt'),('drogba'),('drowssap'),('drpepper'),('drummer'),('drummond22'),('dsap8188'),('dt'),('dthjybrf'),('dublin'),('ducati'),('ducati900ss'),('duchess'),('duckie'),('ducky'),('dude'),('dudley'),('duke'),('duke1969'),('dumbass'),('duncan'),('dupont'),('durango'),('dustin'),('dusty'),('dutchess'),('dvst10n'),('dwade'),('dwayne'),('dwclolok560'),('dylan'),('dynasty'),('e'),('e250changeme'),('e500changeme'),('eadcbaabbeeffe'),('eagle'),('eagles'),('eagles55'),('eastside'),('easy'),('eatshit'),('ebony'),('ebp957123'),('ebr38a30'),('echo'),('eclipse'),('ecuador'),('eddie'),('eddyston3'),('edgar'),('edgware88'),('edison'),('eduard'),('eduardo'),('education'),('edward'),('eeeeee'),('eeyore'),('efmukl'),('eight'),('eighty80'),('eileen'),('einstein'),('ekaterina'),('elaine'),('eldorado'),('eleanor'),('electra'),('electric'),('electro'),('elefante'),('element'),('element18'),('elena'),('eleonora'),('elephant'),('eleven'),('elghamrawy35'),('elijah'),('elisa'),('elisabeth'),('elizabeth'),('ellen423'),('ellie'),('elliot'),('elliott'),('elmo'),('elodie'),('elsalvador'),('elvira'),('elvis'),('emachines'),('email'),('emanuel'),('emanuele'),('emerald'),('emerica'),('emerson'),('emilia'),('emiliano'),('emilie'),('emilio'),('emily'),('eminem'),('emma'),('emmanuel'),('emo'),('empire'),('energy'),('engage72'),('engineer'),('england'),('english'),('enhydra'),('enigma'),('enjoy'),('enquirypw'),('enrico'),('enrique'),('enter'),('enterprise'),('entropy'),('eomjbOBLLwbZeiKV'),('epicrouter'),('eragon'),('erbc59ch'),('ergc'),('eric'),('erica'),('ericka'),('ericsson'),('ericsson120'),('erika'),('ernest'),('ernesto'),('erotic'),('escape'),('escorpion'),('escort'),('esmeralda'),('esperanza'),('espoir'),('esteban'),('estefania'),('estelle'),('esther'),('estrela'),('estrella'),('estrellita'),('etas'),('eternal'),('eternity'),('ethan'),('etoile'),('etzor6ab'),('eugene'),('eunice'),('eureka'),('europa'),('europe'),('evanescence'),('evangelion'),('evann1910'),('evelyn'),('everest'),('evergreen'),('everton'),('everything'),('evgeniy'),('evite'),('evolution'),('excalibur'),('exen6553'),('exfsysss'),('exinda'),('exodus'),('expert'),('expert03'),('explorer'),('express'),('extendnet'),('extreme'),('f'),('f:'),('fabian'),('fabiana'),('fabien'),('fabienne'),('fabio'),('fabiola'),('fabregas'),('fabrice'),('fabrizio'),('fabulous'),('facebook'),('facebook5'),('factory'),('faggot'),('faisal'),('faisal20'),('faith'),('faithful'),('fake'),('faker'),('fal'),('falcon'),('falcons'),('fallen'),('fallout'),('fam'),('familia'),('famille'),('family'),('familyguy'),('familymacintosh'),('famous'),('fanfan'),('fantasia'),('fantastic'),('fantasy'),('farfalla'),('farida'),('farmer'),('fart'),('fashion'),('faster'),('fatass'),('fatboy'),('fatcat'),('fatcat23'),('fatgor01'),('father'),('fatima'),('fatman'),('fatty'),('favour'),('fcporto22'),('february'),('feder_'),('federica'),('federico'),('felicia'),('felicidad'),('felicidade'),('felipe'),('felix'),('fellow'),('fender'),('fenerbahce'),('ferari'),('ferdinand'),('ferferfer51'),('fergie'),('fernanda'),('fernandez'),('fernando'),('ferrari'),('ferrari11'),('ferret'),('ff0960078288'),('ffffff'),('fghtkm'),('fgtkmcby'),('fibranne'),('ficken'),('fiesta'),('figaro'),('fighter'),('fil2soie'),('filippo'),('filomena'),('finalfantasy'),('finance'),('finchLEYn3'),('findlay1'),('finger'),('fire'),('fire1317'),('fireball'),('firebird'),('firefly'),('firefox'),('fireman'),('firenze'),('firstsite'),('fish'),('fisher'),('fisher222'),('fisherman'),('fishes'),('fishing'),('fitness'),('fivranne'),('fkbyjxrf'),('fkm:'),('fktrcfylh'),('fktrcfylhf'),('fktrctq'),('fktyrf'),('flamengo'),('flames'),('flamingo'),('flash'),('flatron'),('fletcher'),('flipper'),('florence'),('florencia'),('flores'),('floreval'),('florian'),('florida'),('flower'),('flowers'),('fluffy'),('flyboy'),('flyers'),('flying'),('flying81'),('fondoom'),('foolproof'),('ford'),('fordf'),('forest'),('forever'),('forget'),('forgot'),('formula'),('forrest'),('fortuna'),('fortune'),('forzainter'),('forzamilan'),('forzaroma'),('fossil'),('foster'),('fountain'),('four'),('foxpass'),('foxracing25'),('foxtrot'),('fra'),('france'),('frances'),('francesca'),('francesco'),('francine'),('francis'),('francisca'),('francisco'),('franck'),('franco'),('francois'),('francy'),('frank'),('frankfort2'),('frankie'),('franklin'),('franky'),('fre'),('freak'),('freaky'),('freckles'),('fred'),('freddie'),('freddie2010'),('freddy'),('frederic'),('frederick'),('fredfred'),('free'),('freebird'),('freedom'),('freeman'),('freestyle'),('freeway'),('french'),('fresh'),('friars94'),('friday'),('friend'),('friends'),('friends!'),('friendsev'),('friendship'),('friendster'),('frog'),('frogger'),('froggy'),('front'),('frost626'),('frosty'),('ftball'),('fuck'),('fucked'),('fucker'),('fucker!'),('fuckers'),('fuckface'),('fuckff'),('fuckfuck'),('fucking'),('fuckit'),('fucklove'),('fuckme'),('fuckmylife'),('fuckoff'),('fuckoff!'),('fuckthis'),('fucku'),('fuckyou.'),('fuckyoubit'),('fuckyu'),('fullmoon'),('funkwerk'),('funky'),('funny'),('fusion'),('fussball'),('fussionr1981'),('futbol'),('future'),('fuzzy'),('fw'),('fxzZ'),('fxzZyer'),('fyfcnfcbz'),('fylhtq'),('fytxrf'),('fyutkbyf'),('g'),('g-unit'),('g6PJ'),('gabby'),('gabe82599'),('gabriel'),('gabriela'),('gabriele'),('gabriella'),('gabrielle'),('gagged'),('galatasaray'),('galaxy'),('galina'),('gamaleldeen1'),('gambit'),('gameboy'),('gamecube'),('gamefreak92'),('gameover'),('games'),('ganda'),('gandako'),('gandalf'),('ganesha'),('gangsta'),('gangster'),('gani1964'),('ganteng'),('garbage'),('garcia'),('garden'),('garfield'),('garrett'),('gaston'),('gateway'),('gatita'),('gatito'),('gator'),('gators'),('gavin'),('gay'),('gbpltw'),('gegcbr'),('geheim'),('gemini'),('geminis'),('gen1'),('gen2'),('general'),('genesis'),('genius'),('geoffrey'),('george'),('georgia'),('georgie'),('georgina'),('gerald'),('geraldine'),('gerard'),('gerardo'),('german'),('germany'),('geronimo'),('gerrard'),('gertrude'),('getmoney'),('gfhjkm'),('ggdaseuaimhrke'),('gggg'),('gggggg'),('ghbdtn'),('ghbdtnbr'),('ghblehjr'),('ghbywtccf'),('ghetto'),('ghjcnj'),('ghjcnjnfr'),('ghost'),('ghostrider'),('giacomo'),('gianluca'),('gianna'),('gianni'),('giants'),('gibson'),('giggles'),('gilbert'),('gilles'),('gillian'),('ginger'),('ginger1971'),('giorgia'),('giorgio'),('giovanna'),('giovanni'),('giraffe'),('girasole'),('girl'),('girlfriend')
+,('girls'),('giulia'),('giuseppe'),('gizmo'),('gjaft756'),('gjkbyf'),('gladiator'),('gladys'),('glamour'),('glasgow'),('gldfzPY'),('glftpd'),('glitter'),('global'),('gloria'),('glow2006'),('gnos'),('gnumpf'),('goblin'),('goblue'),('god'),('godbless'),('goddess'),('godfather'),('godis'),('godisgood'),('godisgreat'),('godislove'),('godlike101'),('godofwar'),('godsmack'),('godzilla'),('goforit'),('gogogo'),('gohell'),('goldberg'),('golden'),('goldfish'),('goldie'),('golf'),('golfcourse'),('golfer'),('golfing'),('gonzales'),('gonzalez'),('gonzalo'),('goober'),('good'),('goodboy'),('goodbye'),('goodgirl'),('goodlife'),('goodluck'),('goodman'),('goodness'),('goofy'),('google'),('google.com'),('goose'),('gopher'),('gordo'),('gordon'),('gordon24'),('gorgeous'),('gorilla'),('gotcha'),('gothic'),('gothic34'),('gotmilk'),('gotohell'),('gr4ndth3ft'),('gra00145'),('grace'),('gracie'),('graham'),('granada'),('grandkids'),('grandma'),('grandpa'),('granny'),('grapes'),('gratis'),('great'),('greece'),('green'),('greenbay'),('greenday'),('gregor'),('gregory'),('gremlin'),('grenade3'),('grenouille'),('gretchen'),('gribouille'),('griffin'),('gringo'),('grizzly'),('groovy'),('grover'),('grumpy'),('grundbergf611'),('gsxr'),('gsxr1000'),('gt3001689'),('guadalupe'),('guardian'),('guardone'),('guatemala'),('gubed'),('gucci'),('guerrero'),('guest'),('guest1'),('guigui'),('guilherme'),('guillaume'),('guillermo'),('guinness'),('guitar'),('guitar99'),('guitarhero15'),('guitarra'),('gundam'),('gunit'),('gunner'),('gunners'),('gustavo'),('gvt12345'),('gwerty'),('gymnast'),('gymnastics'),('gzxix1a5'),('h'),('h0ledriller'),('h179350'),('h6BB'),('habbo123'),('habibi'),('hacker'),('hackmexD94'),('hagpolm1'),('haha'),('hahaha'),('hahahaha'),('hailey'),('hakero12k'),('hakr'),('haley'),('halflife'),('hallo'),('halloween'),('halo'),('halt'),('hamburg'),('hamilton'),('hamish'),('hamlet'),('hammer'),('hammer11'),('hammers'),('hamster'),('hanakimi'),('handball'),('handsome'),('hanna'),('hannah'),('hanne123'),('hanner2105'),('hannibal'),('hanson'),('haplo7775'),('happiness'),('happy'),('happyday'),('happydays'),('hardcore'),('hardrock'),('harley'),('harmony'),('harold'),('harriet'),('harris'),('harrison'),('harrison1126'),('harry'),('harrypotte'),('harrypotter'),('hartnet4'),('harvey'),('hassan'),('hater'),('haters'),('hawaii'),('hawk201'),('hawkeye'),('hayabusa'),('hayden'),('hayley'),('healed35'),('health'),('heart'),('heartbreak'),('hearts'),('heather'),('heaven'),('heckfy'),('hector'),('hedgehog'),('hedgehog31'),('hehehe'),('heidi'),('heineken'),('heinrich99'),('hejhej'),('hejsan'),('helen'),('helena'),('helene'),('hell'),('hellboy'),('hellfire'),('hello.'),('hellokitty'),('helloo'),('hellothere'),('helloworld'),('helloyou'),('hellsing'),('help'),('help1954'),('helpme'),('hendrix'),('henry'),('hentai'),('herbert'),('herbie'),('hercules'),('herman'),('hermes'),('hermione'),('hermosa'),('hernandez'),('heroes'),('hershey'),('heslo'),('hesoyam'),('hewlpack'),('hey'),('heyhey'),('hfytnrb'),('hg'),('hgrFQg'),('hhhhhh'),('hi'),('higgins'),('highheel'),('highlander'),('highspeed'),('hihihi'),('hilary'),('hiphop'),('history'),('hithere'),('hitler'),('hitman'),('hjccbz'),('hjvfirf'),('hm'),('hobbes'),('hobbit'),('hockey'),('hockey21'),('hockeyman123'),('hogwarts'),('hohoho'),('hola'),('holahola'),('holden'),('holiday'),('holla'),('holland'),('hollie'),('hollister'),('holly'),('hollywood'),('holmes'),('home'),('homer'),('homework'),('honda'),('honda!'),('honda#'),('honda$'),('honda%'),('honda&'),('honda*'),('honda0'),('honda1'),('honda2'),('honda3'),('honda3724'),('honda4'),('honda5'),('honda6'),('honda7'),('honda8'),('honda9'),('honda?'),('honda@'),('honda^'),('hondacivic'),('hondas2k'),('honduras'),('honest'),('honesty'),('honey'),('honeybee'),('honeyko'),('hongkong'),('hookem'),('hooker'),('hooligan'),('hooters'),('hooters2'),('hoover'),('hope'),('horizon'),('hornet'),('horney'),('horny'),('horse'),('horses'),('hospital'),('hossam11'),('hot'),('hotboy'),('hotchick'),('hotdog'),('hotgirl'),('hotmail'),('hotmail1'),('hotmama'),('hotpink'),('hotrod'),('hotshot'),('hotstuff'),('hottentott'),('hottie'),('hottie!'),('hotties'),('hotty'),('house'),('houston'),('howard'),('hp.com'),('hp14a2107'),('hpt'),('hq27pu2o'),('hqadmin'),('hs7mwxkk'),('hsadb'),('http'),('hubert'),('hudson'),('hughes'),('huhbbhzu'),('hummer'),('humtum'),('hunter'),('hunting'),('hurricane'),('husband'),('huskers'),('hussain'),('hustler'),('hustler1412'),('hyundai'),('i'),('iDirect'),('iGabOX'),('iamcool'),('iamnumber'),('iamthe'),('iamthebest'),('ianLOL00'),('ibanez'),('ibdemodata'),('ibhive'),('ibmcel'),('ibmetadata'),('ibrahim'),('ibworkdata'),('icarus'),('icecream'),('icehouse'),('iceman'),('ichliebedi'),('ichliebedich'),('icqistcool'),('iddqd090'),('idie4you'),('idiocracy789'),('idontknow'),('iforgot'),('ignacio'),('igor'),('iguana'),('ihateu'),('ihateyou'),('ihateyou!'),('ijam5690'),('ijrjkfl'),('ilaria'),('ilikepie'),('illinois'),('illusion'),('ilom-admin'),('ilom-operator'),('ilon'),('ilove'),('ilovebears'),('ilovechris'),('ilovegod'),('iloveher'),('ilovehim'),('ilovehim!'),('ilovejesus'),('ilovejosh'),('ilovejusti'),('iloveme'),('iloveme!'),('ilovemom'),('ilovemusic'),('ilovemybab'),('ilovemymom'),('ilovemysel'),('ilovemyself'),('ilovepussy'),('ilovesex'),('iloveyou.'),('iloveyou<'),('iloveyouba'),('iluvme'),('iluvu'),('ilveyou'),('ilveyu'),('ily'),('images'),('imagine'),('imcool'),('imflying123'),('imgay'),('imissyou'),('immortal'),('imn00b123'),('imnumber'),('impala'),('imperial'),('impossible'),('imsa7.0'),('imss7.0'),('inads'),('incorrect'),('incubus'),('india'),('indian'),('indiana'),('indians'),('indigo'),('indonesia'),('indonesia4x4'),('indspw'),('inferno'),('infiniti'),('infinity'),('info'),('information'),('informix'),('infrant1'),('ingenius1'),('ingorion177g'),('ingrid'),('init'),('initpw'),('inlove'),('innocent'),('innot1t2'),('insane'),('insanity'),('insert'),('inside'),('install'),('installer'),('integra'),('inter'),('intermec'),('international'),('internet'),('inuyasha'),('ioFTPD'),('iolan'),('ip20'),('ip21'),('ip3000'),('ip305Beheer'),('ip400'),('iphone'),('ireland'),('irene'),('irina'),('irinka'),('irish'),('irishka'),('irock'),('ironmaiden'),('ironman'),('ironport'),('irontarkus'),('isaac'),('isabel'),('isabela'),('isabella'),('isabelle'),('isaiah'),('iscopy'),('isdev'),('isee'),('isla2705'),('island'),('ismael'),('ismail'),('isoccer730'),('isolation'),('isp'),('israel'),('istanbul'),('italia'),('italian'),('italiano'),('italien'),('iubire'),('iv8686an'),('ivan'),('ivanov'),('ivanova'),('iverson'),('iw2badmd'),('iwFij'),('iwFijwQa'),('iwFijxL'),('iwantu'),('iwill'),('j'),('j09F'),('j1o2s3e4f5'),('j256'),('j262'),('j2750147'),('j322'),('j5Brn9'),('j64'),('j:'),('jGhHFn'),('jack'),('jackass'),('jacket'),('jackie'),('jackie10'),('jackjack'),('jackpot'),('jackson'),('jacob'),('jacobs'),('jacqueline'),('jacques'),('jade'),('jaden'),('jaen0002'),('jaguar'),('jaihanuman'),('jaimatadi'),('jajaja'),('jakarta'),('jakcgt'),('jake'),('jakjak'),('jakkin13'),('jamaica'),('jamal'),('james'),('james199639'),('jamesbond'),('jamfsw03'),('jamie'),('jamila'),('jane'),('janelle'),('janet'),('janette'),('janice'),('janina'),('janine'),('janjan'),('jannie'),('january'),('japan'),('jared'),('jasmar11'),('jasmin'),('jasmine'),('jason'),('jasper'),('jasperadmin'),('javier'),('jay'),('jayden'),('jayden12345'),('jayjay'),('jayman81'),('jayson'),('jazmin'),('jazmine'),('jazzy'),('jboss4'),('jd1984jd'),('jdoe'),('jdredd12'),('jean'),('jeanette'),('jeanne'),('jeff'),('jefferson'),('jeffery'),('jeffhardy'),('jeffrey'),('jeffrey123'),('jeg981998'),('jehovah'),('jelly'),('jellybean'),('jenifer'),('jenjen'),('jenna'),('jennie'),('jennifer'),('jenny'),('jensen'),('jeremiah'),('jeremy'),('jericho'),('jermaine'),('jerome'),('jerome812'),('jerry'),('jersey'),('jerusalem'),('jess'),('jesse'),('jessica'),('jessie'),('jester'),('jesucristo'),('jesus'),('jesus!'),('jesuschris'),('jesuschrist'),('jesusfreak'),('jesusis'),('jesusislord'),('jesusme'),('jesuss'),('jesuss041190'),('jesussaves'),('jetaime'),('jeter'),('jewels'),('jeyboi99'),('jifUbn'),('jillian'),('jimbob'),('jimmy'),('jimmyxu315'),('jingjing'),('jinjer'),('jisu'),('jjjjjj'),('jktymrf'),('joanna'),('joanne'),('joaquin'),('jobandtalent'),('jobs'),('jobsearch'),('jocelyn'),('joe'),('joejoe'),('joejonas'),('joel'),('joeuser'),('joey'),('joh316'),('johanna'),('johannes'),('john'),('john!at'),('johncena'),('johndeere'),('johnjohn'),('johnlock'),('johnmmb1'),('johnny'),('johnny55'),('johnson'),('jojo'),('jojojo'),('joker'),('jokers'),('joman4545'),('jonas'),('jonathan'),('jonathan4'),('jones'),('jonjon'),('jonny'),('jorge'),('jose'),('josefina'),('joseluis'),('joseph'),('josephine'),('josh'),('joshua'),('josie'),('journey'),('joyjoy'),('jrcfyf'),('jstwo'),('jsy930993921'),('juan'),('juancarlos'),('juanes99'),('juanita'),('juanito'),('juanjuan123'),('jubjub'),('judith'),('juggalo'),('juice'),('juicy'),('julia'),('julian'),('juliana'),('julie'),('julien'),('juliet'),('julieta'),('juliette'),('julio'),('julius'),('jumper'),('jumpman'),('junebug'),('jungle'),('junior'),('juniper123'),('junjun'),('jupiter'),('justdoit'),('justfun'),('justice'),('justin'),('justin941208'),('justinbieb'),('justinbieber'),('justine'),('justme'),('juventus'),('k'),('k.'),('k.:'),('k.lvbkf'),('k2M93pyW'),('k31m21j06'),('kIkeunyw'),('ka131182'),('ka_dJKHJsy'),('kachadoo1955'),('kachina0306'),('kacper'),('kahn'),('kaiser'),('kaitlyn'),('kajl1040'),('kaka'),('kakaka'),('kakashi'),('kakashka'),('kaktus'),('kalbra0422'),('kalina'),('kalleanka12'),('kalmss18'),('kamasutra'),('kamehameha1121'),('kamikaze'),('kamila'),('kangaroo'),('kansas'),('karachi'),('karate'),('karen'),('karina'),('karine'),('karlmarx1'),('karolina'),('kashmir'),('kasia'),('kasper'),('katana'),('katarina'),('kate'),('katelyn'),('katerina'),('katherine'),('katherine69'),('kathleen'),('kathmandu'),('kathryn'),('kathy'),('katie'),('katrin'),('katrina'),('kawasaki'),('kawing2000'),('kaykay'),('kayla'),('kaylee'),('kayleigh'),('kberjeski57'),('keegan'),('keeper'),('keisha'),('keith'),('kelly'),('kelsey'),('kelvin'),('kendall'),('kendra'),('kennedy'),('kenneth'),('kenny'),('kenshin'),('kent'),('kentucky'),('kenwood'),('kenzie'),('kermit'),('kerryblue69'),('kevin'),('keyboard'),('kezFH20o'),('kfhbcf'),('khadija'),('khalid'),('khamul33'),('kickass'),('kickass0620'),('kicker'),('kieran'),('kifjnbfu'),('kiki'),('kikiki'),('kill'),('killa'),('killbill'),('killer'),('killerloop'),('killers'),('killian'),('killme'),('killtitans'),('kilo1987'),('kim'),('kimberly'),('kimkim'),('kinder'),('king'),('kingdom'),('kingking'),('kingkong'),('kingkong19'),('kings'),('kingston'),('kipper'),('kirby'),('kirill'),('kirsten'),('kiss'),('kisses'),('kisskiss'),('kissme'),('kissmyass'),('kite4677'),('kitkat'),('kitten'),('kittens'),('kittie'),('kitty'),('kittycat'),('kittykat'),('kjb2268atf'),('kjkszpj'),('kk1818krad'),('kkk'),('kkkkkk'),('kkkkkkk'),('kkkkkkkk'),('klapaucius'),('klaster'),('kleopatra'),('km062944'),('kn1TG7psLu'),('knicks'),('knight'),('knights'),('knopka'),('kobe'),('kobebryant'),('kochanie'),('kodi'),('kodiak'),('kokoko'),('kolobok'),('komprie'),('komputer'),('konstantin'),('kontakt'),('kontol'),('koolaid'),('koroleva'),('koshka'),('kosmos'),('kotenok'),('koza1984'),('kramer'),('krasotka'),('krish9223'),('krista'),('kristen'),('kristi'),('kristian'),('kristin'),('kristina'),('kristine'),('kristy'),('krokodil'),('kronites'),('krycha123'),('krystal'),('ksdjfg934t'),('ktyjxrf'),('kucing'),('kungfu'),('kurt'),('kwlkwk17'),('kyalami7'),('kyle'),('kyle0828'),('l'),('l1'),('l2'),('l3'),('labrador'),('labtec'),('lacey'),('lacoste'),('lacrosse'),('ladies'),('lady'),('ladybug'),('ladygaga'),('laetitia'),('laflaf'),('laguna'),('lahore'),('lakers'),('lala'),('lalala'),('lalalala'),('lalaland'),('lamborghini'),('lamont'),('lampard'),('lance'),('lancelot'),('lancer'),('lancer13'),('landon'),('landrover'),('lane')
+,('langin270474'),('lantronix'),('laptop'),('larisa'),('larissa'),('larry'),('lassie'),('last'),('last.fm'),('lastfm'),('lasvegas'),('lasvegas13'),('latina'),('latino'),('laura'),('laura520'),('lauren'),('laurence'),('laurent'),('laurie'),('laurita'),('lavender'),('lavoro'),('lawrence'),('lawyer'),('laxman15'),('layla'),('layout'),('layouts'),('lcball12'),('lccsem01'),('leader'),('leandro'),('leanne'),('leather'),('leavemealone'),('leaves'),('lebron'),('lee'),('leelee'),('leftdead'),('legacy'),('legend'),('legenda'),('legion'),('legolas'),('leigang520'),('lemon'),('lemonPIE1'),('lemonade'),('lemonade0'),('lemons'),('len1ngrad'),('lena'),('leningrad01'),('lennon'),('lenochka'),('lenovo'),('leo'),('leoleo'),('leomoicmoi'),('leon'),('leonard'),('leonardo'),('leonie'),('leopard'),('leparigo75'),('lesarotl'),('lesbian'),('leslie'),('lespaul'),('lestat'),('lester'),('letacla'),('leticia'),('letmein'),('letmein123'),('letter'),('leviton'),('lewis'),('lexiboo69'),('lexmark'),('libby'),('libero'),('libertad'),('liberte'),('liberty'),('library'),('life'),('lifeisgood'),('lifesucks'),('light'),('lighthouse'),('lightning'),('lights'),('lil'),('lilian'),('liliana'),('lillian'),('lilly'),('lilmama'),('lilman'),('lilwayne'),('lincoln'),('linda'),('lindsay'),('lindsey'),('lineage'),('lineprin'),('linga'),('link11052'),('linked'),('linkedin'),('linkedln'),('linkin'),('linkinpark'),('lionel'),('lionheart'),('lionking'),('lipgloss'),('lisa'),('littedemon21'),('little'),('littlebit'),('littleman'),('live'),('livelife'),('liverpl'),('liverpool'),('liverpool1'),('livestrong'),('lizard'),('lizottes'),('lizzie'),('lizzy'),('lkjhgfdsa'),('lkw peter'),('lkwpeter'),('llatsni'),('llllll'),('lnkdn'),('lnotes01'),('lobster'),('locatepw'),('loco'),('logan'),('logapp'),('login'),('logitech'),('loiclisa'),('lokomotiv'),('lolipop'),('lolita'),('loller2456'),('lollipop'),('lollol12'),('lollypop'),('lolo'),('lololo'),('london'),('lonely'),('lonewolf'),('longhorn'),('longhorns'),('looker'),('looking'),('looser'),('lop00717'),('lopez'),('loraine12'),('lord'),('loredana'),('lorena'),('lorena12'),('lorenzo'),('lorraine'),('losangeles'),('loser'),('loser!'),('losers'),('louie'),('louis'),('louise'),('louise2606'),('loulou'),('louloute'),('lourdes'),('lovebug'),('loved'),('loveever'),('lovegod'),('lovehate'),('lovehurts'),('loveis'),('loveislife'),('loveless'),('lovelife'),('lovely'),('lovemc123'),('loveme'),('loveme!'),('loverboy'),('lovergirl'),('lovers'),('lovestory'),('lovesucks'),('loveu'),('loveya'),('loveyou'),('loving'),('lovingyou'),('lowrider'),('lp'),('lpadm'),('lpadmin'),('lpsviran7'),('ltm9z8xa2'),('ltybcrf'),('lucas'),('lucenttech1'),('lucenttech2'),('lucero'),('luchino88'),('lucia'),('luciana'),('luciano'),('lucifer'),('lucille'),('lucky'),('luckydog'),('lucy'),('ludacris'),('ludmila'),('ludovic'),('luigi'),('luis'),('lukas'),('luke'),('lulaby93'),('lulu'),('lulu0902'),('lun4pbby'),('luna'),('lunita'),('luosbio789'),('lupita'),('luther'),('lvbnhbq'),('lynx'),('m'),('m1122'),('m5a9r8c0'),('m8q7rwbr'),('m8tnit1n'),('mMmM'),('mVVkMz'),('mac'),('macarena'),('machine'),('maciek'),('mackenzie'),('macmac'),('macman41'),('madagascar'),('madden'),('maddie'),('maddog'),('maddy'),('madeleine'),('madeline'),('madina'),('madison'),('madman'),('madmax'),('madmax99'),('madness'),('madonna'),('madrid'),('maestro'),('mafalda'),('mafia'),('magali'),('maganda'),('magdalena'),('maggie'),('maggieown'),('magic'),('magnet'),('magnolia'),('magnum'),('magnus'),('mahal'),('mahalkita'),('mahalko'),('maiden'),('mail.ru'),('maintain'),('maintpw'),('maison'),('makaveli'),('makayla'),('makemoney'),('maksim'),('maksimka'),('malachi'),('malaga'),('malaysia'),('malboro'),('malcolm'),('maldita'),('malek12646'),('malibu'),('malik'),('malika'),('malina'),('malinka'),('mallorca'),('mallory'),('mama'),('mamadou93'),('mamalove1'),('mamama'),('mamamama'),('mamamia'),('maman'),('mamanez11'),('mamani1794'),('mamapapa'),('mamita'),('mamma'),('mammamia'),('mamochka'),('mamour'),('man'),('manage'),('management'),('manager'),('managers'),('manchester'),('mancity'),('mancity43'),('mandarin'),('mandy'),('mango'),('mani2004'),('maniac'),('manila'),('mankind'),('manman'),('manning'),('manny'),('manolo'),('manowar'),('manson'),('manuel'),('manuela'),('manuf:xxyyzz'),('manunited'),('manutd'),('manzana'),('mar'),('maradona'),('marathon'),('marcel'),('marcela'),('marcella'),('marcello'),('marcelo'),('march151976'),('marcia'),('marcin'),('marco'),('marcopolo'),('marcos'),('marcus'),('margaret'),('margarida'),('margarita'),('margherita'),('margot'),('maria'),('mariah'),('mariajose'),('mariam'),('marian'),('mariana'),('marianna'),('marianne'),('mariano'),('maribel'),('marie'),('marie1948'),('mariel'),('mariela'),('marihuana'),('marijuana'),('marika'),('marilyn'),('marina'),('marine'),('marines'),('marino'),('mario'),('marion'),('mariposa'),('marisa'),('marisol'),('marissa'),('marius'),('mariya'),('marjorie'),('mark'),('mark_'),('markess6'),('market'),('marketing'),('markus'),('marlboro'),('marlee05'),('marlene'),('marley'),('marlin'),('marlon'),('maroon'),('married'),('marseille'),('marshall'),('marta'),('martha'),('martin'),('martina'),('martine'),('martinez'),('martini'),('marvel'),('marvin'),('mary'),('maryam'),('maryama2011'),('maryann'),('maryjane'),('maryland'),('mash'),('mason'),('massage'),('massai12'),('massimo'),('master'),('master000'),('masterkey'),('mastermind'),('masters'),('matador'),('mate'),('matematica'),('mateusz'),('matheus'),('mathew'),('mathias'),('mathieu'),('mathilde'),('mathilde1'),('mathis'),('matias'),('matilda'),('matilde'),('matrix'),('matrix22'),('matt'),('matt2424'),('matteo'),('matthew'),('matthias'),('matthieu'),('mattia'),('mattie'),('maureen'),('maurice'),('mauricio'),('maurizio'),('maverick'),('max'),('maxadmin'),('maxima'),('maxime'),('maximilian'),('maximo'),('maximum'),('maximus'),('maxine'),('maxmax'),('maxreg'),('maxrules8'),('maxwell'),('mayday'),('maymay'),('mazafaka'),('mazda'),('mazdarx'),('mcdowellnjrotc1'),('mckenzie'),('mcp'),('md11a380'),('me'),('me260686'),('meG9103424'),('meandyou'),('meatball'),('mechanical'),('mediator'),('medicina'),('medicine'),('medina'),('medion'),('medocheck'),('medved'),('megadeth'),('megaman'),('megan'),('megane'),('megasecret'),('meghan'),('mehmet'),('meinsm'),('melanie'),('melina'),('melinda'),('melisa'),('melissa'),('mellon'),('melo'),('melody'),('melton1954'),('melvin'),('member'),('mememe'),('memory'),('memphis'),('mendoza'),('meowmeow'),('mer1d1an'),('mercedes'),('mercury'),('meredith'),('merlin'),('mermaid'),('mersedes'),('messenger'),('messi'),('metal'),('metallica'),('metrakit11'),('mexican'),('mexican1'),('mexico'),('mfd'),('mh020296'),('mh02na4594'),('mia'),('miami'),('miamor'),('micaela'),('michaeljac'),('michal'),('micheal'),('michel'),('michela'),('michelangelo'),('michele'),('michelle'),('michigan'),('mickael'),('mickey'),('mickeymous'),('mickeymouse'),('micky123'),('microbusiness'),('microlab'),('microsoft'),('midnight'),('midnight1'),('mierda'),('mighty'),('miguel'),('miguelito'),('mihaela'),('mihail'),('mike'),('mikej314'),('mikejones'),('mikemike'),('mikey'),('mikkel11'),('milagros'),('milan'),('milana'),('milano'),('milena'),('miley'),('mileycyrus'),('milkshake'),('miller'),('miller110'),('millie'),('million'),('millwall'),('milton'),('mimi'),('mimimi'),('mimosa'),('mine'),('minecraft'),('minecraft69'),('minerva'),('minesweeper'),('minette'),('ming0424'),('minicooper'),('minime'),('minnie'),('minouche'),('mipijo79'),('miracle'),('mirage'),('miranda'),('miriam'),('mishka'),('misiek'),('misosoup5'),('mission'),('mississipp'),('mississippi'),('missy'),('missyou'),('mister'),('mistress'),('misty'),('misty653'),('mitch'),('mitchell'),('mitchell9'),('mitsubishi'),('mittens'),('mlusr'),('mmmmm'),('mmmmmm'),('mmmmmmmm'),('mmmmmmmmmm'),('mnbvcxz'),('mnet'),('mnkey'),('mobile'),('mobster'),('mocha'),('mohamed'),('mohammad'),('mohammed'),('moimeme'),('moimoi'),('moises'),('mollie'),('molly'),('mollydog'),('moloko'),('mom'),('momanddad'),('momdad'),('momma'),('mommy'),('momo'),('momof'),('momomo'),('mon'),('monaco'),('monalisa'),('monamour'),('moncoeur'),('monday'),('mondeo'),('money'),('money$'),('moneymaker'),('moneyman'),('moneys'),('mongoose'),('monica'),('monika'),('monique'),('monitor'),('monkey'),('monkey!'),('monkeybutt'),('monkeyman'),('monkeys'),('monkmonk1'),('mono'),('monopoly'),('monroe'),('monster'),('montana'),('montecarlo'),('monterrey64'),('montreal'),('monty'),('moocow'),('mookie'),('mooman101'),('moomoo'),('moon'),('moonbeam98'),('moonlight'),('moore1966'),('moose'),('morales'),('morena'),('moreno'),('morgan'),('morgana'),('morgane'),('moritz'),('morning'),('morpheus'),('morris'),('morrison'),('moscow'),('mostwanted'),('motdepasse'),('mother'),('motherfuck'),('motherfucker'),('motherlode'),('motocross'),('motorola'),('moulesfrites22'),('mountain'),('mountfs'),('mountfsys'),('mountsys'),('mouse'),('mouslim1'),('moussa'),('moutt2k7'),('movie'),('movies'),('mozart'),('mp3mystic'),('mpegvideo'),('mrgritz1'),('msjxj'),('mtch'),('mtcl'),('mu'),('muffin'),('muhammad'),('mulder'),('multiplelog'),('mummy'),('munchkin'),('muppet'),('murcielago'),('murder'),('murphy'),('murray'),('mushroom'),('music'),('musica'),('musiclife'),('musicman'),('musique'),('muslim'),('mustafa'),('mustang'),('mustangs'),('muze'),('mxintadm'),('my'),('my.space'),('my_DEMARC'),('myangel'),('mybaby'),('myboys'),('mydlp'),('myfamily'),('mygirls'),('mykids'),('mylene'),('mylife'),('mylinkedin'),('mylove'),('mymother'),('mymusic'),('myname'),('mynameis'),('mypassword'),('mysecretpassword0*'),('myself'),('mysons'),('myspac'),('myspace'),('myspace!'),('myspace.'),('myspace.co'),('mystery'),('mystic'),('mysweex'),('n'),('naadmin'),('nacional'),('nadejda'),('nadia'),('nadia1970'),('nadine'),('nahtan00'),('naked'),('namaste'),('namita13'),('namita1974'),('nana'),('nanana'),('nanangkusen'),('nanbudo77'),('nancy'),('napoleon'),('napoli'),('naruto'),('nascar'),('nascar99'),('nastena'),('nastia'),('nasty'),('nastya'),('natacha'),('natali'),('natalia'),('natalie'),('natalka'),('nataly'),('natalya'),('natasha'),('nateford'),('nathalie'),('nathan'),('nathaniel'),('national'),('nats6265'),('natural'),('nature'),('naughty'),('navigator'),('navkhor1'),('naynay'),('nbalive95'),('ncc'),('ncca'),('nccd'),('ncce'),('ncrm'),('nee1thai'),('negrita'),('nellie'),('nelly'),('nelson'),('nemesis'),('neopets'),('neptune'),('nestor'),('nestyc11'),('netadmin'),('netbotz'),('netcare911'),('netgear1'),('netlink'),('netman'),('netopia'),('netscreen'),('network'),('networking'),('netxms'),('nevaeh'),('never'),('neveragain'),('nevermind'),('new'),('newcastle'),('newjob'),('newlife'),('newman'),('newmoon'),('newpass'),('newpassword'),('newport'),('newstart'),('newton'),('newyork'),('newyork66'),('nextel'),('nexus'),('nfnmzyf'),('nfrdz'),('nguyen'),('nicecti'),('nicholas'),('nicholas513'),('nicholas97'),('nichole'),('nician'),('nick'),('nickjonas'),('nicky'),('nicola'),('nicolas'),('nicole'),('nicole!'),('nigeria'),('nigga'),('nigger'),('nightmare'),('nightwish'),('nike'),('nikita'),('nikitos'),('nikki'),('nikola'),('nikolai'),('nikolai55'),('nikolas'),('nikolay'),('nimda'),('nimdaten'),('nina'),('ninja'),('ninja3221'),('nintendo'),('nipper'),('nipple'),('nipples'),('nirvana'),('nissan'),('nissanz'),('nixon123'),('nixthemix09'),('nkskjs'),('nm2user'),('nmspw'),('nnnnnn'),('no password'),('no4broot'),('no_password'),('nobody'),('noelle'),('nofear'),('noisette'),('nokai'),('nokia'),('nokiae71'),('nokian'),('noname'),('none'),('nonmember'),('nonono'),('noodle'),('noodles'),('nopass'),('nopasswd'),('nopassword'),('norman'),('norte'),('nortel'),('northside'),('norton'),('notebook'),('nothing'),('notyou'),('nounou'),('nounours'),('novell'),('november'),('novembre'),('noway'),('nsa'),('nsi'),('nsroot'),('nssadmin'),('ntacdmax'),('ntktajy'),('ntpupdate'),('nugget'),('numba'),('number'),('numero'),('nurse'),('nursing'),('nutella'),('nutsack99'),('nuttertools'),('nw020703'),('nwo4life'),('nymets22'),('nz0u4bbe'),('o')
+,('oakland'),('oakley'),('oancing007'),('oblivion'),('oceane'),('oceano45'),('october'),('odessa'),('ods'),('oekaki12'),('office'),('offspring'),('often blank'),('ohiostate'),('ohmnamah'),('oicu'),('oizanauj95'),('oklahoma'),('okokok'),('oksana'),('olamide'),('oldman'),('oleg'),('olga'),('oligopoli'),('oliveira'),('oliver'),('olivia'),('olivier'),('olivier93'),('olme2192'),('omarion'),('omega'),('omg'),('omgpop'),('omsairam'),('onelove'),('onepiece'),('onetwo'),('online'),('only14113'),('only1twags'),('onlyme'),('ontario'),('oooooo'),('op'),('opelastra'),('open'),('opengts'),('opensesame'),('openup'),('operator'),('opeyemi'),('oracle'),('orange'),('oranges'),('orchid'),('ordinateur'),('oreo'),('original'),('orion'),('orion99'),('orlando'),('oscar'),('osiris'),('osmc'),('otbu+1'),('otterboy96'),('ou'),('outlaw'),('overlord'),('overseer'),('owned101'),('owtyGbJ'),('oxford'),('oyakawa1'),('p'),('p1an0f0rte'),('p1nacate'),('p4$$w0rd'),('p4$$word'),('p455w0rd'),('p455word'),('p45sw0rd'),('p45sword'),('p45zw0rd'),('p45zword'),('p4s5w0rd'),('p4s5word'),('p4ssw0rd'),('p4ssword'),('p4szw0rd'),('p4szword'),('p4z5w0rd'),('p4z5word'),('p4zsw0rd'),('p4zsword'),('p4zzw0rd'),('p4zzword'),('p@$$w0rd'),('p@$$word'),('p@55w0rd'),('p@55word'),('p@ssw0rd'),('p@ssword'),('pa'),('pa$$w0rd'),('pa$$word'),('pa55w0rd'),('pa55word'),('pa5sw0rd'),('pa5sword'),('pa5zw0rd'),('pa5zword'),('pa88w0rd'),('pablito'),('pablo'),('pacific'),('package1'),('packard'),('packers'),('pacman'),('pacman00'),('paddle'),('paffuh123'),('paige'),('paintball'),('painter'),('pakistan'),('pakow424'),('paladin'),('palermo'),('pallina'),('pallmall'),('palmer'),('paloma'),('pamadmin'),('pamela'),('panama'),('panasonic'),('pancakes'),('pancho'),('panda'),('pandas'),('pandora'),('panget'),('pangit'),('panic!'),('panichkin13'),('pantera'),('panther'),('panthers'),('panties'),('panzer'),('panzer05'),('paola'),('paolo'),('papa'),('papamama'),('papapa'),('paper'),('paperino'),('papillon'),('papito'),('par0t'),('paradise'),('paradox'),('paramore'),('paris'),('parker'),('parker118389'),('parkour'),('parola'),('parrot'),('party'),('pas'),('pas5w0rd'),('pas5word'),('pasaway'),('pascal'),('pasquale'),('pass'),('pass123'),('pass4ggpa123'),('passat'),('passion'),('passpass'),('passport'),('passwd'),('password$'),('password%'),('password&'),('password*'),('password.'),('password84'),('password?'),('password@'),('password^'),('passwort'),('passwrd'),('pastor'),('pasword'),('paszw0rd'),('paszword'),('patata'),('patate'),('patches'),('patience'),('patito'),('patrice'),('patricia'),('patrick'),('patrik'),('patriot'),('patriot2005'),('patriots'),('patrizia'),('patrol'),('patty'),('paul'),('paula'),('paulina'),('pauline'),('pavel'),('pavilion'),('paword'),('pawrd'),('paxsinica'),('payton'),('paz5w0rd'),('paz5word'),('pazsw0rd'),('pazsword'),('pazzw0rd'),('pazzword'),('pbcpbn'),('pbxk1064'),('pdtplf'),('peace'),('peaceout'),('peaches'),('peanut'),('peanuts'),('pearl'),('pearljam'),('pebbles'),('pedro'),('peekaboo'),('peewee'),('pegasus'),('peluche'),('pelusa'),('pencil'),('penelope'),('penguin'),('penguin2'),('penguins'),('penis'),('penny'),('pennydog6'),('penrhos57'),('pentium'),('pento'),('people'),('pepette'),('pepino'),('pepita'),('pepito'),('pepper'),('pepsi'),('perfect'),('perfectpraise'),('peribit'),('permit'),('persik'),('personal'),('peter'),('peter001'),('peterpan'),('petunia'),('peugeot'),('peyton'),('pfsense'),('pft:'),('ph2f13d1'),('phan1604'),('phantom'),('pharmacy'),('philip'),('philippe'),('philips'),('phillip'),('philly'),('phoebe'),('phoenix'),('phone'),('photo'),('photo21253'),('phplist'),('phpreactor'),('piazza'),('picard'),('picasso'),('piccola'),('piccolo'),('pickle'),('pickles'),('picture'),('pie'),('pierre'),('pietro'),('piewars5'),('piggy'),('piglet'),('pikachu'),('pikle3310'),('pillow'),('pimp'),('pimpace01'),('pimpdaddy'),('pimpim96'),('pimpin'),('pimping'),('pineapple'),('pingpong'),('pink'),('pinkfloyd'),('pinkie'),('pinky'),('piolin'),('pioneer'),('piper'),('pippin'),('pippo'),('pipsa1912'),('piranha'),('pirata'),('pirate'),('pirates'),('pisces'),('pistons'),('pitbull'),('pixie123'),('pixmet2003'),('pizza'),('pizzas'),('pkxwW'),('placebo'),('planet'),('plastic'),('platinum'),('platinumroof53'),('playa'),('playboy'),('player'),('playstatio'),('playstation'),('please'),('pleasure'),('pleats573'),('plebssexy'),('ploppy11'),('pluto'),('plymouth'),('pnadmin'),('pobeda'),('poetry'),('pogiako'),('point'),('poipoi'),('poison'),('poisson'),('poiu'),('poiuy'),('poiuyt'),('poiuytrewq'),('pokemon'),('pokemon10'),('pokemon123'),('poker'),('pokerface'),('poland'),('polarbear'),('polaris'),('police'),('polina'),('poll'),('pollito'),('polo'),('polopolo'),('polska'),('pompier'),('pompom'),('poncho'),('pontiac'),('poochie'),('poodle'),('pooh'),('poohbear'),('pookie'),('poop'),('pooper'),('poopie'),('poopoo'),('pooppoop'),('poopy'),('pop'),('popcorn'),('popeye'),('popo'),('popopo'),('poppop'),('poppy'),('poptart'),('porcodio'),('porkchop'),('porn'),('porno'),('pornstar'),('porsche'),('porter'),('portland'),('portugal'),('poseidon'),('positive'),('possum'),('postal'),('postmast'),('pot'),('potato'),('potato85'),('pothead'),('potter'),('poussin'),('powder'),('power'),('powerdown'),('powers'),('ppppp'),('pppppp'),('praise'),('prayer'),('preacher'),('preciosa'),('precious'),('predator'),('prelude'),('presario'),('president'),('preston'),('pretty'),('prettyboy'),('prettygirl'),('primavera'),('prime'),('primenet'),('primeos'),('primos'),('prince'),('prince2007'),('princesa'),('princesita'),('princesse'),('principe'),('principessa'),('pringles'),('printer'),('priscilla'),('prissy'),('private'),('privet'),('prncess'),('prodigy'),('professional'),('professor'),('progress'),('project'),('projectsadminx'),('promise'),('prost'),('protection'),('protoss24'),('prtgadmin'),('psalm'),('psswrd'),('psycho'),('public'),('public/private/secret'),('publish'),('pudding'),('puertorico'),('puistola'),('pulsar'),('pumpkin'),('punisher'),('punk'),('punkin'),('punkrock'),('punx1977'),('puppies'),('puppy'),('puppylove'),('pupsik'),('pupuce'),('purple'),('purple!'),('pussies'),('pussy'),('pussycat'),('pw'),('pwAdmin'),('pwPower'),('pwUser'),('pwd'),('pwddbo'),('pwp'),('pwpw'),('pwrchute'),('pwrd'),('pwtest'),('pyon'),('pyramid'),('q'),('q331ncxxi'),('q3q3q3q3'),('qawsed'),('qawsedrf'),('qazqazqaz'),('qazwsxedc'),('qazwsxedcrfv'),('qazxswedc'),('qdujvyGsxa'),('qpgmr'),('qqqwww'),('qqwwee'),('qs11212001'),('qsecofr'),('qserv'),('qsrvbas'),('qsvr'),('qsysopr'),('qtiZxhU'),('quality'),('queen'),('queenie'),('queens'),('queensof69'),('quentin'),('questra'),('quincy'),('quincy13'),('quser'),('qwe10443'),('qwe123qwe'),('qweasdzxc'),('qwedsa'),('qwegta'),('qweqweqwe'),('qwerasdfzxcv'),('qwertasdfg'),('qwerty$'),('qwerty%'),('qwerty&'),('qwerty*'),('qwerty.'),('qwerty2946'),('qwerty?'),('qwerty@'),('qwerty^'),('qwertyu'),('qwertyuio'),('qwertyuiop[]'),('qwertzuiop'),('qwqwqw'),('qyahzn'),('r2d2iskl'),('r313afaf1'),('r4re64tr'),('r5wxcd100'),('r8993958'),('r@p8p0r+'),('rabbit'),('rabota'),('racecar'),('rachael'),('rachel'),('rachelle'),('racing'),('radio'),('radiohead'),('radius'),('radware'),('rafael'),('raffaele'),('ragnarok'),('rahasia'),('raider'),('raider88'),('raiders'),('raiderz'),('raidzone'),('railtrack2'),('rain1721'),('rainbow'),('rainbows'),('ralph'),('rambler'),('rambo'),('ramirez'),('rammstein'),('ramona'),('ramones'),('ramram'),('ramses'),('rancid'),('randall16'),('random'),('randy'),('ranger'),('rangers'),('ranielle1'),('raphael'),('raptor'),('raquel'),('raritan'),('rascal'),('rasmus'),('raspberry'),('rastafari'),('rastaman'),('rastaman1'),('raven'),('ravenclaw'),('ravens'),('ravigna8387'),('rawgoon55'),('rawr'),('rawr1337'),('raymond'),('rayray'),('raze2011'),('razvan'),('rbOTmvZ'),('rbhbkk'),('rc852456'),('rcdd'),('rctybz'),('rcustpw'),('rdc123'),('rdcpo'),('rdfhnbhf'),('reading'),('readonly'),('readwrite'),('reagan'),('reality'),('realmadrid'),('reaper'),('rebeca'),('rebecca'),('rebel'),('rebelde'),('rebels'),('rebound'),('recover'),('recovery'),('red'),('redalert'),('redbull'),('redbullt705'),('reddog'),('redhead'),('redhot'),('redips'),('redline'),('redman'),('redneck'),('redred'),('redrose'),('redrum'),('redskins'),('redskins03'),('redsox'),('redwings'),('reebok'),('reggae'),('reggie'),('regina'),('register'),('reidar3rd'),('reidmax13'),('remember'),('remington'),('renata'),('renato'),('renault'),('rencontre'),('renee'),('renegade'),('rental'),('repair'),('replication-receiver'),('replicator'),('rereirf'),('research'),('resident'),('respect'),('restart'),('restoreonly1'),('resumix'),('retard'),('retired'),('revenge'),('revilo1999'),('revolution'),('rey'),('rfhbyf'),('rfn.if'),('rfnthbyf'),('rfrfirf'),('rfrnec'),('rhbcnbyf'),('rhfcjnrf'),('rhiannon'),('rhjrjlbk'),('ricardo'),('riccardo'),('richard'),('richest3'),('richie'),('richmond'),('ricky'),('ricky1994'),('ride6969'),('rihanna'),('riley'),('rimmer06'),('ripper'),('river'),('rivera'),('riverhead'),('rjhjktdf'),('rjntyjr'),('rjycnfynby'),('rjynfrn'),('rmnetlm'),('ro'),('roadrunner'),('robbie'),('robert'),('roberta'),('roberto'),('robin'),('robinhood'),('robinson'),('rochelle'),('rock'),('rocker'),('rocket'),('rockets'),('rocknroll'),('rockon'),('rockstar'),('rocky'),('rodney'),('rodolfo'),('rodrigo'),('rodriguez'),('roentgen'),('roger'),('rogers'),('roland'),('rolando'),('role1'),('roller'),('rollo6784'),('rolltide'),('roma'),('romain'),('roman'),('romance'),('romania'),('romano'),('romashka'),('romeo'),('romero'),('romina'),('rommel'),('ronald'),('ronaldduck2000'),('ronaldinho'),('ronaldo'),('ronnie'),('rooney'),('rooney77'),('roope1520'),('rooster'),('root'),('rootbeer'),('rootme'),('rosalie'),('rosario'),('roscoe'),('rose'),('rose9763'),('rosebud'),('rosemary'),('roses'),('rosie'),('rosita'),('rossi'),('rough'),('route'),('router'),('rowanlynch260'),('roxana'),('roxane'),('roxanne'),('roxy'),('rpm861026'),('rrrrrr'),('rtyuehe'),('ruben'),('ruffryders'),('rufus'),('runescape'),('runner'),('running'),('rupert'),('rush'),('ruslan'),('russell'),('russia'),('rustam'),('rusty'),('rwa'),('rwmaint'),('ryan'),('ryan1119'),('ryan9876'),('ryibec63'),('s!a@m#n$p%c'),('s0075267'),('s0heil2211'),('sYLPejDPvYM'),('sabina'),('sabine'),('sabrina'),('sadie'),('safari'),('safety'),('sagitario'),('sahara'),('saibaba'),('sailboat'),('sailing'),('sailor'),('sailormoon'),('saints'),('sakura'),('sally'),('salman'),('salmon'),('salome'),('salomon'),('salope'),('salvador'),('salvation'),('salvatore'),('sam'),('samanta'),('samantha'),('samara'),('same as webui pwd'),('sameer'),('samgabe1'),('samiam'),('samira'),('sammie'),('sammy'),('sammy-11'),('sampson'),('samsam'),('samson'),('samsung'),('samtron'),('samu2402'),('samuel'),('samuel28'),('samurai'),('san'),('san fran 8'),('sanane'),('sanchez'),('sandiego'),('sandman'),('sandra'),('sandrine'),('sandro'),('sandy'),('santa'),('santana'),('sante1124'),('santiago'),('santos'),('sap123'),('sapphire'),('sara'),('sarah'),('sarajevo'),('sardines99'),('sarim5samun2'),('sarita'),('sasasa'),('sascha'),('sasha'),('saskia'),('sasquatch10'),('sassy'),('sasuke'),('satan'),('satana'),('satellite'),('saturday'),('saturn'),('sausage'),('savage'),('savannah'),('sayang'),('sayangku'),('sc0rp10n'),('scania'),('scarface'),('scarlet'),('scarlett'),('schalke'),('schalke04'),('schatz'),('schatzi'),('schlieve'),('school'),('science'),('scmchangeme'),('scooby'),('scoobydoo'),('scoops76'),('scooter'),('scorpio'),('scorpio26'),('scorpion'),('scotland'),('scott'),('scottie'),('scotty'),('scout'),('scrappy'),('scream'),('scruffy'),('scully'),('scvMOFAS'),('sdfsdf'),('seaeagles1'),('seagull'),('seamus'),('sean'),('search'),('season'),('seattle'),('sebastian'),('sebastien'),('secacm'),('secoff'),('secofr'),('secret'),('secur4u'),('secure'),('security'),('select'),('selena'),('selenagome'),('selina'),('semperfi$'),('semperfi%'),('semperfi&'),('semperfi*'),('semperfi?'),('semperfi@'),('semperfi^'),('senegal'),('senha'),('senior'),('seniseviyorum'),('sentnece'),('sephiroth'),('september'),('septiembre'),('sepultribe1'),('serega'),('serena'),('serenity')
+,('sergei'),('sergey'),('sergio'),('serial#'),('series3a'),('sertafu'),('server'),('service'),('sesame'),('setup'),('seven'),('seventeen'),('sevilla'),('sex'),('sexsex'),('sexsexsex'),('sexual78'),('sexxxy'),('sexy'),('sexy#'),('sexybaby'),('sexyback'),('sexybeast'),('sexybitch'),('sexyboy'),('sexygirl'),('sexygurl'),('sexylady'),('sexylove'),('sexymama'),('sexyman'),('sexyme'),('sha'),('shadow'),('shady'),('shaggy'),('shahyne28'),('shakira'),('shalom'),('shaman'),('shamrock'),('shane'),('shanghai'),('shanna'),('shannon'),('shanti'),('sharingan'),('shark'),('sharks'),('sharma'),('sharon'),('sharp'),('sharpie'),('shasha'),('shasta'),('shaved'),('shawn'),('shawn256'),('shawty'),('sheba'),('sheena'),('sheila'),('shelby'),('sheldon'),('shelley'),('shelly'),('sherlock'),('sherman'),('sherry'),('shibby'),('shifty4u'),('shiloh'),('shinigami'),('shirley'),('shirley3'),('shit'),('shitface'),('shithead'),('shitty'),('shiva'),('shmily'),('shogun'),('shooter'),('shopping'),('shortstop'),('shorty'),('shotgun'),('showtime'),('shs'),('shugar143'),('shutdown'),('shutup'),('sidekick'),('sidney'),('siemens'),('sierra'),('sigma'),('signa'),('silence'),('silent'),('silly'),('silvana'),('silver'),('silverado'),('silvia'),('simba'),('simon'),('simona'),('simone'),('simple'),('simpleplan'),('simpson'),('simpsons'),('simsim'),('sinaloa'),('singapore'),('singer'),('singh'),('single'),('sirius'),('sissy'),('sister'),('sisters'),('siteadmin'),('sitecom'),('size13shoe'),('skate'),('skateboard'),('skatelife'),('skater'),('skboard'),('skeeter'),('skf_admin'),('skiing'),('skinhead'),('skinny'),('skipper'),('skippy'),('skippy12'),('skittles'),('sklife'),('skolko'),('skordie'),('skorpion'),('skter'),('sky'),('skyhawk'),('skylar'),('skyler'),('skyline'),('skywalker'),('sl33p30F00dumass!'),('slater69'),('slavik'),('slayer'),('sldkj754'),('sleepy'),('slick'),('slimshady'),('slipknot'),('slrp1611'),('slumerican1'),('slut'),('sma'),('smackdown'),('smallbusiness'),('smallville'),('smart'),('smcadmin'),('smelly'),('smera999'),('smicer83'),('smile'),('smileme'),('smiles'),('smiley'),('smith'),('smitty'),('smoke'),('smokeweed'),('smokey'),('smokie'),('smoking'),('smooth'),('smudge'),('snake'),('snakes'),('snakes91'),('sneakers'),('sneaky'),('snickers'),('sniper'),('snipershotgunr7'),('snmp'),('snmp-Trap'),('snoop'),('snoopdog'),('snoopdogg'),('snoopy'),('snowball'),('snowboard'),('snowflake'),('snowman'),('snowman2'),('snuffers11'),('snuggles'),('soCRAtes160'),('sobaka'),('soccer'),('soccer!'),('socrates'),('sofia'),('softball'),('software'),('software01'),('solange'),('soldier'),('soledad'),('soleil'),('solnce'),('solomon'),('solution'),('someone'),('something'),('sommer'),('sonia'),('sonic'),('sonny'),('sony'),('sonya1978'),('sonyericsson'),('sooners'),('sophia'),('sophie'),('soprano'),('souljaboy'),('soulmate'),('sousou'),('south'),('southampton'),('southpark'),('southside'),('sp16ae78'),('sp99dd'),('space'),('spam'),('spanish'),('spanky'),('sparkle'),('sparkles'),('sparky'),('sparrow'),('sparta'),('spartak'),('spartan'),('spartans'),('speaker'),('special'),('specialist'),('spectrum'),('speed'),('speedxess'),('speedy'),('spencer'),('spider'),('spiderman'),('spike'),('spirit'),('spitfire'),('splash'),('splendidcrm'),('splinter'),('spm060587'),('sponge'),('spongebob'),('spooky'),('spooml'),('sporting'),('sports'),('spring'),('springer'),('sprint'),('sprite'),('spunky'),('spurs'),('sputnik'),('spyder'),('sqlserver'),('squall'),('squirrel'),('squirt'),('srinivas'),('ssadmin'),('ssladmin'),('ssss'),('ssssss'),('sssssss'),('ssssssss'),('ssyu'),('stacey'),('staircase'),('stalker'),('stallion'),('standard'),('stanislav'),('stanley'),('star'),('starbucks'),('starcraft'),('stardust'),('starfish'),('stargate'),('stargate5684'),('starlight'),('stars'),('starstar'),('start'),('startfinding'),('startrek'),('starwars$'),('starwars%'),('starwars&'),('starwars*'),('starwars?'),('starwars@'),('starwars^'),('stealth'),('steaua'),('steelers'),('stefan'),('stefania'),('stefanie'),('stefano'),('steffi'),('stella'),('stellina'),('stepan'),('steph'),('stephane'),('stephanie'),('stephen'),('sterling'),('sterva'),('steve'),('steven'),('steven421'),('stevie'),('stewart'),('sticky'),('stinger'),('stingray'),('stinky'),('stitch'),('stitch626'),('stonecold'),('stoner'),('stones'),('storageserver'),('store'),('storm'),('stormy'),('stranger'),('stratauser'),('stratfor'),('stratus'),('strawberry'),('stream-'),('street'),('streetglow21'),('strength'),('strike'),('striker'),('strong'),('stryker'),('stuart'),('student'),('studio'),('stunt'),('stupid'),('su'),('su@psir'),('subaru'),('sublime'),('subway'),('subzero'),('success'),('sucesso'),('sucker'),('suckit'),('suckmydick'),('sugar'),('sullivan'),('sultan'),('summer'),('summer!'),('summertime'),('sumomo123'),('sun123'),('sundance'),('sunday'),('sunderland'),('sunflower'),('sunita'),('sunrise'),('sunset'),('sunshine'),('sunshine!'),('super'),('superBebe7'),('superadmin'),('superfly'),('supergirl'),('superman'),('supermario'),('supernova'),('superpass'),('supersonic'),('superstar'),('superuser'),('superuser:pumpkin1'),('supervisor'),('support'),('supportpw'),('surecom'),('sureno'),('surenos'),('surf1212'),('surfer'),('surfing'),('surside'),('surt'),('survivor'),('susan'),('susana'),('susanna'),('susanne'),('suzanne'),('suzuki$'),('suzuki%'),('suzuki&'),('suzuki*'),('suzuki?'),('suzuki@'),('suzuki^'),('svcPASS83'),('sveta'),('svetik'),('svetlana'),('svoboda'),('swami8837'),('sweden'),('sweet'),('sweetheart'),('sweetie'),('sweetness'),('sweetpea'),('sweets'),('swepde0518'),('swimmer'),('swimming'),('switch'),('swordfish'),('sx2000'),('sydney'),('syed28091978'),('sylvester'),('sylvia'),('sylvie'),('symantec'),('sync'),('syncmaster'),('synnet'),('sys/change_on_install'),('sysadm'),('sysadmin'),('sysadmpw'),('sysbin'),('syslib'),('sysopr'),('syspw'),('system'),('system_admin'),('t00lk1t'),('t0ch20x'),('t0ch88'),('t0talc0ntr0l4!'),('t1t2t3a5'),('t:'),('tabitha'),('taco'),('tacobell'),('taekwondo'),('talent'),('tamara'),('tammy'),('tango'),('tanner'),('tantan100'),('tanya'),('target'),('tarheels'),('tarzan'),('tasha'),('tasmannet'),('tatercounter2000'),('tatiana'),('tattoo'),('tatyana'),('taurus'),('taylor'),('taytay'),('tazmania'),('tdutybq'),('tdutybz'),('teX1'),('teach4God'),('teacher'),('team'),('teamo'),('teamomucho'),('teatro2010'),('tech'),('technics'),('technne'),('techno'),('technolgi'),('technology'),('tecktonik'),('teddy'),('teddybear'),('teens'),('tegile'),('teiubesc'),('tekiero'),('tekken'),('tekrok13'),('telco'),('tele'),('telefon'),('telefono'),('telephone'),('television'),('tellabs#1'),('telos'),('telus00'),('telus99'),('temito11'),('temp'),('temple'),('temppass'),('tenerife'),('tennessee'),('tennis'),('tequiero'),('tequila'),('teresa'),('terminator'),('terrell'),('terror'),('terry'),('tesoro'),('tester'),('testing'),('testpass'),('tetra'),('texans80'),('texas'),('thailand'),('thankgod'),('thanks'),('thankyou'),('the'),('the same all over'),('thebest'),('theboss'),('thedoors'),('thegame'),('thegreat'),('theking'),('thelma'),('theman'),('themaster01'),('theodore'),('theone'),('theonly'),('therani2345'),('theresa'),('therock'),('theshadow59'),('thesims'),('theused'),('thfx1138'),('thierry'),('thirteen'),('thomas'),('thompson'),('three'),('thuglife'),('thumper'),('thunder'),('thunder65'),('thurlow84'),('thursday'),('thx'),('tianya'),('tiara'),('tiaranet'),('ticket'),('tiesto'),('tiffany'),('tiger or tigger'),('tigger'),('tigrou'),('tikbalang$'),('tikbalang%'),('tikbalang&'),('tikbalang*'),('tikbalang?'),('tikbalang@'),('tikbalang^'),('timber'),('time'),('timely'),('timmy'),('timothy'),('timothy11'),('tina'),('tini'),('tinker'),('tinkerbel'),('tinkerbell'),('tintin'),('tissounet31'),('titanic'),('titans'),('tits'),('tivonpw'),('tkbpfdtnf'),('tkfkdgo'),('tkfkdgo1'),('tlah'),('tobias'),('toby'),('today'),('toffee'),('together'),('tokiohotel'),('toledo'),('tom'),('tomas'),('tomate'),('tomato'),('tombrady12'),('tomcat'),('tommaso'),('tommy'),('tommy2001'),('tomorrow'),('tomtom'),('tonton'),('tony'),('tool1877'),('toor'),('tooridu'),('tootcat2'),('tootie'),('tootsie'),('topgun'),('toplayer'),('topolino'),('topsecret'),('torino'),('tornado'),('toronto'),('torres'),('tortuga'),('toshiba'),('toshy99'),('totalmeh27'),('toto'),('tototo'),('totsukawa81'),('tottenham'),('touchpwd='),('toulouse'),('tour'),('toyota'),('toyota07'),('trabajo'),('trace711'),('tracey'),('tractor'),('tracy'),('training'),('trance'),('trancell'),('travel'),('travis'),('treasure'),('trebor'),('trendimsa1.0'),('trenton'),('trevor'),('trfnthbyf'),('trial'),('tricia'),('tricolor'),('tricolor2003'),('trigger'),('trigger4'),('trinidad'),('trinity'),('tripper'),('trisha'),('tristan'),('tristan123'),('triton'),('tritontr19'),('triumph'),('trixie'),('trmcnfg'),('trojan'),('trojans'),('trololo'),('trombone'),('trombone09'),('troop957'),('trooper'),('tropical'),('trouble'),('trucker'),('trucks'),('truelove'),('truetime'),('trumpet'),('trungtr4n321'),('trunks'),('trust'),('trustno'),('trv21390'),('tslinux'),('tsunami'),('tttttt'),('tucker'),('tuckerdog'),('tudelft'),('tuesday'),('tuie1987'),('tulips'),('tuning'),('tuning12'),('tupac'),('turbo'),('turkey'),('turner'),('turtle'),('tutor'),('tuxalize'),('tweety'),('tweetybird'),('twilight'),('twinkle'),('twins'),('twisted'),('twister'),('tyler'),('tyrone'),('tyson'),('uClinux'),('uQAEbw'),('uboot'),('ucenik'),('ufkbyf'),('ultima'),('ultimate'),('umbrella'),('umountfs'),('umountfsys'),('umountsys'),('underground'),('underoath'),('undertaker'),('underworld'),('unicorn'),('unique'),('united'),('universal'),('universe'),('university'),('universl'),('unix'),('unknown'),('unreal'),('uplink'),('urchin'),('urmom'),('ursula'),('usa'),('user'),('user0000'),('user5710'),('user:1'),('userNotU'),('usher'),('utopia'),('utstar'),('uucp'),('uucpadm'),('vRbGQnS'),('vaSSago839'),('vacation'),('vadim'),('vaffanculo'),('vagina'),('valencia'),('valentin'),('valentina'),('valentine'),('valentino'),('valera'),('valeria'),('valerie'),('vampire'),('vampires'),('vancouver'),('vanesa'),('vanessa'),('vanhalen'),('vanilla'),('vanille'),('vanston1402'),('vantage!'),('vargen13'),('vbkfirf'),('vectra'),('veenman12'),('vegeta'),('vegeta67'),('velvet'),('vendetta'),('venera'),('venezuela'),('venice'),('venus'),('verbatim'),('veritas'),('verizon'),('vermont'),('verona'),('veronica'),('veronika'),('veronique'),('versace'),('versailles'),('vertex25'),('vertigo'),('veruneveru2'),('vfczyz'),('vfhbyf'),('vfhecz'),('vfhufhbnf'),('vfibyf'),('vfitymrf'),('vfksirf'),('vfrcbv'),('vfrcbvrf'),('vfvekz'),('vfvfgfgf'),('vfvjxrf'),('vgnadmin'),('vicente'),('vicky'),('victoire'),('victor'),('victoria'),('victory'),('video'),('vietnam'),('viewsonic'),('viewuser1'),('vika'),('viking'),('vikings'),('viktor'),('viktoria'),('viktoriya'),('village'),('vincent'),('vincenzo'),('vinnie'),('violet'),('violeta'),('violetta'),('violin'),('violin43'),('viper'),('virgin'),('virginia'),('virginia1'),('virginie'),('vision'),('vision2'),('visor'),('visual'),('vitalik'),('vitoria'),('vittoria'),('vivian'),('viviana'),('vjcrdf'),('vkontakte'),('vlad'),('vladik'),('vladimir'),('vladislav'),('vodafone'),('voiture'),('volcom'),('volition'),('volkswagen'),('volley'),('volleyball'),('voltron1'),('volume'),('voodoo'),('voyage13'),('voyager'),('vpasp'),('vvvvvv'),('w00h00yay'),('w0rkplac3rul3s'),('w2402'),('w4rr10rme'),('wYRyBgRa'),('waav'),('wachtwoord'),('waheguru'),('walker'),('wall.e'),('wallace'),('walmart'),('walter'),('wampp'),('wangyut'),('wanker'),('wanted'),('warcraft'),('warhammer'),('warlock'),('warning'),('warren'),('warrior'),('warriors'),('warszawa'),('wasadmin'),('washington'),('wasser'),('wassup'),('water'),('waterfall'),('waterloo'),('watermelon'),('watermelon88'),('waters'),('watever4me'),('watson'),('waugh0511'),('wayne'),('we1lco2me3'),('weare'),('weasel'),('weavel2947'),('web'),('webadmin'),('webhompass'),('webibm'),('weblogic'),('webmaster'),('webshieldchangeme'),('webster'),('wedding'),('wednesday'),('weed'),('weezer'),('weezy'),('welcome'),('welkom'),('wellington'),('wellworth1'),('wendy'),('werder'),('werewolf'),('werner'),('werty'),('wertyu'),('wesley'),('western'),('westham'),('westlife'),('westside')
+,('westwood'),('wg'),('what'),('whataeatass'),('whatever'),('whatever!'),('whatsup'),('whd'),('whdghk33'),('whiskers'),('whiskey'),('whisky'),('whisper'),('white'),('whiteboy'),('whitney'),('whocares'),('whore'),('whynot'),('wicked'),('widget'),('wifey'),('wilbur'),('wildcat'),('wildcats'),('will'),('william'),('williams'),('willie'),('willis'),('willow'),('willy'),('wilson'),('winchester'),('window'),('windows'),('winmx'),('winner'),('winnie'),('winston'),('winter'),('winterm'),('wisdom'),('wishbone'),('wisla2222'),('wizard'),('wlcsystem'),('wlpisystem'),('wlsadmin:pumpkin1'),('wlsedb'),('wlsepassword'),('woaini'),('woaiwojia'),('wodj'),('wogannimaa'),('wolf'),('wolfgang'),('wolfman'),('wolfpack'),('wolverine'),('wolves'),('wombat'),('women'),('wonder'),('wonderful'),('wonderland'),('woodland'),('woodpony7'),('woodstock'),('woody'),('wootl33tftw'),('wordpass'),('work'),('working'),('wow'),('wpsadmin'),('wrangler'),('wrench999'),('wrestling'),('wrgg15_di524'),('wsbeqSG'),('wsuperuser:pumpkin1'),('wtf15hax'),('wutang'),('ww188049'),('wwAdmin'),('wwPower'),('wwUser'),('wwe'),('www'),('wwwwww'),('wxcvbn'),('wyse'),('x'),('x-admin'),('x40rocks'),('x6zynd56'),('xanadu96'),('xander'),('xanilove'),('xavier'),('xavier2000'),('xbox'),('xboxlive'),('xceladmin'),('xd'),('xdfk9874t3'),('xfiles'),('xhevdet222'),('xiang'),('xiaoxiao'),('xivygAF'),('xl092020'),('xljlbj'),('xmux'),('xo11nE'),('xodqmffl0822'),('xorb0704'),('xx134113'),('xxxxxxxxxx'),('xxyyzz'),('xyz'),('xyzall'),('xyzzy'),('y0430232'),('yA811943'),('yOps'),('yZgO8Bvj'),('yahoo'),('yahoo.com'),('yahoomail'),('yahooo'),('yamaha'),('yamahar'),('yandex'),('yangyang'),('yankee'),('yankees'),('yankees1'),('yannick'),('yanyan'),('yasmin'),('yasmine'),('yat38wit'),('ybrbnf'),('ybrjkfq'),('yd83rokk'),('yeah'),('year2000'),('yellow'),('yesyes'),('yfcntymrf'),('yfnfif'),('yfnfkb'),('yfnfkmz'),('yinyang7'),('yj'),('yolanda'),('yomama'),('yomomma'),('yoshi007'),('you'),('youandme'),('youbye'),('young'),('youngmoney'),('yourmom'),('youssef'),('yousuck'),('youtube'),('youyou'),('yoyo'),('yoyoyo'),('ypFtrqJ'),('ytrewq'),('yuantuo'),('yugioh'),('yuliya'),('yummy'),('yumyum'),('yvette'),('yvonne'),('yxcvbnm'),('yyyyyy'),('z k.:'),('z:'),('zacefron'),('zachary'),('zagwsx'),('zahodi48'),('zander'),('zanzibar'),('zaqwsxcde'),('zaqxswcde'),('zaraza'),('zarina'),('zazaza'),('zbaaaca'),('zebra'),('zelda'),('zeosx'),('zeppelin'),('zero1644'),('zerozero00'),('zhangxian789'),('zhjckfd'),('zidane'),('zidane1803'),('zidane21'),('ziggy'),('zigzag'),('zimmer'),('zing'),('zipper'),('zjaaadc'),('zk.'),('zk.:'),('znt:'),('zoey'),('zombie'),('zoomadsl'),('zoosk'),('zooyork96'),('zorro'),('zouzou'),('zqBmL4OX'),('zvezda'),('zxasqw'),('zxccxz'),('zxcvbn666'),('zxcvbnm,'),('zxcvbnm,./'),('zxcvbnm:'),('zxzxzx'),('zyjxrf'),(N'александр'),(N'алексей'),(N'анастасия'),(N'андрей'),(N'виктория'),(N'екатерина'),(N'йцукен'),(N'йцукенгшщз'),(N'йцукенгшщзхъ'),(N'какашка'),(N'концертных площадок и умных студентов:'),(N'кристина'),(N'любимая'),(N'любимый'),(N'люблю'),(N'любовь'),(N'максим'),(N'малышка'),(N'мамочка'),(N'марина'),(N'наташа'),(N'никита'),(N'пароль'),(N'привет'),(N'пїЅпїЅпїЅпїЅпїЅпїЅ@mail.ru'),(N'ромашка'),(N'светлана'),(N'сергей'),(N'солнце'),(N'солнышко'),(N'я'),(N'ячсмит'),(N'ячсмить')
+) AS v([value])
 OPTION (RECOMPILE); -- avoid saving this in plan cache
 
 SET @RCount = @@ROWCOUNT;
@@ -637,19 +99,23 @@ AS
 	, CTE.SkipLocation
 	FROM NumbersCTE AS CTE
 	WHERE CTE.currLength <= CTE.Pwdmaxlength
-	AND LEN(CTE.generatedPwd) < 16
+	AND LEN(CTE.generatedPwd) < 20 /*Updated from 16*/
 ), CommonPermutationWords
 AS
 (
 	SELECT V.TxtWord
 	FROM (VALUES
 	('12'),('21'),('123'),('1234'),('12345'),('123456'),('1234567'),('12345678'),('123456789'),('456'),('789'),('987'),('654'), --('789456'),
-	('asd'),('qwe'),('qwer'),('qwert'),('qwerty'),('asdf'),('zxc'),('vbn'),('abc'),('abcd'),('uiop'),('zxcvbnm'),
+	('asd'),('asdf'),('qw'),('qwe'),('qwer'),('qwert'),('qwerty'),('zxc'),('vbn'),('aa'),('ab'),('abc'),('abcd'),('uiop'),('zxcv'),('zxcvbnm'),
 	('1qaz'),('qaz'),('zaq'),('wsx'),('xsw'),('12qw'),('aszx'),('321'),('Aa'),('asdqwe'),('hello'),('qqww'),('1122'),
 	('159'),('951'),('753'),('357'),('147'),('741'),('258'),('852'),('369'),('963'),('6655'),
-	('a'),('b'),('0'),('1'),('2'),('3'),('!'),('#'),
-	('10'),('20'),('00'),('fgh'),('jkl'),('asdfghjkl'),('ui'),('lol'),('love'),
-	('fuckyou'),('iloveu'),('iloveyou'),('password'),('babygirl'),('football'),('jordan'),('michael'),('princess')
+	('4321'),('321'),('rewq'),('ewq'),('tikbalang'),
+	('a'),('b'),('r'),('s'),('t'),('v'),('w'),('y'),('z'),
+	('0'),('1'),('2'),('3'),('4'),('5'),('6'),('7'),('8'),('9'),
+	('!'),('#'),('_'),
+	('10'),('20'),('00'),('fgh'),('jkl'),('asdfghjkl'),('ui'),('alpha'),('USER'),
+	('admin'),('test'),('love'),('mudar'),('lol'),('tiger'),('suzuki'),('starwars'),('semperfi'),('baseball'),('bankaccount'),
+	('fuckyou'),('iloveu'),('iloveyou'),('password'),('babygirl'),('football'),('jordan'),('michael'),('princess'),('banana')
 	) AS V(TxtWord)
 ), CTE_Level2
 AS
@@ -675,12 +141,12 @@ UNION ALL
 -- Replicated text
 SELECT REPLICATE(V.TxtChar, Occ.Occurences)
 FROM (VALUES
-('0',4,10),('1',4,10),('2',4,10),('3',4,10),('4',4,10),('5',4,10),('6',4,10),('7',4,10),('8',4,10),('9',4,10),('a',4,10)
-,('123',4,4),('abc',4,4),('a1',1,4),('qwe',4,4),('12',1,4),('21',1,4),('13',1,4),('23',1,3)
-,('bla',1,4),('25',2,4),('69',2,4),('100',2,4),('x',3,8),('z',1,10)
+('0',3,10),('1',3,12),('2',3,10),('3',3,10),('4',4,10),('5',3,10),('6',3,10),('7',3,10),('8',3,10),('9',3,10),('a',3,10)
+,('123',4,4),('abc',4,4),('a1',1,4),('qwe',4,4),('12',2,4),('21',2,4),('13',2,4),('14',2,4),('23',2,3),('q',2,10)
+,('bla',1,4),('25',2,4),('69',2,4),('100',2,4),('x',3,8),('z',1,10),(N'пїЅ',1,12),('?',3,10)
 ) AS V(TxtChar,MinOccurences,MaxOccurences)
 INNER JOIN
-(SELECT TOP (10) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Occurences FROM sys.all_columns) AS Occ
+(SELECT TOP (12) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Occurences FROM sys.all_columns) AS Occ
 ON Occ.Occurences BETWEEN V.MinOccurences AND V.MaxOccurences
 
 UNION ALL
@@ -705,13 +171,54 @@ CROSS JOIN CommonPermutationWords AS b
 CROSS JOIN CommonPermutationWords AS c
 WHERE @BringThePain = 1
 )
+
 -- Generated passwords
-INSERT INTO #pwd
+INSERT INTO #pwd WITH (TABLOCKX)
 SELECT LTRIM(RTRIM(generatedPwd))
 FROM GeneratedPasswords
 OPTION (RECOMPILE); -- avoid saving this in plan cache
 
 SET @RCount = @RCount + @@ROWCOUNT;
+
+IF @IncludeModifiers = 1
+BEGIN
+	--Add modifiers to existing password list
+	INSERT INTO #pwd WITH (TABLOCKX)
+	--  (Uppercase First letter)
+	SELECT DISTINCT
+	 UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1) [TxtWord]
+	FROM #pwd
+	WHERE LEN(generatedPwd) > 2 and generatedPwd LIKE '[a-z]%'
+	UNION ALL
+	--  (Uppercase First letter plus replace a for @, 3 for #, 4 for $, o for *)
+	SELECT  REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1),'a','@')generatedPwd
+	FROM #pwd
+	WHERE LEN(generatedPwd) > 3 AND generatedPwd like '%a%'
+	UNION ALL
+	SELECT  REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1), '3' ,'#') generatedPwd
+	FROM #pwd
+	WHERE LEN(generatedPwd) > 3 AND generatedPwd like '%3%'
+	UNION ALL
+	SELECT  REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1), 's', '$') generatedPwd
+	FROM #pwd
+	WHERE LEN(generatedPwd) > 3 AND generatedPwd like '%s%'
+	UNION ALL
+	SELECT  REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1), 'o','*') generatedPwd
+	FROM #pwd
+	WHERE LEN(generatedPwd) > 3 AND generatedPwd like '%o%'
+	UNION ALL
+	SELECT  REPLACE(REPLACE(REPLACE(REPLACE(UPPER(LEFT(generatedPwd,1)) + RIGHT(generatedPwd,LEN(generatedPwd)-1)
+	,'a','@')
+	, '3' ,'#')
+	, 's', '$')
+	, 'o','*')
+	 generatedPwd
+	FROM #pwd
+	WHERE LEN(generatedPwd) > 3
+	OPTION (RECOMPILE); -- avoid saving this in plan cache
+
+	SET @RCount = @RCount + @@ROWCOUNT;
+END
 
 PRINT N'Generated passwords: ' + CONVERT(nvarchar(MAX), @RCount)
 
@@ -722,6 +229,11 @@ BEGIN
 	CREATE CLUSTERED INDEX IXC ON #pwd (generatedPwd) WITH(DATA_COMPRESSION = PAGE);
 	ELSE
 	CREATE CLUSTERED INDEX IX ON #pwd (generatedPwd);
+END
+
+IF @GenerateOnly = 1
+BEGIN
+	SET NOEXEC ON;
 END
 
 INSERT INTO #logins WITH (TABLOCKX)
@@ -762,8 +274,9 @@ AND PWDCOMPARE(u.usrname, s.[password_hash]) = 1
 
 UNION ALL
 
-SELECT DISTINCT 'Weak Password' AS Deviation, s.sid, s.principal_id, RTRIM(s.name) AS [LoginName], d.generatedPwd
-FROM #pwd d
+SELECT 'Weak Password' AS Deviation, s.sid, s.principal_id, RTRIM(s.name) AS [LoginName], d.generatedPwd
+FROM
+(SELECT DISTINCT generatedPwd FROM #pwd) AS d
 INNER JOIN sys.sql_logins s ON PWDCOMPARE(d.generatedPwd, s.[password_hash]) = 1
 WHERE s.is_disabled = 0
 ) AS dev
@@ -779,11 +292,11 @@ BEGIN
 			WHERE perm.grantee_principal_id = dev.LoginPrincipleId
 			FOR XML PATH('')
 			), 1, 2, N'')
-	FROM #logins AS dev
+	FROM #logins AS dev WITH (TABLOCKX)
 	OPTION (RECOMPILE);
 END
 
-DECLARE @CurrDB sysname, @Executor nvarchar(1000), @Cmd nvarchar(MAX), @DBAccess nvarchar(MAX);
+DECLARE @CurrDB sysname, @Executor nvarchar(1000), @Cmd nvarchar(MAX);
 
 SET @Cmd = N'
 UPDATE logins
@@ -797,7 +310,7 @@ UPDATE logins
 	FOR XML PATH('''')
 	), 1, 2, N'''')
 	+ N'')'', N'''')
-FROM #logins AS logins
+FROM #logins AS logins WITH (TABLOCKX)
 INNER JOIN sys.database_principals AS dp ON dp.sid = logins.LoginSID'
 
 DECLARE DBs CURSOR
@@ -815,8 +328,6 @@ BEGIN
 	FETCH NEXT FROM DBs INTO @CurrDB;
 	IF @@FETCH_STATUS <> 0 BREAK;
 
-	SET @DBAccess = NULL;
-
 	SET @Executor = QUOTENAME(@CurrDB) + N'..sp_executesql'
 	EXEC @Executor @Cmd WITH RECOMPILE;
 END
@@ -831,4 +342,18 @@ SELECT Deviation
      , ServerRoles
      , ServerPermissions
      , DBAccess
-FROM #logins;
+     , activesessions.Connections AS [ActiveSessions]
+     , activesessions.Hosts AS [ActiveHosts]
+FROM #logins
+LEFT OUTER JOIN (
+SELECT login_name, COUNT(DISTINCT host_name) AS [Hosts], count(*) AS [Connections]
+FROM sys.dm_exec_sessions
+GROUP BY  login_name
+) activesessions ON activesessions.login_name COLLATE DATABASE_DEFAULT = #logins.LoginName COLLATE DATABASE_DEFAULT
+OPTION (RECOMPILE); -- avoid saving this in plan cache
+
+SELECT COUNT(DISTINCT generatedPwd) AS DistinctPasswords, COUNT(*) AS TotalPasswords FROM #pwd;
+
+--Clean up
+--IF OBJECT_ID('tempdb..#pwd') IS NOT NULL DROP TABLE #pwd;
+--IF OBJECT_ID('tempdb..#logins') IS NOT NULL DROP TABLE #logins;
