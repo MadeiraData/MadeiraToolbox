@@ -407,7 +407,7 @@ AND @CloneDatabaseName_ForRevokeSimulation IS NULL
 BEGIN
 	RAISERROR(N'WARNING: Detected "GRANT WITH GRANT OPTION" permissions and database users who granted permissions to other users. This is not supported for simulation without using CLONEDATABASE. Results are inconclusive.', 15, 1);
 END
-ELSE IF @EnableRevokeSimulation_To_CheckForAffectedUsers = 0
+ELSE IF @EnableRevokeSimulation_To_CheckForAffectedUsers = 0 AND EXISTS (SELECT * FROM #results)
 BEGIN
 	RAISERROR(N'WARNING: Revoke Simulation was not performed! Negatively affected users are unknown!', 15, 1);
 END
