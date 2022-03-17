@@ -1,6 +1,12 @@
+
+DECLARE @MinimumRowsInTable INT = 100000
+
+--set below to 0 to only compare by key columns, but this will also generate recommendations
+--for new include column sets that encompass all redundant indexes per each containing index:
+DECLARE @CompareIncludeColumnsToo BIT = 1
+
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-DECLARE @MinimumRowsInTable INT = 200000;
 
 IF OBJECT_ID('tempdb..#Results') IS NOT NULL DROP TABLE #Results;
 CREATE TABLE #Results
@@ -8,6 +14,7 @@ CREATE TABLE #Results
 database_name	sysname NULL,
 schema_name	sysname NULL,
 table_name	sysname NULL,
+total_columns_count int NULL,
 redundant_index_name	sysname NULL,
 redundant_key_columns	nvarchar(MAX) NULL,
 redundant_include_columns	nvarchar(MAX) NULL,
@@ -23,7 +30,8 @@ containing_index_filter	nvarchar(MAX) NULL,
 containing_index_seeks	bigint NULL,
 containing_index_scans	bigint NULL,
 containing_index_updates bigint NULL,
-containing_index_pages	bigint NULL
+containing_index_pages	bigint NULL,
+containing_index_clustered bit NULL
 );
 
 DECLARE @CMD NVARCHAR(MAX);
@@ -104,8 +112,9 @@ AND DUPE1.index_number <> 1 -- do not consider clustered indexes as redundant
 AND DUPE1.is_unique = 0 -- do not consider unique indexes as redundant
 AND (
 DUPE1.key_column_list = LEFT(DUPE2.key_column_list, LEN(DUPE1.key_column_list)
-) and
-(DUPE1.include_column_list is null OR DUPE1.include_column_list = LEFT(DUPE2.include_column_list, LEN(DUPE1.include_column_list)))
+)' + CASE WHEN @CompareIncludeColumnsToo = 1 THEN N' and
+(DUPE1.include_column_list is null OR DUPE1.include_column_list = LEFT(DUPE2.include_column_list, LEN(DUPE1.include_column_list)))'
+ ELSE N'' END + N'
 )
 AND DUPE1.index_number <> DUPE2.index_number
 AND ISNULL(DUPE1.filter_definition, '''') = ISNULL(DUPE2.filter_definition, '''')
@@ -115,6 +124,7 @@ SELECT
 database_name = DB_NAME(),
 schema_name = sch.name,
 table_name = tb.name,
+total_columns_count = (SELECT COUNT(*) FROM sys.columns AS allc WHERE allc.object_id = tb.object_id AND allc.is_computed = 0),
 ind1.name as redundant_index_name,
 redundant_key_columns = STUFF
 ((
@@ -166,7 +176,8 @@ tbl.containing_index_filter,
 containing_index_seeks = us2.user_seeks,
 containing_index_scans = us2.user_scans,
 containing_index_updates = us2.user_updates,
-containing_index_pages = (SELECT SUM(reserved_page_count) FROM sys.dm_db_partition_stats AS ps WHERE ind2.index_id = ps.index_id AND ps.OBJECT_ID = ind2.OBJECT_ID)
+containing_index_pages = (SELECT SUM(reserved_page_count) FROM sys.dm_db_partition_stats AS ps WHERE ind2.index_id = ps.index_id AND ps.OBJECT_ID = ind2.OBJECT_ID),
+containing_index_clustered = CASE WHEN us2.index_id = 1 THEN 1 ELSE 0 END
 from #FindOnThisDB AS tbl
 INNER JOIN sys.tables tb
 ON tb.object_id = tbl.table_object_id
@@ -180,7 +191,7 @@ LEFT JOIN sys.dm_db_index_usage_stats AS us1 ON us1.database_id = DB_ID() AND us
 LEFT JOIN sys.dm_db_index_usage_stats AS us2 ON us2.database_id = DB_ID() AND us2.object_id = ind2.object_id AND us2.index_id = ind2.index_id
 WHERE ind1.index_id > 0 AND ind2.index_id > 0'
 
-DECLARE @dbname sysname, @spExecuteSql NVARCHAR(1000);
+DECLARE @dbname sysname, @spExecuteSql NVARCHAR(1000), @RCount int;
 
 DECLARE DBs CURSOR
 LOCAL FAST_FORWARD
@@ -196,20 +207,94 @@ WHILE 1=1
 BEGIN
 	FETCH NEXT FROM DBs INTO @dbname;
 	IF @@FETCH_STATUS <> 0 BREAK;
+
 	SET @spExecuteSql = QUOTENAME(@dbname) + N'..sp_executesql'
+
+	SET @RCount = NULL;
 
 	INSERT INTO #Results
 	EXEC @spExecuteSql @CMD WITH RECOMPILE;
+
+	SET @RCount = @@ROWCOUNT;
+	IF @RCount > 0 RAISERROR(N'Found %d redundant index(es) in database "%s"',0,1,@RCount,@dbname) WITH NOWAIT;
 END
 CLOSE DBs;
 DEALLOCATE DBs;
 
 SELECT *,
 DisableCmd = N'USE ' + QUOTENAME(database_name) + N'; ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' DISABLE;',
-DIsableIfActiveCmd = N'USE ' + QUOTENAME(database_name) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' DISABLE;',
+DisableIfActiveCmd = N'USE ' + QUOTENAME(database_name) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' DISABLE;',
 DropCmd = N'USE ' + QUOTENAME(database_name) + N'; DROP INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N';'
 FROM #Results
 ORDER BY database_name, schema_name, table_name, redundant_index_name
 OPTION(RECOMPILE);
+
+IF @CompareIncludeColumnsToo = 0
+BEGIN
+
+SELECT database_name, schema_name, table_name, containing_index_name, containing_key_columns, containing_include_columns
+, containing_index_filter, containing_index_clustered, total_columns_count
+, this_index_columns_count = 
+(SELECT COUNT(*) FROM string_split(incNew.NewIncludeColumns,','))
++
+(SELECT COUNT(*) FROM string_split(containing_key_columns, ','))
+, incNew.NewIncludeColumns
+, redundantIndexes = 
+(
+SELECT red.redundant_index_name AS [@name], red.redundant_key_columns AS [@keys], red.redundant_include_columns AS [@include], red.redundant_index_filter AS [@filter]
+, [@DisableCmd] = N'USE ' + QUOTENAME(database_name) + N'; ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' DISABLE;'
+, [@DisableIfActiveCmd] = N'USE ' + QUOTENAME(database_name) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' DISABLE;'
+, [@DropCmd] = N'USE ' + QUOTENAME(database_name) + N'; DROP INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N';'
+FROM #Results AS red
+WHERE EXISTS
+(
+	SELECT red.database_name, red.schema_name, red.table_name, red.containing_index_name
+	INTERSECT
+	SELECT cont.database_name, cont.schema_name, cont.table_name, cont.containing_index_name
+)
+FOR XML PATH('ix'), ROOT('redundantIndexes'), TYPE
+)
+FROM #Results AS cont
+CROSS APPLY
+(
+	SELECT NewIncludeColumns = CASE WHEN containing_index_clustered = 0
+	THEN
+	STUFF((
+		SELECT ', ' + includeColumn
+		FROM
+		(
+			SELECT DISTINCT LTRIM(RTRIM(inc.[value])) AS includeColumn
+			FROM #Results AS red
+			CROSS APPLY string_split(red.redundant_include_columns, ',') AS inc
+			WHERE EXISTS
+			(
+				SELECT red.database_name, red.schema_name, red.table_name, red.containing_index_name
+				INTERSECT
+				SELECT cont.database_name, cont.schema_name, cont.table_name, cont.containing_index_name
+			)
+
+			EXCEPT
+
+			SELECT LTRIM(RTRIM(REPLACE(REPLACE([value], '] ASC', ''), '] DESC', '')))
+			FROM string_split(cont.containing_key_columns,',')
+		) AS include_columns
+		FOR XML PATH ('')
+	), 1, 2, '')
+	ELSE NULL END
+) AS incNew
+WHERE NOT EXISTS
+(SELECT NULL FROM #Results AS other WHERE EXISTS
+	(
+		SELECT other.database_name, other.schema_name, other.table_name, other.redundant_index_name
+		INTERSECT
+		SELECT cont.database_name, cont.schema_name, cont.table_name, cont.containing_index_name
+	)
+)
+GROUP BY database_name, schema_name, table_name, containing_index_name, containing_key_columns, containing_include_columns
+, containing_index_filter, containing_index_clustered, total_columns_count
+, incNew.NewIncludeColumns
+OPTION(RECOMPILE);
+
+END
 
 --DROP TABLE #Results;
