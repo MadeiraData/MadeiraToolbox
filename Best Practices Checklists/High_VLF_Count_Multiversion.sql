@@ -16,7 +16,8 @@ LogFileName sysname,
 VLF_Count int,
 LogSizeMB int,
 PotentialSizeMB int,
-PotentialVLFCount int
+PotentialVLFCount int,
+LastLogBackup datetime NULL
 );
 
 IF OBJECT_ID('sys.dm_db_log_stats') IS NULL
@@ -82,6 +83,7 @@ BEGIN
  , LogSizeMB = m.size_mb
  , PotentialSizeMB = iter.potsize
  , potential.PotentialVLFCount
+ , LastLogBackup		= (SELECT MAX(bu.backup_start_date) FROM msdb.dbo.backupset AS bu WHERE bu.database_name = dbname AND bu.type IN ('L','D'))
  FROM @vlfcounts
  INNER JOIN sys.master_files AS mf
  ON mf.database_id = DB_ID(dbname) AND mf.type_desc = 'LOG'
@@ -142,6 +144,7 @@ BEGIN
  , LogSizeMB = m.size_mb
  , PotentialSizeMB = iter.potsize
  , potential.PotentialVLFCount
+ , LastLogBackup		= vlf.log_backup_time
  FROM sys.databases d
  CROSS APPLY sys.dm_db_log_stats(database_id) AS vlf
  INNER JOIN sys.master_files AS mf
