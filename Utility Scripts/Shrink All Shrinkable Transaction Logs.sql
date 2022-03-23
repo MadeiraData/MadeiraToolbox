@@ -58,14 +58,14 @@ CROSS APPLY
 ) AS lstat
 CROSS APPLY (SELECT f.size / 128) AS m(size_mb)
 CROSS APPLY (
-	SELECT n_iter = (SELECT CASE WHEN m.size_mb <= 64 THEN 1
+	SELECT n_iter = NULLIF((SELECT CASE WHEN m.size_mb <= 64 THEN 1
 			WHEN m.size_mb > 64 AND m.size_mb < 256 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/256, 0)
 			WHEN m.size_mb >= 256 AND m.size_mb < 1024 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/512, 0)
 			WHEN m.size_mb >= 1024 AND m.size_mb < 4096 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/1024, 0)
 			WHEN m.size_mb >= 4096 AND m.size_mb < 8192 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/2048, 0)
 			WHEN m.size_mb >= 8192 AND m.size_mb < 16384 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/4096, 0)
 			WHEN m.size_mb >= 16384 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/8192, 0)
-			END)
+			END), 0)
 	 , potsize = (SELECT CASE WHEN m.size_mb <= 64 THEN 1*64
 			WHEN m.size_mb > 64 AND m.size_mb < 256 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/256, 0)*256
 			WHEN m.size_mb >= 256 AND m.size_mb < 1024 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/512, 0)*512
@@ -80,9 +80,9 @@ CROSS APPLY (SELECT PotentialVLFCount = CASE WHEN iter.potsize <= 64 THEN (iter.
 			WHEN iter.potsize >= 1024 THEN (iter.potsize/(iter.potsize/iter.n_iter))*16
 			END) AS potential
 WHERE
-	db.recovery_model_desc = 'FULL'
-	AND db.database_id > 4
-	AND HAS_DBACCESS(db.name) = 1
+	HAS_DBACCESS(db.name) = 1
 	AND DATABASEPROPERTYEX(db.name, 'Updateability') = 'READ_WRITE'
+	AND db.database_id > 4
+	--AND db.recovery_model_desc = 'FULL'
 	--AND lstat.VLFTotalCount > 300
 ORDER BY Total_VLFs DESC, Shrinkable_Log_MB DESC;
