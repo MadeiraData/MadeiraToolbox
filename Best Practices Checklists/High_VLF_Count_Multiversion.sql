@@ -89,14 +89,14 @@ BEGIN
  ON mf.database_id = DB_ID(dbname) AND mf.type_desc = 'LOG'
  CROSS APPLY (SELECT mf.size / 128) AS m(size_mb)
  CROSS APPLY (
-	SELECT n_iter = (SELECT CASE WHEN m.size_mb <= 64 THEN 1
+	SELECT n_iter = NULLIF((SELECT CASE WHEN m.size_mb <= 64 THEN 1
 			WHEN m.size_mb > 64 AND m.size_mb < 256 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/256, 0)
 			WHEN m.size_mb >= 256 AND m.size_mb < 1024 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/512, 0)
 			WHEN m.size_mb >= 1024 AND m.size_mb < 4096 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/1024, 0)
 			WHEN m.size_mb >= 4096 AND m.size_mb < 8192 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/2048, 0)
 			WHEN m.size_mb >= 8192 AND m.size_mb < 16384 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/4096, 0)
 			WHEN m.size_mb >= 16384 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/8192, 0)
-			END)
+			END), 0)
 	 , potsize = (SELECT CASE WHEN m.size_mb <= 64 THEN 1*64
 			WHEN m.size_mb > 64 AND m.size_mb < 256 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/256, 0)*256
 			WHEN m.size_mb >= 256 AND m.size_mb < 1024 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/512, 0)*512
@@ -109,14 +109,14 @@ BEGIN
 
 	UNION ALL
 
-	SELECT n_iter = (SELECT CASE WHEN m.size_mb <= 64 THEN 1
+	SELECT n_iter = NULLIF((SELECT CASE WHEN m.size_mb <= 64 THEN 1
 			WHEN m.size_mb > 64 AND m.size_mb < 256 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/256, 0)
 			WHEN m.size_mb >= 256 AND m.size_mb < 1024 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/512, 0)
 			WHEN m.size_mb >= 1024 AND m.size_mb < 4096 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/1024, 0)
 			WHEN m.size_mb >= 4096 AND m.size_mb < 8192 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/2048, 0)
 			WHEN m.size_mb >= 8192 AND m.size_mb < 16384 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/4000, 0)
 			WHEN m.size_mb >= 16384 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/8000, 0)
-			END)
+			END), 0)
 	 , potsize = (SELECT CASE WHEN m.size_mb <= 64 THEN 1*64
 			WHEN m.size_mb > 64 AND m.size_mb < 256 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/256, 0)*256
 			WHEN m.size_mb >= 256 AND m.size_mb < 1024 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/512, 0)*512
@@ -151,14 +151,14 @@ BEGIN
  ON mf.database_id = d.database_id AND mf.type_desc = 'LOG'
  CROSS APPLY (SELECT mf.size / 128) AS m(size_mb)
  CROSS APPLY (
-	SELECT n_iter = (SELECT CASE WHEN m.size_mb <= 64 THEN 1
+	SELECT n_iter = NULLIF((SELECT CASE WHEN m.size_mb <= 64 THEN 1
 			WHEN m.size_mb > 64 AND m.size_mb < 256 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/256, 0)
 			WHEN m.size_mb >= 256 AND m.size_mb < 1024 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/512, 0)
 			WHEN m.size_mb >= 1024 AND m.size_mb < 4096 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/1024, 0)
 			WHEN m.size_mb >= 4096 AND m.size_mb < 8192 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/2048, 0)
 			WHEN m.size_mb >= 8192 AND m.size_mb < 16384 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/4096, 0)
 			WHEN m.size_mb >= 16384 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/8192, 0)
-			END)
+			END), 0)
 	 , potsize = (SELECT CASE WHEN m.size_mb <= 64 THEN 1*64
 			WHEN m.size_mb > 64 AND m.size_mb < 256 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/256, 0)*256
 			WHEN m.size_mb >= 256 AND m.size_mb < 1024 THEN ROUND(CONVERT(FLOAT, ROUND(m.size_mb, -2))/512, 0)*512
@@ -180,6 +180,10 @@ CROSS APPLY (SELECT PotentialVLFCount = CASE WHEN iter.potsize <= 64 THEN (iter.
 END
 
 SELECT *
+, RemediationCmd = N'USE ' + QUOTENAME(DatabaseName) + '; DBCC SHRINKFILE (N' + QUOTENAME(LogFileName, '''') + ' , 0, TRUNCATEONLY) WITH NO_INFOMSGS; '
+		+ N' USE [master]; ALTER DATABASE ' + QUOTENAME(DatabaseName)
+		+ ' MODIFY FILE ( NAME = N' + QUOTENAME(LogFileName, '''')
+		+ ', SIZE = ' + CONVERT(nvarchar(max),PotentialSizeMB) + N'MB );'
 FROM @Results;
 
 IF LEFT(@RunRemediation, 1) = 'Y'
