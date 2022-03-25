@@ -9,10 +9,10 @@ DECLARE
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 IF OBJECT_ID('tempdb..#tmpStats') IS NOT NULL DROP TABLE #tmpStats;
 CREATE TABLE #tmpStats(
-  DBname SYSNAME
-, DatabaseId INT
-, ObjectId INT
-, StatsName SYSNAME
+  dbName SYSNAME
+, databaseId INT
+, objectId INT
+, statsName SYSNAME
 , LastUpdate DATETIME
 , ModCntr BIGINT
 , TotalRows BIGINT
