@@ -14,6 +14,12 @@ CPU cores due to SQL Server licensing limits.
 
 No restart is required for this change to take effect.
 
+WARNING:
+As of this writing, it's not possible to distinguish between whether a CPU
+is offline because of licensing limitations, or due to configured CPU affinity mask.
+To get the most reliable results, first try resetting the CPU affinity mask:
+ALTER SERVER CONFIGURATION SET PROCESS AFFINITY CPU = AUTO;
+
 More info:
 https://docs.microsoft.com/sql/database-engine/configure-windows/affinity-mask-server-configuration-option
 https://docs.microsoft.com/sql/t-sql/statements/alter-server-configuration-transact-sql#Affinity
@@ -39,9 +45,9 @@ RAISERROR(N'NUMA nodes: %d, Total CPU cores: %d, Online CPU cores: %d, CPU cores
 
 IF @total_cpu_cores = @online_cpu_cores
 BEGIN
-	RAISERROR(N'No offline CPU cores found. Affinity is not required.',0,1);
+	RAISERROR(N'No offline CPU cores found. Affinity mask is not required.',0,1);
 
-	IF EXISTS (select * from sys.configurations where name = 'affinity mask' AND value_in_use = 0)
+	IF NOT EXISTS (SELECT NULL FROM sys.dm_os_nodes WHERE memory_node_id <> 64 AND online_scheduler_mask <> cpu_affinity_mask)
 	BEGIN
 		RAISERROR(N'Affinity is already set to auto. No need to change anything.',0,1);
 	END
@@ -52,6 +58,14 @@ BEGIN
 END
 ELSE
 BEGIN
+	IF EXISTS (SELECT NULL FROM sys.dm_os_nodes WHERE memory_node_id <> 64 AND online_scheduler_mask <> cpu_affinity_mask)
+	BEGIN
+		RAISERROR(N'WARNING: CPU Affinity Mask is already set. Results may not reflect actual license limitations.
+To get the most reliable results, first try resetting the CPU affinity mask:
+	ALTER SERVER CONFIGURATION SET PROCESS AFFINITY CPU = AUTO;'
+			, 11, 1);
+	END
+
 	SET @cmd = NULL;
 
 	select @cmd = ISNULL(@cmd + N', ', N'')
