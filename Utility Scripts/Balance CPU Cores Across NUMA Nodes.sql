@@ -23,6 +23,7 @@ ALTER SERVER CONFIGURATION SET PROCESS AFFINITY CPU = AUTO;
 More info:
 https://docs.microsoft.com/sql/database-engine/configure-windows/affinity-mask-server-configuration-option
 https://docs.microsoft.com/sql/t-sql/statements/alter-server-configuration-transact-sql#Affinity
+https://glennsqlperformance.com/2020/06/25/how-to-balance-sql-server-core-licenses-across-numa-nodes
 */
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
