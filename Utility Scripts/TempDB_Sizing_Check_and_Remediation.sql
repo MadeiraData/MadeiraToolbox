@@ -9,6 +9,7 @@ the disk volume where the TempDB files are located.
 This check only works when TempDB files are isolated from other databases and exist on their own dedicated volume.
 
 Change log:
+2022-03-27 - Added -1 options for @InitialSizeMBOverride and @FileGrowthMB to align to the current max setting
 2021-08-16 - Added @ForceAllowSameDiskWithOtherDBs, added support to force UNLIMITED using @MaxSizeMBOverride 
 2021-07-12 - Added @MaxSizeMBOverride, fixed nvarchar conversions, fixed @InitialSizeMBOverride, added TF details
 2020-10-11 - Added WITH NO_INFOMSGS to shrink command, added ForceShrink parameter
@@ -20,13 +21,13 @@ Change log:
 */
 
 DECLARE @ClearServerCache 		BIT	= 0 -- If shrinking tempdb files doesn't work, you may have to set this to 1 to clear objects from server cache.
-DECLARE @MaxSizeDiskUtilizationPercent 	FLOAT 	= 95 -- Maximum total percentage to be used for MAXSIZE property. Use NULL for UNLIMITED.
-DECLARE @InitSizeDiskUtilizationPercent FLOAT 	= 70 -- Desired total percentage of disk space to be used for SIZE property.
-DECLARE @InitialSizeMBOverride 		INT 	= NULL -- hard-coded starting size per file for edge cases, overriding the calculation based on disk size.
+DECLARE @MaxSizeDiskUtilizationPercent 	FLOAT 	= 90 -- Maximum total percentage to be used for MAXSIZE property. Use NULL for UNLIMITED.
+DECLARE @InitSizeDiskUtilizationPercent FLOAT 	= 50 -- Desired total percentage of disk space to be used for SIZE property.
+DECLARE @InitialSizeMBOverride 		INT 	= NULL -- hard-coded starting size per file for edge cases, overriding the calculation based on disk size. Set to -1 to align all files to the file with the maximum size.
 DECLARE @MaxSizeMBOverride 		INT 	= NULL -- hard-coded max size per file for edge cases, overriding the calculation based on disk size. Set to -1 for UNLIMITED.
-DECLARE @FileGrowthMB 			INT 	= 256 -- Auto-growth increment in MB.
+DECLARE @FileGrowthMB 			INT 	= 256 -- Auto-growth increment in MB. Set to -1 to align all files to the file with the maximum auto-growth setting.
 DECLARE @IncludeTransactionLog 		BIT 	= 0 -- Set this to 1 to include the transaction log file in the calculations.
-DECLARE @SpaceUsedMaxPercent 		INT 	= 50 -- Maximum percent space used compared to desired file size, if found to be above - a warning will be raised.
+DECLARE @SpaceUsedMaxPercent 		INT 	= 50 -- Maximum percent space used compared to desired file size, if found to be above this - a warning will be raised.
 DECLARE @ForceShrink			BIT	= 0 -- Set this to 1 to force shrink (use this if actual tempdb file size on disk is larger than what's specified in system tables).
 DECLARE @ForceAllowSameDiskWithOtherDBs	BIT	= 1 -- Set this to 1 to allow for TempDB to be located on the same physical disk with other databases.
 
@@ -36,6 +37,27 @@ SET NOCOUNT, XACT_ABORT, ARITHABORT ON;
 USE [tempdb];
 
 DECLARE @CMDs AS TABLE (CMD nvarchar(max) NULL);
+
+IF @InitialSizeMBOverride = -1
+BEGIN
+	SELECT @InitialSizeMBOverride = MAX(size) / 128
+	FROM tempdb.sys.database_files
+	WHERE type = 0
+END
+
+IF @FileGrowthMB = -1
+BEGIN
+	SELECT @FileGrowthMB = MAX(growth) / 128
+	FROM tempdb.sys.database_files
+	WHERE type = 0 AND is_percent_growth = 0
+
+	IF @FileGrowthMB = -1
+	BEGIN
+		SELECT @FileGrowthMB = (MAX(growth) / 100.0 * @InitialSizeMBOverride) / 128
+		FROM tempdb.sys.database_files
+		WHERE type = 0 AND is_percent_growth = 1
+	END
+END
 
 INSERT INTO @CMDs
 SELECT
