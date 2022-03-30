@@ -1,6 +1,12 @@
 
-/*** TODO: Replace [dbo].[MyTableName] with the name of your specific table ***/
+SET SHOWPLAN_XML ON;
+GO
 
+/* TODO: Add your test query here to get its estimated plan WITHOUT the hypothetical indexes */
+
+GO
+SET SHOWPLAN_XML OFF;
+GO
 
 -- step 1: CREATE
 -- CREATE hypothetical indexes using the WITH STATISTICS_ONLY clause:
@@ -16,7 +22,7 @@ GO
 -- step 2: AUTOPILOT
 -- Generate and run DBCC AUTOPILOT commands to mark ALL hypothetical indexes for AUTOPILOT:
 
-DECLARE @TableName nvarchar(256) = '[dbo].[MyTableName]'
+DECLARE @TableName nvarchar(256) = NULL -- '[dbo].[MyTableName]' -- optionally filter by table
 
 -- DBCC AUTOPILOT (typeid [, dbid [, {maxQueryCost | tabid [, indid [, pages [, flag [, rowcounts]]]]} ]])
 DECLARE @cmd nvarchar(max)
@@ -27,7 +33,7 @@ FOR
 SELECT N'DBCC AUTOPILOT(0,' + CONVERT(nvarchar(MAX), DB_ID()) +  N',' + CONVERT(nvarchar(MAX), object_id) + N',' + CONVERT(nvarchar(MAX), index_id) +  N');'
 FROM sys.indexes
 WHERE is_hypothetical = 1
-AND object_id = OBJECT_ID(@TableName)
+AND (@TableName IS NULL OR object_id = OBJECT_ID(@TableName))
 
 OPEN cmd
 
@@ -46,21 +52,21 @@ GO
 
 -- step 3: GENERATE ESTIMATED PLAN
 -- run the below to generate an estimated plan assuming the existence of hypothetical indexes marked for autopilot
--- WARNING: This was found to sometimes cause SQL Crash Dumps, specifically when cancelling mid-execution.
+-- WARNING: This was found to sometimes cause SQL Crash Dumps, specifically when canceled mid-execution.
 GO
 SET AUTOPILOT ON;
 GO
 
-/* TODO: Add your test query here */
+/* TODO: Add your test query here to get its estimated plan WITH the hypothetical indexes */
 
 GO
 SET AUTOPILOT OFF;
 GO
 
 -- step 4: CLEANUP
--- Generate and run DROP commands for ALL hypothetical indexes on the relevant table:
+-- Generate and run DROP commands for ALL hypothetical indexes
 
-DECLARE @TableName nvarchar(256) = '[dbo].[MyTableName]'
+DECLARE @TableName nvarchar(256) = NULL -- '[dbo].[MyTableName]' -- optionally filter by table
 
 DECLARE @cmd nvarchar(max)
 
@@ -69,8 +75,8 @@ LOCAL FAST_FORWARD
 FOR
 SELECT N'DROP INDEX ' + QUOTENAME(name) + N' ON ' + QUOTENAME(OBJECT_SCHEMA_NAME(object_id)) + N'.' + QUOTENAME(OBJECT_NAME(object_id)) + N';'
 FROM sys.indexes
-WHERE object_id = OBJECT_ID(@TableName)
-AND is_hypothetical = 1
+WHERE is_hypothetical = 1
+AND (@TableName IS NULL OR object_id = OBJECT_ID(@TableName))
 
 OPEN cmd
 
