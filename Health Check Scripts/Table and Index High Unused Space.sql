@@ -33,11 +33,11 @@ SELECT TOP (' + CONVERT(nvarchar(max), @TopPerDB) + N')
 	MAX(us.user_updates) AS user_updates
 FROM 
 	sys.indexes i
-INNER JOIN 
+INNER HASH JOIN 
 	sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
-INNER JOIN 
+INNER HASH JOIN 
 	sys.allocation_units a ON p.partition_id = a.container_id
-LEFT JOIN
+LEFT HASH JOIN
 	sys.dm_db_index_usage_stats AS us ON us.database_id = DB_ID() AND us.object_id = i.object_id AND us.index_id = i.index_id
 WHERE 
 	OBJECT_NAME(i.object_id) NOT LIKE ''dt%''
