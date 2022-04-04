@@ -1,35 +1,26 @@
-
-
-
 -- =============================================
--- Author:		Rotem Meidan
--- Create date: 2015
--- Description:	This parses the system_health extended events file and searches for deadlocks.
+-- Author:		Rotem Meidan and Eitan Blumin
+-- Create date: 2022
+-- Description:	This parses the system_health extended events ring buffer and searches for deadlocks.
 --		It then extracts all the data you need to understand the deadlock in a nice little table. 
 --		Not all the columns are presented in the final select. Feel free to add more as you see fit. 		 
 -- ===============
 
--- Parameters to change when running (explanations are up in the "Instructions" )
-DECLARE @FileName NVARCHAR(MAX)
-
-select @FileName = REPLACE(c.column_value, '.xel', '*.xel')
-from sys.dm_xe_sessions s
-JOIN sys.dm_xe_session_object_columns c
-ON s.address =c.event_session_address
-WHERE column_name = 'filename'
-AND s.name = 'system_health'
-
--- Creates the temp table if it doesn't exists and selects the number of deadlocks in the file.
+-- Creates the temp table if it doesn't exists and selects the number of deadlocks in the buffer.
 IF OBJECT_ID('tempdb..#XMLDATA') IS NOT NULL DROP TABLE #XMLDATA
 
-SELECT CAST (event_data AS XML) AS event_data
-, CAST (event_data AS XML).value('(event/@timestamp)[1]','DATETIME') AS deadlock_time
+SELECT event_data.query('.') AS event_data
+, event_data.value('@timestamp','datetime') AS deadlock_time
 INTO #XMLDATA
-FROM    sys.fn_xe_file_target_read_file
-	(@FileName,null,null, null)
-WHERE object_name = 'xml_deadlock_report'
+FROM
+(select CAST(target_data as xml) as TargetData
+from sys.dm_xe_session_targets st
+join sys.dm_xe_sessions s on s.address = st.event_session_address
+where name = 'system_health') AS Data
+CROSS APPLY TargetData.nodes ('//RingBufferTarget/event') AS XEventData (event_data)
+where event_data.value('@name', 'varchar(4000)') = 'xml_deadlock_report'
 
-SELECT @@ROWCOUNT AS DeadlockCountInFile
+SELECT @@ROWCOUNT AS DeadlockCountInRingBuffer
 
 CREATE CLUSTERED INDEX IX ON #XMLDATA (deadlock_time)
 --WITH (DATA_COMPRESSION = PAGE);
