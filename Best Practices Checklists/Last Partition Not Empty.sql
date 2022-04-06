@@ -2,7 +2,8 @@ SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
 DECLARE @Results AS TABLE
-(database_id int, object_id int, rows int, partition_number int, partition_scheme sysname, partition_function sysname, filegroup_name sysname, last_boundary_range sql_variant);
+(database_id int, object_id int, rows int, partition_number int, partition_scheme sysname, partition_function sysname, filegroup_name sysname, last_boundary_range sql_variant
+, total_table_rows int);
 
 IF (CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 9 AND CONVERT(int, SERVERPROPERTY('EngineEdition')) IN (3,5,6,8)) -- Enterprise equivalent of SQL 2005+
 OR (CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) > 13) -- SQL 2017+
@@ -31,6 +32,7 @@ BEGIN
 
 	INSERT INTO @Results
 	EXEC @spExecuteSql N'SELECT DB_ID(), t.object_id, p.rows, p.partition_number, p.partition_scheme, p.partition_function, p.filegroup_name, p.last_boundary_range
+	, total_rows = (select SUM(p2.rows) FROM sys.partitions AS p2 WHERE p2.index_id <= 1 AND p2.object_id = t.object_id)
 	FROM sys.tables AS t
 	CROSS APPLY
 	(
@@ -77,5 +79,6 @@ SELECT
     , LastPartition = partition_number
     , LastBoundryRange = last_boundary_range
     , FileGroupName = filegroup_name
-    , NumberOfRows = [rows]
+    , NumberOfRowsInLastPartition = [rows]
+    , TotalNumberOfRows = total_table_rows
 FROM @Results
