@@ -2,7 +2,7 @@ USE [msdb]
 GO
 DECLARE @jobId BINARY(16)
 DECLARE @owner sysname = SUSER_SNAME(0x01)
-EXEC  msdb.dbo.sp_add_job @job_name=N'MaintenancePlan.UpdateStatistics', 
+EXEC  msdb.dbo.sp_add_job @job_name=N'Maintenance.UpdateStatistics', 
 		@enabled=1, 
 		@notify_level_eventlog=0, 
 		@notify_level_email=2, 
@@ -13,11 +13,11 @@ EXEC  msdb.dbo.sp_add_job @job_name=N'MaintenancePlan.UpdateStatistics',
 		@owner_login_name=@owner, @job_id = @jobId OUTPUT
 select @jobId
 GO
-EXEC msdb.dbo.sp_add_jobserver @job_name=N'MaintenancePlan.UpdateStatistics', @server_name = @@SERVERNAME
+EXEC msdb.dbo.sp_add_jobserver @job_name=N'Maintenance.UpdateStatistics', @server_name = @@SERVERNAME
 GO
 USE [msdb]
 GO
-EXEC msdb.dbo.sp_add_jobstep @job_name=N'MaintenancePlan.UpdateStatistics', @step_name=N'UpdateStats', 
+EXEC msdb.dbo.sp_add_jobstep @job_name=N'Maintenance.UpdateStatistics', @step_name=N'UpdateStats', 
 		@step_id=1, 
 		@cmdexec_success_code=0, 
 		@on_success_action=1, 
@@ -47,7 +47,7 @@ DECLARE
 SET NOCOUNT, ARITHABORT, XACT_ABORT, QUOTED_IDENTIFIER ON;
 IF OBJECT_ID(''tempdb..#tmpStats'') IS NOT NULL DROP TABLE #tmpStats;
 CREATE TABLE #tmpStats(
-dbName SYSNAME NOT NULL,
+DBname SYSNAME NOT NULL,
 databaseId INT NOT NULL,
 objectId INT NOT NULL,
 statsName SYSNAME NOT NULL,
@@ -187,7 +187,7 @@ USE [msdb]
 GO
 DECLARE @owner sysname = SUSER_SNAME(0x01)
 
-EXEC msdb.dbo.sp_update_job @job_name=N'MaintenancePlan.UpdateStatistics', 
+EXEC msdb.dbo.sp_update_job @job_name=N'Maintenance.UpdateStatistics', 
 		@enabled=1, 
 		@start_step_id=1, 
 		@notify_level_eventlog=0, 
@@ -203,7 +203,7 @@ GO
 USE [msdb]
 GO
 DECLARE @schedule_id int
-EXEC msdb.dbo.sp_add_jobschedule @job_name=N'MaintenancePlan.UpdateStatistics', @name=N'1AM', 
+EXEC msdb.dbo.sp_add_jobschedule @job_name=N'Maintenance.UpdateStatistics', @name=N'1AM', 
 		@enabled=1, 
 		@freq_type=4, 
 		@freq_interval=1, 
