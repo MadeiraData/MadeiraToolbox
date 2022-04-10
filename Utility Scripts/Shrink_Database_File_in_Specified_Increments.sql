@@ -170,10 +170,10 @@ BEGIN
 	GOTO Quit;
 END
 
-IF @SpaceUsedMB > @TargetSizeMB AND @SpaceUsedPct <= @TargetPct
+IF @SpaceUsedMB < @TargetSizeMB AND @SpaceUsedPct <= @TargetPct
 BEGIN
 	-- attempt to perform shrink with TRUNCATEONLY
-	SET @CMD = N'DBCC SHRINKFILE (N' + QUOTENAME(@FileName, N'''') + N' , 0, TRUNCATEONLY) WITH NO_INFOMSGS; -- ' + CONVERT(nvarchar(25),GETDATE(),121)
+	SET @CMD = N'DBCC SHRINKFILE (N' + QUOTENAME(@FileName, N'''') + N' , ' + CONVERT(nvarchar(max), @TargetSizeMB) + N', TRUNCATEONLY) WITH NO_INFOMSGS; -- ' + CONVERT(nvarchar(25),GETDATE(),121)
 
 	RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
 	IF @WhatIf = 1
