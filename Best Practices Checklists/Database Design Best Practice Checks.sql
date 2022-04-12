@@ -1,6 +1,7 @@
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
+
 -- User Table columns created with ANSI_PADDING OFF
 SELECT DISTINCT 'Column with ANSI_PADDING OFF' AS Finding
 , SCHEMA_NAME(t.schema_id) AS schemaName, t.name AS tableName
@@ -37,6 +38,7 @@ AND SCHEMA_NAME(t.schema_id) <> 'sys'
 AND (ct.name IN ('sql_variant','text','ntext','image','real','float')
 OR (ct.name IN ('varchar','nvarchar','varbinary') AND c.max_length BETWEEN 1 AND 2)
 )
+
 
 -- Parameters with sql_variant, text, ntext, or image data types
 -- or varchar/nvarchar/varbinary data types with short max length
@@ -110,6 +112,7 @@ INNER JOIN sys.objects AS t ON ix.object_id = t.object_id
 WHERE t.is_ms_shipped = 0
 AND SCHEMA_NAME(t.schema_id) <> 'sys'
 AND ix.index_id = 0
+
 
 -- Foreign Keys without corresponding index
 SELECT  'Foreign Key without corresponding index' AS Finding ,
@@ -193,3 +196,69 @@ AND (
 	)
 WHERE IndexesWithColumns.ObjectId IS NULL;
 
+
+-- GUID Leading Index Columns
+;WITH 
+partition_size AS
+(
+SELECT object_id,
+       used_page_count,
+       row_count
+FROM sys.dm_db_partition_stats
+WHERE index_id <= 1
+UNION ALL
+-- special index types
+SELECT it.parent_object_id,
+       ps.used_page_count,
+       0 AS row_count
+FROM sys.dm_db_partition_stats AS ps
+INNER JOIN sys.internal_tables AS it
+ON ps.object_id = it.object_id
+WHERE it.internal_type_desc IN (
+                               'XML_INDEX_NODES','SELECTIVE_XML_INDEX_NODE_TABLE', -- XML indexes
+                               'EXTENDED_INDEXES', -- spatial indexes
+                               'FULLTEXT_INDEX_MAP','FULLTEXT_AVDL','FULLTEXT_COMP_FRAGMENT','FULLTEXT_DOCID_STATUS','FULLTEXT_INDEXED_DOCID','FULLTEXT_DOCID_FILTER','FULLTEXT_DOCID_MAP', -- fulltext indexes
+                               'SEMPLAT_DOCUMENT_INDEX_TABLE','SEMPLAT_TAG_INDEX_TABLE' -- semantic search indexes
+                               )
+),
+object_size AS
+(
+SELECT object_id,
+       SUM(used_page_count) / 128.0 AS object_size_mb,
+       SUM(row_count) AS object_row_count
+FROM partition_size
+GROUP BY object_id
+HAVING SUM(used_page_count) > 1024 * 128 -- consider larger tables only > 1 GB
+),
+guid_index AS
+(
+SELECT  'GUID leading index column' AS Finding ,
+       OBJECT_SCHEMA_NAME(o.object_id) COLLATE DATABASE_DEFAULT AS schemaName, 
+       o.name COLLATE DATABASE_DEFAULT AS objectName,
+       i.name COLLATE DATABASE_DEFAULT AS indexName,
+       i.type_desc COLLATE DATABASE_DEFAULT AS indexType,
+       os.object_size_mb,
+       os.object_row_count
+FROM sys.objects AS o
+INNER JOIN sys.indexes AS i
+ON o.object_id = i.object_id
+INNER JOIN sys.index_columns AS ic
+ON i.object_id = ic.object_id
+   AND i.index_id = ic.index_id
+INNER JOIN sys.columns AS c
+ON i.object_id = c.object_id
+   AND ic.object_id = c.object_id
+   AND ic.column_id = c.column_id
+INNER JOIN sys.types AS t
+ON c.system_type_id = t.system_type_id
+INNER JOIN object_size AS os
+ON o.object_id = os.object_id
+WHERE i.type_desc IN ('CLUSTERED','NONCLUSTERED') -- Btree indexes
+      AND ic.key_ordinal = 1 -- leading column
+      AND t.name = 'uniqueidentifier'
+      AND i.is_hypothetical = 0
+      AND i.is_disabled = 0
+      AND o.is_ms_shipped = 0
+)
+SELECT *
+FROM guid_index
