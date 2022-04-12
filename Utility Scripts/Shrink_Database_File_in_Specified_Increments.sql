@@ -36,6 +36,7 @@ Parameters:
 DECLARE
 	 @DatabaseName		SYSNAME = NULL		-- Leave NULL to use current database context
 	,@FileName		SYSNAME	= NULL		-- Leave NULL to shrink the file with the highest % free space
+	,@FileType		SYSNAME	= NULL		-- Optionally specify the type of file to shrink (ROWS | LOG). This is ignored if @FileName is specified.
 	,@TargetSizeMB		INT	= 20000		-- Leave NULL to rely on @MaxPercentUsed exclusively.
 	,@MaxPercentUsed	INT	= 80		-- Leave NULL to rely on @TargetSizeMB exclusively.
 								-- Either @TargetSizeMB or @MaxPercentUsed must be specified.
@@ -145,11 +146,12 @@ FROM sys.database_files
 WHERE ([name] = @FileName OR @FileName IS NULL)
 AND ([size] / 128 > @TargetSizeMB OR @TargetSizeMB IS NULL OR [name] = @FileName)
 AND type IN (0,1) -- data and log files only
-ORDER BY CAST(FILEPROPERTY([name], ''SpaceUsed'') AS float) / size ASC;'
+AND (@FileType IS NULL OR @FileName IS NOT NULL OR [type_desc] = @FileType)
+ORDER BY size - CAST(FILEPROPERTY([name], ''SpaceUsed'') AS float) DESC;'
 
 IF @WhatIf = 1 PRINT @CMD;
-EXEC @sp_executesql @CMD, N'@FileName SYSNAME OUTPUT, @CurrSizeMB INT OUTPUT, @SpaceUsedMB INT OUTPUT, @TargetSizeMB INT'
-			, @FileName OUTPUT, @CurrSizeMB OUTPUT, @SpaceUsedMB OUTPUT, @TargetSizeMB
+EXEC @sp_executesql @CMD, N'@FileName SYSNAME OUTPUT, @CurrSizeMB INT OUTPUT, @SpaceUsedMB INT OUTPUT, @FileType SYSNAME, @TargetSizeMB INT'
+			, @FileName OUTPUT, @CurrSizeMB OUTPUT, @SpaceUsedMB OUTPUT, @FileType, @TargetSizeMB
 
 SET @TargetSizeMB = (
 			SELECT MAX(val)
@@ -162,11 +164,11 @@ SET @SpaceUsedPct = CAST( CEILING(@SpaceUsedMB * 100.0 / @CurrSizeMB) as varchar
 SET @TargetPct = CAST( CEILING(@SpaceUsedMB * 100.0 / @TargetSizeMB) as varchar(10)) + '%'
 
 IF @SpaceUsedMB IS NOT NULL
-	RAISERROR(N'-- File "%s" current size: %d MB, used space: %d MB (%s), target size: %d MB (%s)',0,1,@FileName,@CurrSizeMB,@SpaceUsedMB,@SpaceUsedPct,@TargetSizeMB,@TargetPct) WITH NOWAIT;
+	RAISERROR(N'-- Database "%s", File "%s" current size: %d MB, used space: %d MB (%s), target size: %d MB (%s)',0,1,@DatabaseName,@FileName,@CurrSizeMB,@SpaceUsedMB,@SpaceUsedPct,@TargetSizeMB,@TargetPct) WITH NOWAIT;
 
 IF @SpaceUsedMB IS NULL OR @CurrSizeMB <= @TargetSizeMB
 BEGIN
-	PRINT N'-- Nothing to shrink'
+	RAISERROR(N'-- Nothing to shrink in database "%s"',0,1,@DatabaseName)
 	GOTO Quit;
 END
 
