@@ -13,7 +13,7 @@ EXEC  msdb.dbo.sp_add_job @job_name=N'Maintenance.UpdateStatistics',
 		@owner_login_name=@owner, @job_id = @jobId OUTPUT
 select @jobId
 GO
-EXEC msdb.dbo.sp_add_jobserver @job_name=N'Maintenance.UpdateStatistics', @server_name = @@SERVERNAME
+EXEC msdb.dbo.sp_add_jobserver @job_name=N'Maintenance.UpdateStatistics', @server_name = '(local)'
 GO
 USE [msdb]
 GO
