@@ -2,8 +2,8 @@
 
   $ServerInstance = 'yourserver.database.windows.net' # <============ Insert your Server Name
   $Database = 'master' 
-  $UserName = 'yourusername' # <============ Insert your Password
-  $Password = 'Yourp@ssword123' # <============ Insert your User Name
+  $UserName = 'yourusername' # <============ Insert your User Name
+  $Password = 'Yourp@ssword123' # <============ Insert your Password
   $Query = 'SELECT name FROM sys.databases WHERE database_id NOT IN(1,5)'
   $TargetTenants = Invoke-Sqlcmd -ServerInstance $ServerInstance -Database $Database -UserName $UserName -Password $Password -Query $Query
   
