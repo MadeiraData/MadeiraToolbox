@@ -24,8 +24,9 @@ SELECT
 	DatabaseName		= db.name
       , File_Path		= f.physical_name
       , File_Size_MB		= f.size / 128
-      , Shrinkable_Log_MB	= lstat.VLFSize
-      , Shrinkable_VLFs		= lstat.VLFCount
+      , IsShrinkable		= CONVERT(bit, CASE WHEN VLFActives = 0 THEN 1 ELSE 0 END)
+      , Tail_Log_MB		= lstat.VLFSize
+      , Tail_VLFs		= lstat.VLFCount
       , Total_VLFs		= lstat.VLFTotalCount
       , PotentialSizeMB		= iter.potsize
       , PotentialVLFCount	= potential.PotentialVLFCount
@@ -53,8 +54,8 @@ CROSS APPLY
 		FROM	sys.dm_db_log_info(db.database_id) AS li
 		WHERE	li.file_id = f.file_id
 	) AS linfo
-	WHERE	VLFActives = 0
-	ORDER BY vlf_active ASC
+	--WHERE	VLFActives = 0		-- uncomment this to only return shrinkable transaction logs
+	ORDER BY CASE WHEN VLFActives = 0 THEN 0 ELSE 1 END ASC, vlf_active ASC
 ) AS lstat
 CROSS APPLY (SELECT f.size / 128) AS m(size_mb)
 CROSS APPLY (
@@ -82,7 +83,7 @@ CROSS APPLY (SELECT PotentialVLFCount = CASE WHEN iter.potsize <= 64 THEN (iter.
 WHERE
 	HAS_DBACCESS(db.name) = 1
 	AND DATABASEPROPERTYEX(db.name, 'Updateability') = 'READ_WRITE'
-	AND db.database_id > 4
-	--AND db.recovery_model_desc = 'FULL'
-	--AND lstat.VLFTotalCount > 300
-ORDER BY Total_VLFs DESC, Shrinkable_Log_MB DESC;
+	--AND db.database_id > 4		-- uncomment this to return user databases only
+	--AND db.recovery_model_desc = 'FULL'	-- uncomment this to only return databases with FULL recovery model
+	--AND lstat.VLFTotalCount > 300		-- uncomment this to filter transaction logs based on VLF count
+ORDER BY Total_VLFs DESC, Tail_Log_MB DESC;
