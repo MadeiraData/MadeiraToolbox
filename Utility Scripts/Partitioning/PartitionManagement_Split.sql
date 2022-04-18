@@ -37,9 +37,9 @@ Minimum Version: SQL Server 2016 (13.x) and later
 
 -- Example 1: Automatically detect current max value, and create 200 buffer partitions beyond it, using the last interval as the increment:
 
-EXEC dbo.[SplitPartitionsByMaxValue]
-	  @RoundRobinFileGroups = 'FG_Partitions_1,FG_Partitions_2'
-	, @PartitionFunctionName = 'MyPartitionFunctionName'
+EXEC dbo.[PartitionManagement_Split]
+	  @PartitionFunctionName = 'MyPartitionFunctionName'
+	, @RoundRobinFileGroups = 'FG_Partitions_1,FG_Partitions_2'
 	, @TargetRangeValue = NULL
 	, @BufferIntervals = 200
 	, @DebugOnly = 0
@@ -50,19 +50,19 @@ GO
 
 DECLARE @FutureValue datetime = DATEADD(year,1, CONVERT(date, GETDATE()))
 
-EXEC dbo.[SplitPartitionsByMaxValue]
-	  @RoundRobinFileGroups = 'PRIMARY'
-	, @PartitionFunctionName = 'MyMonthlyPartitionFunctionName'
+EXEC dbo.[PartitionManagement_Split]
+	  @PartitionFunctionName = 'MyMonthlyPartitionFunctionName'
+	, @RoundRobinFileGroups = 'PRIMARY'
 	, @TargetRangeValue = @FutureValue
 	, @PartitionIncrementExpression = 'DATEADD(MM, 1, CONVERT(datetime, @CurrentRangeValue))'
 	, @DebugOnly = 0
 */
-CREATE OR ALTER PROCEDURE dbo.[SplitPartitionsByMaxValue]
-  @RoundRobinFileGroups nvarchar(MAX) = N'PRIMARY'
-, @PartitionFunctionName sysname
+CREATE OR ALTER PROCEDURE dbo.[PartitionManagement_Split]
+  @PartitionFunctionName sysname
+, @RoundRobinFileGroups nvarchar(MAX) = N'PRIMARY'
 , @TargetRangeValue sql_variant = NULL
-, @PartitionIncrementExpression nvarchar(4000) = N'CONVERT(float, @CurrentRangeValue) + CONVERT(float, @PartitionRangeInterval)' -- 'DATEADD(MM, 1, CONVERT(datetime, @CurrentRangeValue))'
-, @BufferIntervals int = 100
+, @PartitionIncrementExpression nvarchar(4000) = N'CONVERT(float, @CurrentRangeValue) + CONVERT(float, @PartitionRangeInterval)' -- 'DATEADD(month, 1, CONVERT(datetime, @CurrentRangeValue))'
+, @BufferIntervals int = 200
 , @PartitionRangeInterval sql_variant = NULL
 , @DebugOnly bit = 0
 AS
@@ -74,12 +74,18 @@ DECLARE @FileGroups AS table (FGID int NOT NULL IDENTITY(1,1), FGName sysname NO
 DECLARE @Msg nvarchar(max);
 
 INSERT INTO @FileGroups (FGName)
-SELECT DISTINCT RTRIM(LTRIM([value]))
+SELECT RTRIM(LTRIM([value]))
 FROM STRING_SPLIT(@RoundRobinFileGroups, N',')
 
 IF @@ROWCOUNT = 0
 BEGIN
 	RAISERROR(N'At least one filegroup must be specified in @RoundRobinFileGroups',16,1);
+	RETURN -1;
+END
+
+IF EXISTS (SELECT FGName FROM @FileGroups GROUP BY FGName HAVING COUNT(*) > 1)
+BEGIN
+	RAISERROR(N'Each filegroup in @RoundRobinFileGroups must be specified no more than once.',16,1);
 	RETURN -1;
 END
 
@@ -95,8 +101,9 @@ END
 
 DECLARE
   @MaxPartitionRangeValue sql_variant
-, @CurrentRangeCount int
+, @CurrentTotalPartitionCount int
 , @LastPartitionNumber int
+, @LastPartitionHasData bit
 , @PartitionKeyDataType sysname
 , @CMD nvarchar(max)
 , @MaxValueFromTable sysname
@@ -105,16 +112,17 @@ DECLARE
 
 
 SELECT TOP (1)
-  @CurrentRangeCount = pf.fanout
+  @CurrentTotalPartitionCount = pf.fanout
 , @LastPartitionNumber = p.partition_number
+, @LastPartitionHasData = CASE WHEN p.rows > 0 THEN 1 ELSE 0 END
 , @MaxPartitionRangeValue = rv.value
 , @MaxValueFromColumn = c.name
 , @MaxValueFromTable = QUOTENAME(OBJECT_SCHEMA_NAME(p.object_id)) + N'.' + QUOTENAME(OBJECT_NAME(p.object_id))
 , @PartitionKeyDataType = QUOTENAME(tp.[name])
 + CASE
-	WHEN tp.name LIKE '%char%' OR tp.name LIKE '%binary%' THEN N'(' + ISNULL(CONVERT(nvarchar(MAX), NULLIF(c.max_length,-1)),'max') + N')'
+	WHEN tp.name LIKE '%char' OR tp.name LIKE '%binary' THEN N'(' + ISNULL(CONVERT(nvarchar(MAX), NULLIF(c.max_length,-1)),'max') + N')'
 	WHEN tp.name IN ('decimal', 'numeric') THEN N'(' + CONVERT(nvarchar(MAX), c.precision) + N',' + CONVERT(nvarchar(MAX), c.scale) + N')'
-	WHEN tp.name IN ('datetime2') THEN N'(' + CONVERT(nvarchar(MAX), c.scale) + N')'
+	WHEN tp.name IN ('datetime2','time') THEN N'(' + CONVERT(nvarchar(MAX), c.scale) + N')'
 	ELSE N''
   END
 FROM sys.partitions AS p
@@ -126,10 +134,10 @@ INNER JOIN sys.index_columns AS ic ON ic.object_id = p.object_id AND ic.index_id
 INNER JOIN sys.columns AS c ON c.object_id = p.object_id AND c.column_id = ic.column_id
 INNER JOIN sys.types AS tp ON c.system_type_id = tp.system_type_id AND c.user_type_id = tp.user_type_id
 WHERE pf.name = @PartitionFunctionName
-ORDER BY CASE WHEN p.rows > 0 THEN 0 ELSE 1 END ASC, p.partition_number DESC
+ORDER BY CASE WHEN p.rows > 0 THEN 0 ELSE 1 END ASC, p.partition_number DESC, p.rows DESC, ix.index_id ASC
 
 
-IF @PartitionRangeInterval IS NULL AND @PartitionIncrementExpression IS NULL
+IF @PartitionRangeInterval IS NULL AND @MaxPartitionRangeValue IS NOT NULL
 BEGIN
 	SET @CMD = N'
 	SELECT TOP (1)
@@ -147,9 +155,9 @@ END
 
 SET @PartitionIncrementExpression = ISNULL(@PartitionIncrementExpression, N'CONVERT(float, @CurrentRangeValue) + CONVERT(float, @PartitionRangeInterval)')
 
-DECLARE @MissingIntervals float;
+DECLARE @MissingIntervals int = 0, @CurrentRangeValue sql_variant, @IsCurrentRangeValueSmallerThanTargetValue bit;
 
-IF @ActualMaxValue IS NULL
+IF @ActualMaxValue IS NULL AND @MaxValueFromColumn IS NOT NULL AND @MaxValueFromTable IS NOT NULL
 BEGIN
 	SET @CMD = N'SELECT @ActualMaxValue = CONVERT(sql_variant, MAX(' + @MaxValueFromColumn + N')) FROM ' + @MaxValueFromTable;
 	EXEC sp_executesql @CMD, N'@ActualMaxValue sql_variant OUTPUT', @ActualMaxValue OUTPUT;
@@ -158,16 +166,37 @@ END
 SET @CMD = N'SET @LastPartitionNumber = $PARTITION.' + QUOTENAME(@PartitionFunctionName) + N'(CONVERT(' + @PartitionKeyDataType + N', @ActualMaxValue))'
 EXEC sp_executesql @CMD, N'@LastPartitionNumber int OUTPUT, @ActualMaxValue sql_variant', @LastPartitionNumber OUTPUT, @ActualMaxValue
 
-IF @TargetRangeValue IS NULL
+SET @CMD = N'SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @MaxPartitionRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
+EXEC sp_executesql @CMD
+	, N'@IsSmaller bit OUTPUT, @MaxPartitionRangeValue sql_variant, @TargetRangeValue sql_variant'
+	, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @MaxPartitionRangeValue, @TargetRangeValue;
+
+--IF @TargetRangeValue IS NULL AND @LastPartitionHasData = 1
 BEGIN
-	SET @MissingIntervals = CEILING((CONVERT(float, @ActualMaxValue) - CONVERT(float, @MaxPartitionRangeValue)) / CONVERT(float, @PartitionRangeInterval)) + @BufferIntervals
-	SET @TargetRangeValue = CONVERT(float, @MaxPartitionRangeValue) + (CONVERT(float, @PartitionRangeInterval) * @MissingIntervals)
+	DECLARE @i int = 0;
+	SET @CurrentRangeValue = @MaxPartitionRangeValue;
+
+	WHILE (@TargetRangeValue IS NULL AND @i <= @BufferIntervals) OR @IsCurrentRangeValueSmallerThanTargetValue = 1
+	BEGIN
+		SET @IsCurrentRangeValueSmallerThanTargetValue = 0;
+		SET @CMD = N'SET @CurrentRangeValue = ' + @PartitionIncrementExpression
+		SET @CMD = @CMD + CHAR(13) + CHAR(10)
+			+ N'; SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @CurrentRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
+		EXEC sp_executesql @CMD
+			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant'
+			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue;
+		
+		SET @i = @i + 1;
+	END
+
+	SET @MissingIntervals = @LastPartitionNumber + @i - @CurrentTotalPartitionCount;
+	IF @TargetRangeValue IS NULL SET @TargetRangeValue = @CurrentRangeValue;
 END
 
 SET @Msg = CONCAT(
-  N'-- @PartitionRangeInterval: ', CONVERT(nvarchar(MAX), @PartitionRangeInterval)
+  N'@PartitionRangeInterval: ', CONVERT(nvarchar(MAX), @PartitionRangeInterval)
 , N'. @MaxPartitionRangeValue: ', CONVERT(nvarchar(MAX), @MaxPartitionRangeValue)
-, N'. @CurrentRangeCount: ', @CurrentRangeCount
+, N'. @CurrentTotalPartitionCount: ', @CurrentTotalPartitionCount
 , N'. @LastPartitionNumber: ', @LastPartitionNumber
 , N'. @ActualMaxValue: ', CONVERT(nvarchar(MAX), @ActualMaxValue)
 , N'. @TargetRangeValue: ', ISNULL(CONVERT(nvarchar(MAX), @TargetRangeValue), N'(null)')
@@ -175,19 +204,30 @@ SET @Msg = CONCAT(
 )
 RAISERROR(N'%s', 0,1, @Msg) WITH NOWAIT;
 
-IF @MissingIntervals > 0 OR CONVERT(float, @MaxPartitionRangeValue) < CONVERT(float, @TargetRangeValue)
-BEGIN
-	DECLARE @CurrentRangeValue sql_variant = @MaxPartitionRangeValue;
+SET @CMD = N'SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @MaxPartitionRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
+EXEC sp_executesql @CMD
+	, N'@IsSmaller bit OUTPUT, @MaxPartitionRangeValue sql_variant, @TargetRangeValue sql_variant'
+	, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @MaxPartitionRangeValue, @TargetRangeValue;
 
-	WHILE CONVERT(float, @CurrentRangeValue) < CONVERT(float, @TargetRangeValue)
+IF @MissingIntervals > 0 OR @IsCurrentRangeValueSmallerThanTargetValue = 1
+BEGIN
+	SET @CurrentRangeValue = @MaxPartitionRangeValue;
+	SET @IsCurrentRangeValueSmallerThanTargetValue = 1;
+
+	WHILE @IsCurrentRangeValueSmallerThanTargetValue = 1
 	BEGIN
+		SET @IsCurrentRangeValueSmallerThanTargetValue = 0;
 		SET @CMD = N'SET @CurrentRangeValue = ' + @PartitionIncrementExpression
-		EXEC sp_executesql @CMD, N'@CurrentRangeValue sql_variant OUTPUT', @CurrentRangeValue OUTPUT;
+		SET @CMD = @CMD + CHAR(13) + CHAR(10) 
+			+ N'; SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @CurrentRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
+		EXEC sp_executesql @CMD
+			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant'
+			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue;
 		
 		SET @Msg = CONCAT(CONVERT(nvarchar(24), GETDATE(), 121), N' - Splitting range: ', CONVERT(nvarchar(max), @CurrentRangeValue))
 		RAISERROR(N'%s', 0,1, @Msg) WITH NOWAIT;
 		
-		-- Execute NEXT USED for all dependent partition schemes
+		-- Execute NEXT USED for all dependent partition schemes:
 		DECLARE @CurrPS sysname, @CurrFG sysname, @NextFG sysname
 
 		DECLARE PSFG CURSOR
@@ -215,6 +255,7 @@ BEGIN
 
 			SET @CMD = N'ALTER PARTITION SCHEME ' + QUOTENAME(@CurrPS) + ' NEXT USED ';
 
+			-- Find next FG based on round-robin:
 			SELECT @NextFG = FGName
 			FROM @FileGroups
 			WHERE FGID = (SELECT TOP (1) fg2.FGID + 1 FROM @FileGroups AS fg2 WHERE fg2.FGName = @CurrFG ORDER BY fg2.FGID)
@@ -240,6 +281,8 @@ BEGIN
 	
 	END
 END
+ELSE
+	PRINT N'No new partition ranges required.'
 
 SET @Msg = CONCAT(CONVERT(nvarchar(24), GETDATE(), 121), N' - Done.')
 RAISERROR(N'%s', 0,1, @Msg) WITH NOWAIT;

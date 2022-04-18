@@ -1,27 +1,31 @@
 /*
--- Example usage by min value:
+===============================================================
+Author: Eitan Blumin | https://eitanblumin.com | https://madeiradata.com
+Date: 2022-01-11
+Minimum Version: SQL Server 2016 (13.x) and later
+===============================================================
+
+-- Example 1: Purge based on minimum value to keep:
 DECLARE @MinDateValueToKeep datetime = DATEADD(year, -1, GETDATE())
 
-EXEC dbo.[PurgePartitions]
+EXEC dbo.[PartitionManagement_Purge]
 	  @PartitionFunctionName = 'PRT_FN_MyFunction'
-	, @MaxIntervals = NULL
 	, @MinValueToKeep = @MinDateValueToKeep
 	, @TruncateOldPartitions = 1
 	, @DebugOnly = 0
 GO
 -- Example usage by max intervals:
 
-EXEC dbo.[PurgePartitions]
+EXEC dbo.[PartitionManagement_Purge]
 	  @PartitionFunctionName = 'PRT_FN_MyFunction'
-	, @MaxIntervals = 200
-	, @MinValueToKeep = NULL
+	, @MaxIntervals = 1000
 	, @TruncateOldPartitions = 1
 	, @DebugOnly = 0
 */
-CREATE OR ALTER PROCEDURE dbo.[PurgePartitions]
+CREATE OR ALTER PROCEDURE dbo.[PartitionManagement_Purge]
   @PartitionFunctionName sysname
-, @MaxIntervals int = NULL
 , @MinValueToKeep sql_variant = NULL
+, @MaxIntervals int = NULL
 , @TruncateOldPartitions bit = 1
 , @DebugOnly bit = 0
 AS
@@ -37,9 +41,9 @@ SELECT TOP (1)
   @PartitionFunctionId = pf.function_id
 , @PartitionKeyDataType = QUOTENAME(tp.[name])
 + CASE
-	WHEN tp.name LIKE '%char%' OR tp.name LIKE '%binary%' THEN N'(' + ISNULL(CONVERT(nvarchar(MAX), NULLIF(c.max_length,-1)),'max') + N')'
+	WHEN tp.name LIKE '%char' OR tp.name LIKE '%binary' THEN N'(' + ISNULL(CONVERT(nvarchar(MAX), NULLIF(c.max_length,-1)),'max') + N')'
 	WHEN tp.name IN ('decimal', 'numeric') THEN N'(' + CONVERT(nvarchar(MAX), c.precision) + N',' + CONVERT(nvarchar(MAX), c.scale) + N')'
-	WHEN tp.name IN ('datetime2') THEN N'(' + CONVERT(nvarchar(MAX), c.scale) + N')'
+	WHEN tp.name IN ('datetime2', 'time') THEN N'(' + CONVERT(nvarchar(MAX), c.scale) + N')'
 	ELSE N''
   END
 FROM sys.partitions AS p
@@ -62,25 +66,17 @@ END
 -- Truncate and merge old partitions
 WHILE 1=1
 BEGIN
-	DECLARE @CurrObjectId int, @MinPartitionRangeValue sql_variant, @IsMinRangeValueBiggerThanMinValueToKeep bit
-
-	SET @CMD = N'SELECT @MinPartitionRangeValue = MIN(CONVERT(' + @PartitionKeyDataType + N', value))
-	FROM sys.partition_range_values
-	WHERE function_id = @PartitionFunctionId
-	
-	IF CONVERT(' + @PartitionKeyDataType + N', @MinPartitionRangeValue) >= CONVERT(' + @PartitionKeyDataType + N', @MinValueToKeep)
-		SET @IsMinRangeValueBiggerThanMinValueToKeep = 1
-	ELSE
-		SET @IsMinRangeValueBiggerThanMinValueToKeep = 0'
+	DECLARE @CurrObjectId int, @MinPartitionRangeValue sql_variant, @MinPartitionNumberToKeep int
+	SET @CMD = N'SET @MinPartitionNumberToKeep = $PARTITION.' + QUOTENAME(@PartitionFunctionName) + N'(CONVERT(' + @PartitionKeyDataType + N', @MinValueToKeep))'
 
 	EXEC sp_executesql @CMD
-		, N'@PartitionFunctionId int, @MinPartitionRangeValue sql_variant OUTPUT, @MinValueToKeep sql_variant, @IsMinRangeValueBiggerThanMinValueToKeep bit OUTPUT'
-		, @PartitionFunctionId, @MinPartitionRangeValue OUTPUT, @MinValueToKeep, @IsMinRangeValueBiggerThanMinValueToKeep OUTPUT
+		, N'@MinPartitionNumberToKeep int OUTPUT, @MinValueToKeep sql_variant'
+		, @MinPartitionNumberToKeep OUTPUT, @MinValueToKeep
 
-	IF @IsMinRangeValueBiggerThanMinValueToKeep = 1
+	IF @MinPartitionNumberToKeep > 1
 	OR @MaxIntervals > (select fanout from sys.partition_functions where function_id = @PartitionFunctionId)
 		BREAK;
-
+		
 	-- Truncate old partitions
 	IF @TruncateOldPartitions = 1
 	BEGIN
@@ -106,12 +102,17 @@ BEGIN
 
 			SET @CMD = N'TRUNCATE TABLE ' + QUOTENAME(OBJECT_SCHEMA_NAME(@CurrObjectId)) + N'.' + QUOTENAME(OBJECT_NAME(@CurrObjectId)) + N' WITH (PARTITIONS (1));'
 			RAISERROR(@CMD,0,1) WITH NOWAIT;
-			IF @DebugOnly = 0 EXEC(@CMD);
+			IF @DebugOnly = 0 EXEC sp_executesql @CMD;
 		END
 	
 		CLOSE PartitionedTables;
 		DEALLOCATE PartitionedTables;
 	END
+	
+	SELECT TOP(1) @MinPartitionRangeValue = [value]
+	FROM sys.partition_range_values
+	WHERE function_id = @PartitionFunctionId
+	ORDER BY boundary_id ASC
 
 	SET @CMD = 'SET QUOTED_IDENTIFIER ON;
 ALTER PARTITION FUNCTION ' + QUOTENAME(@PartitionFunctionName) + '() MERGE RANGE (CONVERT(' + @PartitionKeyDataType + N', @MinPartitionRangeValue));'
