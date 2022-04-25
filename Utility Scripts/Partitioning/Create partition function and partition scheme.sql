@@ -13,8 +13,8 @@ DECLARE  @PartitionFunctionName sysname = 'PF_MyPartitionFunction'
 	,@PartitionSchemeName sysname = 'PS_MyPartitionScheme'
 	,@PartitionFunctionType sysname = 'datetime' 
 	,@PartitionFunctionRange nvarchar(10) = 'RIGHT' 
-	,@StartTime datetime = '20211101'
-	,@EndTime datetime = '20221101'
+	,@StartTime datetime = '20210101'
+	,@EndTime datetime = '20210201'
 	,@FG sysname = 'ARCHIVE_FG'
 	,@ExecuteCommands BIT = 0
 

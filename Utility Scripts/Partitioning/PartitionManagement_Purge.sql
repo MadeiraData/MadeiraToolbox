@@ -6,26 +6,33 @@ Minimum Version: SQL Server 2016 (13.x) and later
 ===============================================================
 
 -- Example 1: Purge based on minimum value to keep:
+
 DECLARE @MinDateValueToKeep datetime = DATEADD(year, -1, GETDATE())
 
 EXEC dbo.[PartitionManagement_Purge]
-	  @PartitionFunctionName = 'PRT_FN_MyFunction'
+	  @PartitionFunctionName = 'PF_MyPartitionFunction'
 	, @MinValueToKeep = @MinDateValueToKeep
 	, @TruncateOldPartitions = 1
 	, @DebugOnly = 0
+
 GO
--- Example usage by max intervals:
+
+-- Example 2: Purge based on minimum value to keep and enforce a minimal number of partitions
+
+DECLARE @MinDateValueToKeep datetime = DATEADD(year, -1, GETDATE())
 
 EXEC dbo.[PartitionManagement_Purge]
-	  @PartitionFunctionName = 'PRT_FN_MyFunction'
-	, @MaxIntervals = 1000
+	  @PartitionFunctionName = 'PF_MyPartitionFunction'
+	, @MinValueToKeep = @MinDateValueToKeep
+	, @MinPartitionsToKeep = 1000
 	, @TruncateOldPartitions = 1
 	, @DebugOnly = 0
+
 */
 CREATE OR ALTER PROCEDURE dbo.[PartitionManagement_Purge]
   @PartitionFunctionName sysname
-, @MinValueToKeep sql_variant = NULL
-, @MaxIntervals int = NULL
+, @MinValueToKeep sql_variant
+, @MinPartitionsToKeep int = 3
 , @TruncateOldPartitions bit = 1
 , @DebugOnly bit = 0
 AS
@@ -34,47 +41,49 @@ BEGIN
 SET NOCOUNT, ARITHABORT, XACT_ABORT, QUOTED_IDENTIFIER ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-DECLARE @PartitionFunctionId int, @Msg nvarchar(max), @CMD nvarchar(max), @PartitionKeyDataType sysname;
-
+DECLARE @PartitionFunctionId int, @Msg nvarchar(max), @CMD nvarchar(max), @PartitionKeyDataType sysname, @CurrentPartitionsCount int;
 
 SELECT TOP (1)
   @PartitionFunctionId = pf.function_id
 , @PartitionKeyDataType = QUOTENAME(tp.[name])
 + CASE
-	WHEN tp.name LIKE '%char' OR tp.name LIKE '%binary' THEN N'(' + ISNULL(CONVERT(nvarchar(MAX), NULLIF(c.max_length,-1)),'max') + N')'
-	WHEN tp.name IN ('decimal', 'numeric') THEN N'(' + CONVERT(nvarchar(MAX), c.precision) + N',' + CONVERT(nvarchar(MAX), c.scale) + N')'
-	WHEN tp.name IN ('datetime2', 'time') THEN N'(' + CONVERT(nvarchar(MAX), c.scale) + N')'
+	WHEN tp.name LIKE '%char' OR tp.name LIKE '%binary' THEN N'(' + ISNULL(CONVERT(nvarchar(MAX), NULLIF(params.max_length,-1)),'max') + N')'
+	WHEN tp.name IN ('decimal', 'numeric') THEN N'(' + CONVERT(nvarchar(MAX), params.precision) + N',' + CONVERT(nvarchar(MAX), params.scale) + N')'
+	WHEN tp.name IN ('datetime2', 'time') THEN N'(' + CONVERT(nvarchar(MAX), params.scale) + N')'
 	ELSE N''
   END
-FROM sys.partitions AS p
-INNER JOIN sys.indexes AS ix ON p.object_id = ix.object_id AND p.index_id = ix.index_id
-INNER JOIN sys.partition_schemes AS ps ON ix.data_space_id = ps.data_space_id
+FROM sys.partition_schemes AS ps
 INNER JOIN sys.partition_functions AS pf ON ps.function_id = pf.function_id
-INNER JOIN sys.index_columns AS ic ON ic.object_id = p.object_id AND ic.index_id = p.index_id AND ic.partition_ordinal > 0
-INNER JOIN sys.columns AS c ON c.object_id = p.object_id AND c.column_id = ic.column_id
-INNER JOIN sys.types AS tp ON c.system_type_id = tp.system_type_id AND c.user_type_id = tp.user_type_id
+INNER JOIN sys.partition_range_values AS rv ON rv.function_id = pf.function_id
+INNER JOIN sys.partition_parameters AS params ON params.function_id = pf.function_id
+INNER JOIN sys.types AS tp ON params.system_type_id = tp.system_type_id AND params.user_type_id = tp.user_type_id
+LEFT JOIN sys.indexes AS ix ON ix.data_space_id = ps.data_space_id
+LEFT JOIN sys.partitions AS p ON rv.boundary_id = p.partition_number AND p.object_id = ix.object_id AND p.index_id = ix.index_id
 WHERE pf.name = @PartitionFunctionName
-ORDER BY CASE WHEN p.rows > 0 THEN 0 ELSE 1 END ASC, p.partition_number DESC
+ORDER BY CASE WHEN p.rows > 0 THEN 0 ELSE 1 END ASC, rv.boundary_id DESC
 
-
-IF @MaxIntervals IS NULL AND @MinValueToKeep IS NULL
+IF @MinValueToKeep IS NULL
 BEGIN
-	RAISERROR(N'At least one of @MaxIntervals or @MinValueToKeep must be specified',16,1);
+	RAISERROR(N'Value for @MinValueToKeep must be specified',16,1);
 	RETURN -1;
 END
 
 -- Truncate and merge old partitions
 WHILE 1=1
 BEGIN
-	DECLARE @CurrObjectId int, @MinPartitionRangeValue sql_variant, @MinPartitionNumberToKeep int
+	DECLARE @CurrObjectId int, @MinPartitionRangeValue sql_variant, @MinPartitionNumberToKeep int;
 	SET @CMD = N'SET @MinPartitionNumberToKeep = $PARTITION.' + QUOTENAME(@PartitionFunctionName) + N'(CONVERT(' + @PartitionKeyDataType + N', @MinValueToKeep))'
 
 	EXEC sp_executesql @CMD
 		, N'@MinPartitionNumberToKeep int OUTPUT, @MinValueToKeep sql_variant'
 		, @MinPartitionNumberToKeep OUTPUT, @MinValueToKeep
+	
+	SELECT @CurrentPartitionsCount = fanout
+	FROM sys.partition_functions
+	WHERE function_id = @PartitionFunctionId
 
-	IF @MinPartitionNumberToKeep > 1
-	OR @MaxIntervals > (select fanout from sys.partition_functions where function_id = @PartitionFunctionId)
+	IF @MinPartitionNumberToKeep <= 1
+	OR @CurrentPartitionsCount <= @MinPartitionsToKeep
 		BREAK;
 		
 	-- Truncate old partitions
