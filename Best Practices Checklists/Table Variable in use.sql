@@ -1,5 +1,6 @@
 USE [master]
 GO
+SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 IF OBJECT_ID('tempdb..#ObjectsWithTableParams') IS NOT NULL DROP TABLE #ObjectsWithTableParams;
 CREATE TABLE #ObjectsWithTableParams (objectId int, databaseId int, PRIMARY KEY CLUSTERED (objectId, databaseId) WITH(IGNORE_DUP_KEY=ON));
@@ -23,12 +24,16 @@ select
 DatabaseName = DB_NAME(p.dbid),
 cp.objtype,
 CommandWithVarTable = ISNULL(CONVERT(nvarchar(max), QUOTENAME(DB_NAME(t.dbid)) + '.' + QUOTENAME(OBJECT_SCHEMA_NAME(t.objectid, t.dbid)) + '.' + QUOTENAME(OBJECT_NAME(t.objectid, t.dbid))), t.text),
-cp.plan_handle
+GetDefinitionCmd = N'USE ' + QUOTENAME(DB_NAME(p.dbid)) + N'; SELECT Def = OBJECT_DEFINITION(OBJECT_ID(' + QUOTENAME(QUOTENAME(OBJECT_SCHEMA_NAME(t.objectid, t.dbid)) + '.' + QUOTENAME(OBJECT_NAME(t.objectid, t.dbid)), N'''') + N'));',
+cp.plan_handle,
+p.query_plan,
+cp.usecounts,
+cp.size_in_bytes
 from sys.dm_exec_cached_plans as cp
 cross apply sys.dm_exec_query_plan(cp.plan_handle) as p
 cross apply sys.dm_exec_sql_text(cp.plan_handle) as t
 WHERE p.query_plan.exist('//Object[substring(@Table,1,2) = "[@"]') = 1
-AND t.dbid > 4 and DB_NAME(t.dbid) NOT IN('ReportServer','MadeiraPerformanceMonitoring','DBA')
+AND t.dbid > 4 and DB_NAME(t.dbid) NOT IN('ReportServer','MadeiraPerformanceMonitoring','DBA','SQLWATCH')
 AND ISNULL(OBJECT_NAME(t.objectid, t.dbid),'(null)') NOT IN('IndexOptimize','CommandExecute')
 AND t.text NOT LIKE N'%@jdbc_temp_fkeys_result%'
 -- ignore databases in secondary AG replicas
@@ -50,6 +55,7 @@ FROM #ObjectsWithTableParams AS tmp
 WHERE tmp.databaseId = t.dbid
 AND tmp.objectId = t.objectId
 )
+ORDER BY cp.usecounts DESC, cp.size_in_bytes DESC
 OPTION(RECOMPILE);
 
-DROP TABLE #ObjectsWithTableParams;
+--DROP TABLE #ObjectsWithTableParams;
