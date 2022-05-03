@@ -1,15 +1,31 @@
-:setvar CertificateName AutoBackup_Certificate
-:setvar CertificateDescription "Automatic Backup Certificate"
+:setvar CertificateName DEK_Certificate
+:setvar CertificateDescription "Database Certificate"
 :setvar MasterKeyPassword paste_password_here
 :setvar CertificatePassword paste_password_here
 :setvar BackupFolderPath c:\temp\
-:setvar NewExpiryDate 20991231
+:setvar NewExpiryDate 29991231
 USE [master]
+GO
+BEGIN TRY
+	EXEC xp_create_subdir '$(BackupFolderPath)'
+	PRINT N'Created folder: $(BackupFolderPath)'
+END TRY
+BEGIN CATCH
+	PRINT ERROR_MESSAGE()
+END CATCH
 GO
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 DECLARE @ToDate VARCHAR(10), @CertificateFromDate VARCHAR(10), @PKeyFromDate VARCHAR(10)
 
 SET @ToDate = CONVERT(nvarchar(10), GETDATE(), 112);
+
+IF NOT EXISTS (SELECT * FROM sys.certificates WHERE name = '$(CertificateName)')
+BEGIN
+	RAISERROR(N'Creating NEW Certificate...',0,1) WITH NOWAIT;
+	CREATE CERTIFICATE [$(CertificateName)]   
+		WITH SUBJECT = 'Database Encryption Certificate',   
+		EXPIRY_DATE = '$(NewExpiryDate)';
+END
 
 SELECT @CertificateFromDate = CONVERT(nvarchar(10), [start_date], 112), @PKeyFromDate = CONVERT(nvarchar(10), pvt_key_last_backup_date, 112)
 FROM sys.certificates
@@ -62,3 +78,4 @@ CLOSE MASTER KEY;
 
 PRINT N'Done.'
 GO
+EXEC xp_dirtree '$(BackupFolderPath)', 1, 1
