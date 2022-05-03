@@ -1,0 +1,9 @@
+:setvar CertificateName DEK_Certificate
+:setvar DatabaseName TestDB
+USE [$(DatabaseName)]
+GO
+CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256
+ENCRYPTION BY SERVER CERTIFICATE [$(CertificateName)]
+GO
+ALTER DATABASE CURRENT SET ENCRYPTION ON;
+GO
