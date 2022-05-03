@@ -89,11 +89,13 @@ FROM
 	      , CAST((TS.user_objects_alloc_page_count + TS.internal_objects_alloc_page_count
 		      - TS.internal_objects_dealloc_page_count - TS.user_objects_dealloc_page_count
 		     ) / 128 AS decimal(15, 2))										      [Net Allocation]
-	      , T.text													      [Query Text]
+	      , ISNULL(T.text, inpbuf.event_info)									      [Query Text]
 	FROM
 		sys.dm_db_task_space_usage		  TS
 	INNER	JOIN sys.dm_exec_requests		  ER ON ER.request_id = TS.request_id AND ER.session_id = TS.session_id
 	OUTER	APPLY sys.dm_exec_sql_text(ER.sql_handle) T
+	OUTER	APPLY sys.dm_exec_input_buffer(ER.session_id, NULL) inpbuf
+
 ) T1
 RIGHT	JOIN
 (
@@ -108,11 +110,12 @@ RIGHT	JOIN
 	      , CAST((SS.user_objects_alloc_page_count + SS.internal_objects_alloc_page_count
 		      - SS.internal_objects_dealloc_page_count - SS.user_objects_dealloc_page_count
 		     ) / 128 AS decimal(15, 2))										      [Net Allocation]
-	      , T.text													      [Query Text]
+	      , ISNULL(T.text, inpbuf.event_info)									      [Query Text]
 	FROM
 		sys.dm_db_session_space_usage			      SS
 	LEFT	JOIN sys.dm_exec_connections			      CN ON CN.session_id = SS.session_id
 	OUTER	APPLY sys.dm_exec_sql_text(CN.most_recent_sql_handle) T
+	OUTER	APPLY sys.dm_exec_input_buffer(SS.session_id, NULL) inpbuf
 ) T2	ON T1.session_id = T2.session_id
 ORDER BY
 	[Total Allocation] DESC
