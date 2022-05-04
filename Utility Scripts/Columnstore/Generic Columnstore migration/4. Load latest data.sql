@@ -9,15 +9,15 @@ Notes:
 USE [master]
 GO
 
-DECLARE  @SourceDBName sysname = 'CorpSms_Reports'
-		,@SourceSchemaName sysname = 'dbo'
-		,@SourceTableName sysname = 'MSG_Messages_Archive'
-		,@TargetDBName sysname = 'CorpSms_Reports_Archive'
-		,@TargetSchemaName sysname = 'dbo'
-		,@TargetTableName sysname = 'MSG_Messages_Archive_CS_NP'
-		,@TargetPKColumns varchar(MAX) = 'msgArchiveID,msgCreateDate'
-		,@TargetPartitionColumn sysname = NULL--'msgCreateDate'
-		,@TargetUpdateIndicator sysname = 'msgArchiveInsertDate'
+DECLARE  @SourceDBName sysname = 'MySourceDB'
+		,@SourceSchemaName sysname = 'MySourceShema'
+		,@SourceTableName sysname = 'MySourceTable'
+		,@TargetDBName sysname = 'MyTargetDB'
+		,@TargetSchemaName sysname = 'MyTargetShema'
+		,@TargetTableName sysname = 'MyTargetTable'
+		,@TargetPKColumns varchar(MAX) = 'PKColumn1,PKColumn2'
+		,@TargetPartitionColumn sysname = NULL--'MyTargetPartitionColumn'
+		,@TargetUpdateIndicator sysname = 'MyUpdateIndicatorColumn'
 		,@StartDate datetime = CAST(GETDATE()-1 AS date) -- set it one day before the main migration (script #2) start date 
 		,@IncludeIdentity bit = 1
 		,@ExecuteCommands bit = 0
