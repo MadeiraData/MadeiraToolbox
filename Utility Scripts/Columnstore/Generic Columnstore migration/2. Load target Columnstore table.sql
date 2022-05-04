@@ -12,13 +12,13 @@ Notes:
 USE [master]
 GO
 
-DECLARE  @SourceDBName sysname = 'CorpSms_Reports'
-		,@SourceSchemaName sysname = 'dbo'
-		,@SourceTableName sysname = 'MSG_Messages_Archive'
-		,@TargetDBName sysname = 'CorpSms_Reports_Archive'
-		,@TargetSchemaName sysname = 'dbo'
-		,@TargetTableName sysname = 'MSG_Messages_Archive_CS_NP'
-		,@IncrementColumn sysname = NULL--'msgCreateDate'
+DECLARE  @SourceDBName sysname = 'MySourceDB'
+		,@SourceSchemaName sysname = 'MySourceShema'
+		,@SourceTableName sysname = 'MySourceTable'
+		,@TargetDBName sysname = 'MyTargetDB'
+		,@TargetSchemaName sysname = 'MyTargetShema'
+		,@TargetTableName sysname = 'MyTargetTable'
+		,@IncrementColumn sysname = NULL--'MyTargetPartitionColumn'
 		,@IncrementValue varchar(10) = NULL--'MM, 1'
 		,@EndDate nvarchar(8) = CONVERT(nvarchar(8), GETDATE(), 112) -- desired last day in the target table
 		,@IncludeIdentity bit = 1
