@@ -8,13 +8,13 @@ Notes:
 USE [master]
 GO
 
-DECLARE  @SourceDBName sysname = 'CorpSms_Reports'
-		,@SourceSchemaName sysname = 'dbo'
-		,@SourceTableName sysname = 'MSG_Messages_Archive'
+DECLARE  @SourceDBName sysname = 'MySourceDB'
+		,@SourceSchemaName sysname = 'MySourceShema'
+		,@SourceTableName sysname = 'MySourceTable'
 		,@SourceTableSuffix nvarchar(10) = 'old_RS'
-		,@TargetDBName sysname = 'CorpSms_Reports_Archive'
-		,@TargetSchemaName sysname = 'dbo'
-		,@TargetTableName sysname = 'MSG_Messages_Archive_CS_NP'
+		,@TargetDBName sysname = 'MyTargetDB'
+		,@TargetSchemaName sysname = 'MyTargetShema'
+		,@TargetTableName sysname = 'MyTargetTable'
 		,@ExecuteCommands bit = 0
 
 -----------------------------------------------------------------------------------------------------
