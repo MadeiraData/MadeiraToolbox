@@ -2,19 +2,19 @@
 Description:
 	Creates statictics on all columns and updates them. Requires Auto Create Statistics on the target DB. 
 Notes:
-	1) I've set monthly partitions on msgCreateDate column, if that's not optimal, please alter the script accordingly
+	1) I've set monthly partitions on MyTargetPartitionColumn column, if that's not optimal, please alter the script accordingly
 */
 
 USE [master]
 GO
 
-DECLARE  @SourceDBName sysname = 'CorpSms_Reports'
-		,@SourceSchemaName sysname = 'dbo'
-		,@SourceTableName sysname = 'MSG_Messages_Archive'
-		,@TargetDBName sysname = 'CorpSms_Reports_Archive'
-		,@TargetSchemaName sysname = 'dbo'
-		,@TargetTableName sysname = 'MSG_Messages_Archive_CS_NP'
-		,@TargetPartitionColumn sysname = 'msgCreateDate'
+DECLARE  @SourceDBName sysname = 'MySourceDB'
+		,@SourceSchemaName sysname = 'MySourceShema'
+		,@SourceTableName sysname = 'MySourceTable'
+		,@TargetDBName sysname = 'MyTargetDB'
+		,@TargetSchemaName sysname = 'MyTargetShema'
+		,@TargetTableName sysname = 'MyTargetTable'
+		,@TargetPartitionColumn sysname = 'MyTargetPartitionColumn'
 		,@StartDate datetime = CAST(GETDATE()-4 AS DATE) -- a few days worth of data should be enough, if the stats weren't created, increase it
 		,@TopRows int = 10000 -- should be enough, if the stats weren't created, increase it
 		,@ExecuteCommands bit = 1
