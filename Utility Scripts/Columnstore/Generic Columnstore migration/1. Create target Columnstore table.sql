@@ -8,16 +8,16 @@ Notes:
 USE [master]
 GO
 
-DECLARE  @SourceDBName sysname = 'CorpSms_Reports'
-		,@SourceSchemaName sysname = 'dbo'
-		,@SourceTableName sysname = 'MSG_Messages_Archive'
-		,@TargetDBName sysname = 'CorpSms_Reports_Archive'
-		,@TargetSchemaName sysname = 'dbo'
-		,@TargetTableName sysname = 'MSG_Messages_Archive_CS_NP'
+DECLARE  @SourceDBName sysname = 'MySourceDB'
+		,@SourceSchemaName sysname = 'MySourceShema'
+		,@SourceTableName sysname = 'MySourceTable'
+		,@TargetDBName sysname = 'MyTargetDB'
+		,@TargetSchemaName sysname = 'MyTargetShema'
+		,@TargetTableName sysname = 'MyTargetTable'
 		,@TargetFG sysname = 'ARCHIVE'
-		,@TargetPartitionScheme sysname = NULL--'PS_MSG_Messages_Archive'
-		,@TargetPartitionColumn sysname = NULL--'msgCreateDate'
-		,@CompressionMode NVARCHAR(20) = 'COLUMNSTORE_ARCHIVE'
+		,@TargetPartitionScheme sysname = NULL--'PS_MySourceTable'
+		,@TargetPartitionColumn sysname = NULL--'MyTargetPartitionColumn'
+		,@CompressionMode NVARCHAR(20) = 'COLUMNSTORE'
 		,@IncludeIdentity bit = 1
 		,@DropTargetTable bit = 1
 		,@ExecuteCreation bit = 0
