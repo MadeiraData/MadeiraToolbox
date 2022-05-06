@@ -151,5 +151,26 @@ IF @TimeLimitBreached = 0
 	SET @Msg = CHAR(13) + CHAR(10) + N'-- ' + CONVERT(nvarchar(25), GETDATE(), 121) + N'  Done.'
 ELSE											      
 	SET @Msg = CHAR(13) + CHAR(10) + N'-- ' + CONVERT(nvarchar(25), GETDATE(), 121) + N'  Forced stop due to time limit.';
+	
+-- Update DBSmartUpdateStatisticsDate extended property
+
+DECLARE  @NewValue datetime = GETDATE()
+	, @ExtendedPropertyName sysname = N'DBSmartUpdateStatisticsDate'
+
+IF @ExecuteRemediation = 1 
+AND NOT EXISTS
+(
+	SELECT *
+	FROM sys.extended_properties
+	WHERE [name] = @ExtendedPropertyName
+) 
+BEGIN
+	EXEC sp_addextendedproperty @name = @ExtendedPropertyName, @value = @NewValue;  
+END
+ELSE 
+	IF @ExecuteRemediation = 1 
+	BEGIN
+		EXEC sp_updateextendedproperty @name = @ExtendedPropertyName, @value = @NewValue;
+	END
 
 RAISERROR(N'%s',0,1,@Msg) WITH NOWAIT;
