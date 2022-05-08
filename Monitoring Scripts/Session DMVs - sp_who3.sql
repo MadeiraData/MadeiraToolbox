@@ -56,3 +56,5 @@ OUTER APPLY
 	sys.dm_exec_sql_text(r.sql_handle) st
 OUTER APPLY
 	sys.dm_exec_query_plan(r.plan_handle) qp
+WHERE
+	s.session_id <> @@SPID
