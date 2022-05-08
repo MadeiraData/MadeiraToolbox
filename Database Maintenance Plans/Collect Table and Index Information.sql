@@ -6,15 +6,13 @@ DECLARE
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 DECLARE @command NVARCHAR(MAX);
-DECLARE @TempResult AS TABLE (DatabaseName sysname, SchemaName sysname NULL, TableName sysname NULL, IndexName sysname NULL
+IF OBJECT_ID('tempdb..#TempResult') IS NOT NULL DROP TABLE #TempResult;
+CREATE TABLE #TempResult (DatabaseName sysname, SchemaName sysname NULL, TableName sysname NULL, IndexName sysname NULL
 , CompressionType TINYINT, CompressionType_Desc AS (CASE CompressionType WHEN 0 THEN 'NONE' WHEN 1 THEN 'ROW' WHEN 2 THEN 'PAGE' WHEN 3 THEN 'COLUMNSTORE' WHEN 4 THEN 'COLUMNSTORE_ARCHIVE' ELSE 'UNKNOWN' END)
 , RowCounts BIGINT NULL, TotalSpaceMB float NULL, UsedSpaceMB float NULL, UnusedSpaceMB float NULL
 , UserSeeks BIGINT NULL, UserScans BIGINT NULL, UserLookups BIGINT NULL, UserUpdates BIGINT NULL);
 
-SELECT @command = 'IF EXISTS (SELECT * FROM sys.databases WHERE state = 0 AND is_read_only = 0 AND database_id > 4 AND is_distributor = 0 AND DATABASEPROPERTYEX([name], ''Updateability'') = ''READ_WRITE'')
-BEGIN
-USE [?];
-SELECT TOP (' + CONVERT(nvarchar(max), @TopPerDB) + N')
+SELECT @command = 'SELECT TOP (' + CONVERT(nvarchar(max), @TopPerDB) + N')
 	DB_NAME() AS DatabaseName,
 	s.name AS SchemaName,
 	t.name AS TableName,
@@ -49,12 +47,39 @@ WHERE
 GROUP BY 
 	t.Name, s.Name, i.name
 HAVING
-	ROUND(((SUM(a.total_pages) * 8) / 1024.00), 2) >= ' + CONVERT(nvarchar(max), @MinimumSizeMB) + N'
+	SUM(a.total_pages) >= ' + CONVERT(nvarchar(max), @MinimumSizeMB) + N' * 1024.0 / 8
 ORDER BY TotalSpaceMB DESC
-OPTION(RECOMPILE);
-END'
+OPTION(RECOMPILE);'
 
-INSERT INTO @TempResult
-EXEC sp_MSforeachdb @command
+DECLARE @CurrDB sysname, @spExecuteSql nvarchar(1000)
 
-SELECT * FROM @TempResult ORDER BY TotalSpaceMB DESC
+DECLARE DBs CURSOR
+LOCAL FAST_FORWARD
+FOR
+SELECT [name]
+FROM sys.databases
+WHERE HAS_DBACCESS([name]) = 1
+AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE'
+AND database_id > 4
+
+OPEN DBs
+
+WHILE 1=1
+BEGIN
+	FETCH NEXT FROM DBs INTO @CurrDB;
+	IF @@FETCH_STATUS <> 0 BREAK;
+
+	SET @spExecuteSql = QUOTENAME(@CurrDB) + N'..sp_executesql'
+
+	INSERT INTO #TempResult
+	EXEC @spExecuteSql @command
+END
+
+CLOSE DBs;
+DEALLOCATE DBs;
+
+SELECT *
+FROM #TempResult
+ORDER BY TotalSpaceMB DESC
+
+-- DROP TABLE #TempResult;
