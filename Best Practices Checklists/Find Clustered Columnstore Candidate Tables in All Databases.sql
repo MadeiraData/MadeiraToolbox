@@ -9,7 +9,7 @@ Description:
 Supported versions:
 	SQL Server 2017 (14.x) and newer | Azure SQL Database | Azure SQL Managed Instance
 */
-DECLARE @CCICandidateMinSizeGB int = 10;
+DECLARE @CCICandidateMinSizeGB int = 10, @DaysBack int = 30;
 
 
 SET NOCOUNT ON;
@@ -72,21 +72,24 @@ SELECT QUOTENAME(OBJECT_SCHEMA_NAME(t.object_id)) COLLATE DATABASE_DEFAULT AS sc
        tos.leaf_delete_count AS delete_count,
        tos.singleton_lookup_count AS singleton_lookup_count,
        tos.range_scan_count AS range_scan_count,
-       ius.user_seeks AS seek_count,
-       ius.user_scans AS full_scan_count,
-       ius.user_lookups AS lookup_count
+       ISNULL(ius.user_seeks, 0) AS seek_count,
+       ISNULL(ius.user_scans, 0) AS full_scan_count,
+       ISNULL(ius.user_lookups, 0) AS lookup_count
 FROM sys.tables AS t
 INNER JOIN sys.indexes AS i ON t.object_id = i.object_id
 INNER JOIN table_operational_stats AS tos ON t.object_id = tos.object_id
-INNER JOIN sys.dm_db_index_usage_stats AS ius ON t.object_id = ius.object_id AND i.index_id = ius.index_id
+LEFT JOIN sys.dm_db_index_usage_stats AS ius ON t.object_id = ius.object_id AND i.index_id = ius.index_id
 WHERE i.index_id <= 1 -- clustered index or heap
 AND tos.table_size_mb > @CCICandidateMinSizeGB * 1024. -- consider sufficiently large tables only
 AND t.is_ms_shipped = 0
 AND tos.leaf_update_count = 0 -- conservatively require a CCI candidate to have no updates, seeks, or lookups
 AND tos.singleton_lookup_count = 0
-AND ius.user_lookups = 0
-AND ius.user_seeks = 0
-AND ius.user_scans > 0 -- require a CCI candidate to have some full scans
+AND (
+    i.index_id = 0 OR 
+	(ius.user_lookups = 0
+	AND ius.user_seeks = 0
+	AND ius.user_scans > 0) -- require a CCI candidate to have some full scans
+    )
 ),
 cci_candidate_details AS
 (
@@ -105,7 +108,7 @@ SELECT STRING_AGG(
                 ''seeks: '', FORMAT(seek_count, ''#,0''), '', '',
                 ''full scans: '', FORMAT(full_scan_count, ''#,0''), '', '',
                 ''lookups: '', FORMAT(lookup_count, ''#,0'')
-                ) AS nvarchar(max)), CHAR(13) + CHAR(10)
+                ) AS nvarchar(max)), CHAR(10)
         ) WITHIN GROUP (ORDER BY schema_name, table_name)
        AS details,
        COUNT(1) AS cci_candidate_count
@@ -142,17 +145,18 @@ CLOSE DBs;
 DEALLOCATE DBs;
 
 
-SELECT dbName
-     , cci_candidate_count
-     , details
-FROM @results
-
+SELECT
+	  dbName
+	, cci_candidate_count
+	, v.[value]
+FROM @results AS r
+CROSS APPLY string_split(r.details, CHAR(10)) AS v
 
 UNION ALL
 
 SELECT NULL, 0, N'Server ' + @@SERVERNAME + N' uptime is since ' + CONVERT(nvarchar(MAX), sqlserver_start_time, 121)
 FROM sys.dm_os_sys_info
-WHERE sqlserver_start_time > DATEADD(DAY, -30, GETDATE())
+WHERE sqlserver_start_time > DATEADD(DAY, -@DaysBack, GETDATE())
 
 UNION ALL
 
