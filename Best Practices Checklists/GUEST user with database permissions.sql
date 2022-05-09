@@ -38,15 +38,6 @@ CREATE TABLE #securables
 [object_name] SYSNAME COLLATE database_default NULL,
 [sub_object_name] NVARCHAR(4000) COLLATE database_default NULL
 );
-IF OBJECT_ID('tempdb..#dbusers') IS NOT NULL DROP TABLE #dbusers;
-CREATE TABLE #dbusers
-(
-[id] int NOT NULL IDENTITY(1,1) PRIMARY KEY,
-[database_name] SYSNAME COLLATE database_default NULL,
-[user_name] sysname COLLATE database_default NULL,
-[sid] varbinary(100) NULL,
-[grantor_count] int NULL
-);
 
 DECLARE @CurrDB sysname, @CMD nvarchar(max), @spExecuteSQL nvarchar(1000);
 
