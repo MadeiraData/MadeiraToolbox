@@ -8,6 +8,7 @@ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 DECLARE @command NVARCHAR(MAX);
 IF OBJECT_ID('tempdb..#TempResult') IS NOT NULL DROP TABLE #TempResult;
 CREATE TABLE #TempResult (DatabaseName sysname, SchemaName sysname NULL, TableName sysname NULL, IndexName sysname NULL
+, IndexType sysname COLLATE DATABASE_DEFAULT NULL
 , CompressionType TINYINT, CompressionType_Desc AS (CASE CompressionType WHEN 0 THEN 'NONE' WHEN 1 THEN 'ROW' WHEN 2 THEN 'PAGE' WHEN 3 THEN 'COLUMNSTORE' WHEN 4 THEN 'COLUMNSTORE_ARCHIVE' ELSE 'UNKNOWN' END)
 , RowCounts BIGINT NULL, TotalSpaceMB float NULL, UsedSpaceMB float NULL, UnusedSpaceMB float NULL
 , UserSeeks BIGINT NULL, UserScans BIGINT NULL, UserLookups BIGINT NULL, UserUpdates BIGINT NULL);
@@ -17,6 +18,7 @@ SELECT @command = 'SELECT TOP (' + CONVERT(nvarchar(max), @TopPerDB) + N')
 	s.name AS SchemaName,
 	t.name AS TableName,
 	i.name AS IndexName,
+	i.type_desc AS IndexType,
 	MAX(p.data_compression) AS CompressionType,
 	SUM(p.rows) AS RowCounts,
 	ROUND(((SUM(a.total_pages) * 8) / 1024.00), 2) AS TotalSpaceMB,
@@ -45,7 +47,7 @@ WHERE
 	AND i.object_id > 255 
 	and p.rows >= ' + CONVERT(nvarchar(max), @MinimumRowCount) + N'
 GROUP BY 
-	t.Name, s.Name, i.name
+	t.Name, s.Name, i.name, i.type_desc
 HAVING
 	SUM(a.total_pages) >= ' + CONVERT(nvarchar(max), @MinimumSizeMB) + N' * 1024.0 / 8
 ORDER BY TotalSpaceMB DESC
