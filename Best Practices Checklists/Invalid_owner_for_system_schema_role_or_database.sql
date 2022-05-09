@@ -24,7 +24,7 @@ SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 DECLARE @CMD NVARCHAR(MAX), @DBName SYSNAME, @Executor NVARCHAR(1000), @SaName SYSNAME
 
-SELECT @SaName = [name] FROM sys.server_principals WHERE sid = 0x01;
+SET @SaName = SUSER_SNAME(0x01);
 
 SET @CMD = N'SELECT DB_ID(), DB_NAME(), ''SCHEMA'', sch.[name], pr.[name], pr.[sid]
 , ExistingMembership = IS_ROLEMEMBER(sch.[name], pr.[name])
@@ -71,6 +71,7 @@ FOR
 SELECT [name]
 FROM sys.databases
 WHERE state = 0 AND is_read_only = 0
+AND HAS_DBACCESS([name]) = 1
 AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE'
 
 OPEN DBs;

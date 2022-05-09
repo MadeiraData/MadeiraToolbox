@@ -70,7 +70,7 @@ SELECT
       + N', Table: ' + QUOTENAME(OBJECT_SCHEMA_NAME(object_id, database_id)) + '.' + QUOTENAME(OBJECT_NAME(object_id, database_id))
       + N' last partition "' + CONVERT(nvarchar(4000), partition_number) + N'" is not empty'
       + ISNULL(N' (boundary range "' + CONVERT(nvarchar(4000), last_boundary_range, 21) + N'" in partition scheme ' + QUOTENAME(partition_scheme) + N')', N'')
-    , ServerName = @@SERVERNAME
+    , ServerName = SERVERPROPERTY('ServerName')
     , DatabaseName = DB_NAME(database_id)
     , SchemaName = OBJECT_SCHEMA_NAME(object_id, database_id)
     , TableName = OBJECT_NAME(object_id, database_id)

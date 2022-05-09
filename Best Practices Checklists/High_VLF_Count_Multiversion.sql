@@ -146,7 +146,7 @@ BEGIN
  , potential.PotentialVLFCount
  , LastLogBackup		= vlf.log_backup_time
  FROM sys.databases d
- CROSS APPLY sys.dm_db_log_stats(database_id) AS vlf
+ CROSS APPLY sys.dm_db_log_stats(d.database_id) AS vlf
  INNER JOIN sys.master_files AS mf
  ON mf.database_id = d.database_id AND mf.type_desc = 'LOG'
  CROSS APPLY (SELECT mf.size / 128) AS m(size_mb)

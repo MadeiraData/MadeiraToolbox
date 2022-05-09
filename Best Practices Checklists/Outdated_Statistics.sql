@@ -21,12 +21,12 @@ CREATE TABLE #tmpStats(
 DECLARE @qry NVARCHAR(MAX), @options NVARCHAR(MAX);
 
 IF @MaxDOP IS NOT NULL
-	SET @options = ISNULL(@options + N', ', N' WITH ') + N'MAXDOP = ' + CONVERT(nvarchar, @MaxDOP)
+	SET @options = ISNULL(@options + N', ', N' WITH ') + N'MAXDOP = ' + CONVERT(nvarchar(max), @MaxDOP)
 
 IF @SampleRatePercent = 100
 	SET @options = ISNULL(@options + N', ', N' WITH ') + N'FULLSCAN'
 ELSE IF @SampleRatePercent IS NOT NULL
-	SET @options = ISNULL(@options + N', ', N' WITH ') + N'SAMPLE ' + CONVERT(nvarchar, @SampleRatePercent) + N' PERCENT'
+	SET @options = ISNULL(@options + N', ', N' WITH ') + N'SAMPLE ' + CONVERT(nvarchar(max), @SampleRatePercent) + N' PERCENT'
 
 SET @qry = N'
   SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -46,7 +46,7 @@ SET @qry = N'
      FROM sys.partitions ps 
      WHERE ps.index_id <= 1 
      GROUP BY ps.object_id
-     HAVING SUM(ps.rows) >= ' + CONVERT(nvarchar, @MinimumTableRows) + N'
+     HAVING SUM(ps.rows) >= ' + CONVERT(nvarchar(max), @MinimumTableRows) + N'
      ) AS ps
      ON t.object_id = ps.object_id 
   INNER JOIN sys.stats AS stat ON t.object_id = stat.object_id
@@ -55,15 +55,15 @@ SET @qry = N'
     (
     SELECT modification_counter, last_updated
     FROM sys.dm_db_stats_properties(stat.object_id, stat.stats_id)
-    WHERE modification_counter >= ' + CONVERT(nvarchar, @MinimumModCountr) + N'
-    AND last_updated < DATEADD(day, -' + CONVERT(nvarchar, @MinimumDaysOld) + N', GETDATE())
+    WHERE modification_counter >= ' + CONVERT(nvarchar(max), @MinimumModCountr) + N'
+    AND last_updated < DATEADD(day, -' + CONVERT(nvarchar(max), @MinimumDaysOld) + N', GETDATE())
     '
     + CASE WHEN OBJECT_ID('sys.dm_db_incremental_stats_properties') IS NULL THEN N'' ELSE 
     N'UNION ALL
     SELECT modification_counter, last_updated
     FROM sys.dm_db_incremental_stats_properties(stat.object_id, stat.stats_id)
-    WHERE modification_counter >= ' + CONVERT(nvarchar, @MinimumModCountr) + N'
-    AND last_updated < DATEADD(day, -' + CONVERT(nvarchar, @MinimumDaysOld) + N', GETDATE())
+    WHERE modification_counter >= ' + CONVERT(nvarchar(max), @MinimumModCountr) + N'
+    AND last_updated < DATEADD(day, -' + CONVERT(nvarchar(max), @MinimumDaysOld) + N', GETDATE())
     ' END
   + N') AS sp
   WHERE t.is_ms_shipped = 0
