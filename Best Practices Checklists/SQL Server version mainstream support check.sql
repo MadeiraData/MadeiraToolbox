@@ -6,7 +6,10 @@ N'SQL Server version ' + v.SQLVersion + N' mainstream support ends on '
 + N'. Please consider upgrading to the latest SQL version to enjoy bug fixes, performance improvements, and security updates for as long as possible.'
 , v.EoMainstream
 FROM (VALUES
- ('2012', 11, '7/11/2017'	, '7/12/2022')
+ ('2000',  8, '4/8/2008'	, '4/9/2013')
+,('2005',  9, '4/12/2011'	, '4/12/2016')
+,('2008', 10, '7/8/2014'	, '7/9/2019')
+,('2012', 11, '7/11/2017'	, '7/12/2022')
 ,('2014', 12, '7/9/2019'	, '7/9/2024')
 ,('2016', 13, '7/13/2021'	, '7/14/2026')
 ,('2017', 14, '10/11/2022'	, '10/12/2027')
