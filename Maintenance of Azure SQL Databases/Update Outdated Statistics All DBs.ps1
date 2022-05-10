@@ -4,7 +4,7 @@ param
 ,[string]$TargetServerCredentials = 'MyAzureDB-maintenance' # <============ Insert your Azure Automation Credential Name
 ,[string]$TargetServerDatabase = 'master'
 ,[string]$QueryToGetTargetDatabaseNames = 'SELECT name FROM sys.databases WHERE database_id > 1'
-,[string]$TSQLScriptURI = 'https://raw.githubusercontent.com/MadeiraData/MadeiraToolbox/master/Utility%20Scripts/Update%20Outdated%20Statistics%20All%20DBs%20(Parameterized).sql' # <=== Replace with the relevant github url (should be a raw file containing T-SQL)
+,[string]$TSQLScriptURL = 'https://raw.githubusercontent.com/MadeiraData/MadeiraToolbox/master/Utility%20Scripts/Update%20Outdated%20Statistics%20All%20DBs%20(Parameterized).sql' # <=== Replace with the relevant github url (should be a raw file containing T-SQL)
 )
 
 # Get credentials object:
@@ -14,7 +14,7 @@ $Credentials = Get-AutomationPSCredential -Name $TargetServerCredentials
 $TargetTenants = Invoke-Sqlcmd -ServerInstance $TargetServerInstance -Database $TargetServerDatabase -UserName $Credentials.UserName -Password $Credentials.GetNetworkCredential().Password -Query $QueryToGetTargetDatabaseNames
 
 # Get the TSQL command to run on each tenant
-$Query = Invoke-WebRequest -Uri $TSQLScriptURI -UseBasicParsing 
+$Query = Invoke-WebRequest -Uri $TSQLScriptURL -UseBasicParsing 
 Write-Output "Running command:`n$Query"
 
 # Loop for each of the Target Tenants:
