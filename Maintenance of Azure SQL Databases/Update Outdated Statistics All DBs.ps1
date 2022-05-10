@@ -4,7 +4,7 @@ param
 ,[string]$TargetServerCredentials = 'MyAzureDB-maintenance' # <============ Insert your Azure Automation Credential Name
 ,[string]$TargetServerDatabase = 'master'
 ,[string]$QueryToGetTargetDatabaseNames = 'SELECT name FROM sys.databases WHERE database_id > 1'
-,[string]$TSQLScriptURL = 'https://raw.githubusercontent.com/MadeiraData/MadeiraToolbox/master/Utility%20Scripts/Update%20Outdated%20Statistics%20All%20DBs%20(Parameterized).sql' # <=== Replace with the relevant github url (should be a raw file containing T-SQL)
+,[string]$TSQLScriptURL = 'https://raw.githubusercontent.com/MadeiraData/MadeiraToolbox/master/Utility%20Scripts/Update%20Outdated%20Statistics%20All%20DBs%20(Parameterized).sql'
 )
 
 # Get credentials object:
