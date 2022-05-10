@@ -83,8 +83,10 @@ CREATE TABLE #Files
 
 IF OBJECT_ID('sys.dm_os_volume_stats') IS NOT NULL
 BEGIN
- EXEC (N'INSERT INTO #Volumes
- SELECT DISTINCT vs.volume_mount_point, vs.total_bytes, vs.available_bytes
+ SET @CMD = N'INSERT INTO #Volumes
+ SELECT DISTINCT vs.volume_mount_point, vs.total_bytes'
+ + CASE WHEN CONVERT(sysname, SERVERPROPERTY('Edition')) = 'SQL Azure' THEN N' + vs.available_bytes' ELSE N'' END
+ + N', vs.available_bytes
  FROM (
   SELECT *
   FROM sys.master_files AS f WITH(NOLOCK)
@@ -94,7 +96,8 @@ BEGIN
   AND f.database_id <> 2
  ) AS f
  CROSS APPLY sys.dm_os_volume_stats (f.database_id, f.file_id)  AS vs
- WHERE vs.volume_mount_point <> ''C:\''')
+ --WHERE vs.volume_mount_point <> ''C:\'''
+ EXEC(@CMD)
 
  DECLARE @Executor NVARCHAR(1000);
  SET @CMD = N'
