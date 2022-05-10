@@ -1,0 +1,33 @@
+1) EXPORT a database from an Azure Managed Instance by creating a .bacpac file using SqlPackage.exe:
+
+SqlPackage.exe /Action:Export /ssn:tcp:yourmanagedinstance.public.12345qwerty.database.windows.net,3342 /sdn:YourDatabaseName /su:yourusername /sp:YourP@$$word! /tf:C:\temp\YourDatabaseName.bacpac /p:VerifyExtraction=false /p:Storage=File
+
+YOU SHOULD RUN THE COMMAND ABOVE USING CMD FROM THE FOLLOWING DIRECTORY:
+
+C:\Program Files\Microsoft SQL Server\160\DAC\bin 
+  
+This is beacuse the SqlPackage.exe is located there.
+160 might be replaced by the relvant folder (for example 140).
+
+To change directory in cmd, simply run "cd" followed by your location 
+For example:
+cd C:\Program Files\Microsoft SQL Server\160\DAC\bin
+
+2) IMPORT the datbase to your local instance file using the .bacpac file:
+
+SqlPackage.exe /a:Import /sf:C:\temp\YourDatabaseName.bacpac /tdn:YourDatabaseName /tsn:YOUR-SERVER-NAME*
+
+
+*use the following T-SQL command to get your server name:
+PRINT @@SERVERNAME
+
+Abbreviations:
+
+/SourceServerName:	/ssn
+/SourceDatabaseName:	/sdn
+/SourceUser:	        /su
+/SourcePassword:	/sp
+/TargetFile:	        /tf
+/Properties:	        /p
+
+
