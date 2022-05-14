@@ -47,8 +47,8 @@ SELECT
 	, NumaNodes					= @numa
 	, NumaNodesAfinned			= @numa_nodes_afinned
 
-SELECT Recommendation = 'Maximum value for MaxMem setting on this configuration is ' + CONVERT(NVARCHAR,(@systemmem/@numa) * @numa_nodes_afinned) + ' MB for a single instance'
+SELECT Recommendation = 'Maximum value for MaxMem setting on this configuration is ' + CONVERT(NVARCHAR,(@RecommendedMaxMemMB/@numa) * @numa_nodes_afinned) + ' MB for a single instance and multi-NUMA'
 WHERE @numa > 1
 UNION ALL
-SELECT Recommendation = 'Maximum value for MaxMem setting on this configuration is ' + CONVERT(nvarchar(1000), @RecommendedMaxMemMB) + N' MB for a single instance'
+SELECT Recommendation = 'Maximum value for MaxMem setting on this configuration is ' + CONVERT(nvarchar(1000), @RecommendedMaxMemMB) + N' MB for a single instance and single NUMA'
 WHERE @numa <= 1
