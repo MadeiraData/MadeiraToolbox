@@ -4,12 +4,15 @@ Get Job Output File Contents
 Author: Eitan Blumin | https://eitanblumin.com | https://madeiradata.com
 Date: 2022-04-13
 */
-DECLARE @JobName sysname = N'DatabaseBackup - USER_DATABASES - FULL'
+DECLARE
+	  @JobName sysname = N'Maintenance.IntegrityAndIndex'
+	, @jobStepName sysname
+	, @jobStepId int
 
 SET NOCOUNT ON;
-DECLARE @cmd nvarchar(MAX), @LogDirectory nvarchar(4000), @OutputFilePath nvarchar(MAX), @jobId varbinary(64), @jobStepId int, @jobStepName sysname
+DECLARE @cmd nvarchar(MAX), @LogDirectory nvarchar(4000), @OutputFilePath nvarchar(MAX), @jobId varbinary(64)
 
-SELECT	  @JobName = j.name
+SELECT @JobName = j.name
 	, @jobId = CONVERT(varbinary(256), js.job_id)
 	, @jobStepId = js.step_id
 	, @jobStepName = js.step_name
@@ -17,6 +20,8 @@ SELECT	  @JobName = j.name
 FROM msdb.dbo.sysjobs AS j
 INNER JOIN msdb.dbo.sysjobsteps AS js ON j.job_id = js.job_id
 WHERE j.name = @JobName AND js.output_file_name <> N''
+AND (@jobStepName IS NULL OR js.step_name = @jobStepName)
+AND (@jobStepId IS NULL OR js.step_id = @jobStepId)
 
 IF @OutputFilePath IS NULL
 BEGIN
@@ -47,7 +52,7 @@ SET @OutputFilePath =
 		, N'$(ESCAPE_SQUOTE(DATE))', N'%')
 		, N'$(ESCAPE_SQUOTE(TIME))', N'%')
 
-RAISERROR(N'Job Name: %s', 0, 1, @JobName);
+RAISERROR(N'Job Name: %s, Step Name: %s', 0, 1, @JobName, @jobStepName);
 RAISERROR(N'Log Directory: %s', 0, 1, @LogDirectory);
 RAISERROR(N'Output File Path: %s', 0, 1, @OutputFilePath);
 
