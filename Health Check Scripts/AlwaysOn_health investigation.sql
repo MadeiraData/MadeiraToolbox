@@ -175,10 +175,16 @@ SELECT
 	, Report = CONVERT(nvarchar,event_timestamp,121) + N' ' + QUOTENAME(object_name) + N' - Error ' + CONVERT(nvarchar, errnumber) + N', Severity ' + CONVERT(nvarchar,errseverity) + N': ' + errmessage
 WHERE object_name = 'error_reported'
 AND errseverity >= 10
-AND (errnumber NOT IN (35202) OR @ShowRecoveryEvents = 1)
+AND (errnumber NOT IN (26022,35202,41051,41053,41055) OR @ShowRecoveryEvents = 1)
 AND NOT EXISTS (
 	SELECT * FROM AGEvents AS n
-	WHERE n.errnumber = 35202 AND a.errnumber IN (35201, 35206)
+	WHERE
+	(
+		(n.errnumber = 35202 AND a.errnumber = 35206)
+	OR	(n.errnumber = 41051 AND a.errnumber = 41050)
+	OR	(n.errnumber = 41053 AND a.errnumber = 41052)
+	OR	(n.errnumber = 41055 AND a.errnumber = 41054)
+	)
 	AND n.event_timestamp BETWEEN a.event_timestamp AND DATEADD(second, @MaxSecondsForErrorRecovery, a.event_timestamp)
 	--AND a.availability_group_name = n.availability_group_name
 	--AND a.availability_replica_name = n.availability_replica_name
