@@ -15,7 +15,7 @@ GO
 -- Create a new certificate
 
 CREATE CERTIFICATE [AGCertificate_ServerA]
-WITH SUBJECT = 'AGCertificate - Server A';
+WITH SUBJECT = 'AGCertificate - Server A', EXPIRY_DATE = '2999-12-31';
 GO
 
 
@@ -28,7 +28,7 @@ GO
 
 -- Create an endpoint for the Availability Group
 
-CREATE ENDPOINT [AG_Endpoint]
+CREATE ENDPOINT [Hadr_endpoint]
 STATE = STARTED
 AS TCP
 (
@@ -60,7 +60,7 @@ GO
 -- Create a new certificate
 
 CREATE CERTIFICATE [AGCertificate_ServerB]
-WITH SUBJECT = 'AGCertificate - Server B';
+WITH SUBJECT = 'AGCertificate - Server B', EXPIRY_DATE = '2999-12-31';
 GO
 
 
@@ -73,7 +73,7 @@ GO
 
 -- Create an endpoint for the Availability Group
 
-CREATE ENDPOINT [AG_Endpoint]
+CREATE ENDPOINT [Hadr_endpoint]
 STATE = STARTED
 AS TCP
 (
@@ -105,7 +105,7 @@ GO
 -- Create a new certificate
 
 CREATE CERTIFICATE [AGCertificate_ServerC]
-WITH SUBJECT = 'AGCertificate - Server C';
+WITH SUBJECT = 'AGCertificate - Server C', EXPIRY_DATE = '2999-12-31';
 GO
 
 
@@ -118,7 +118,7 @@ GO
 
 -- Create an endpoint for the Availability Group
 
-CREATE ENDPOINT [AG_Endpoint]
+CREATE ENDPOINT [Hadr_endpoint]
 STATE = STARTED
 AS TCP
 (
@@ -159,7 +159,7 @@ GO
 
 -- Grant the CONNECT permission to the login
 
-GRANT CONNECT ON ENDPOINT::AG_Endpoint TO [Login_ServerB];
+GRANT CONNECT ON ENDPOINT::Hadr_endpoint TO [Login_ServerB];
 GO
 
 
@@ -185,7 +185,7 @@ GO
 
 -- Grant the CONNECT permission to the login
 
-GRANT CONNECT ON ENDPOINT::AG_Endpoint TO [Login_ServerC];
+GRANT CONNECT ON ENDPOINT::Hadr_endpoint TO [Login_ServerC];
 GO
 
 
@@ -215,7 +215,7 @@ GO
 
 -- Grant the CONNECT permission to the login
 
-GRANT CONNECT ON ENDPOINT::AG_Endpoint TO [Login_ServerA];
+GRANT CONNECT ON ENDPOINT::Hadr_endpoint TO [Login_ServerA];
 GO
 
 
@@ -241,7 +241,7 @@ GO
 
 -- Grant the CONNECT permission to the login
 
-GRANT CONNECT ON ENDPOINT::AG_Endpoint TO [Login_ServerC];
+GRANT CONNECT ON ENDPOINT::Hadr_endpoint TO [Login_ServerC];
 GO
 
 
@@ -271,7 +271,7 @@ GO
 
 -- Grant the CONNECT permission to the login
 
-GRANT CONNECT ON ENDPOINT::AG_Endpoint TO [Login_ServerA];
+GRANT CONNECT ON ENDPOINT::Hadr_endpoint TO [Login_ServerA];
 GO
 
 
@@ -297,7 +297,7 @@ GO
 
 -- Grant the CONNECT permission to the login
 
-GRANT CONNECT ON ENDPOINT::AG_Endpoint TO [Login_ServerB];
+GRANT CONNECT ON ENDPOINT::Hadr_endpoint TO [Login_ServerB];
 GO
 
 
