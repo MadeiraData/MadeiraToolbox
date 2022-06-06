@@ -5,33 +5,29 @@
  --		Compares server level objects and definitions as outputted by the first script (InstancePropertiesGenerateForCompare.sql).
  --
  -- Instructions:
- --		Run InstancePropertiesGenerateForCompare.sql on each server. Save output to a CSV file.
- --		Use this script ( InstancePropertiesComparison.sql ) to load the files into a table, and output any differences
+ --		1. Run InstancePropertiesGenerateForCompare.sql on each server. Save output to a CSV file.
+ --		2. Use this script ( InstancePropertiesComparison.sql ) to load the files into a temp table, and output any differences.
  --		Don't forget to change file paths accordingly.
- -- Disclaimer:
- --		Recommended to run in TEMPDB, unless you want to retain results in the long-term.
- --		Note that this script runs TRUNCATE TABLE if InstanceProperties already exists. 
- --		So if you want long-term retention, you should remove that (lines 32-33).
  ----------------------------------------------------------------------------------
 
+--USE [tempdb]
+
 SET NOCOUNT ON;
-GO
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
 -- Create Table for Comparisons
-IF OBJECT_ID('InstanceProperties') IS NULL
-BEGIN
-	CREATE TABLE dbo.InstanceProperties
-	(
-		ServerName VARCHAR(300) COLLATE database_default NULL,
-		Category VARCHAR(100) COLLATE database_default NULL,
-		ItemName VARCHAR(500) COLLATE database_default NULL,
-		PropertyName VARCHAR(500) COLLATE database_default NULL,
-		PropertyValue VARCHAR(8000) COLLATE database_default NULL
-	);
-	CREATE CLUSTERED INDEX IX ON dbo.InstanceProperties (ServerName, Category, ItemName, PropertyName);
-END
-ELSE
-	TRUNCATE TABLE dbo.InstanceProperties;
-GO
+IF OBJECT_ID('tempdb..#InstanceProperties') IS NOT NULL DROP TABLE #InstanceProperties;
+
+CREATE TABLE #InstanceProperties
+(
+	ServerName VARCHAR(300) COLLATE database_default NULL,
+	Category VARCHAR(100) COLLATE database_default NULL,
+	ItemName VARCHAR(500) COLLATE database_default NULL,
+	PropertyName VARCHAR(500) COLLATE database_default NULL,
+	PropertyValue VARCHAR(8000) COLLATE database_default NULL
+);
+CREATE CLUSTERED INDEX IX ON #InstanceProperties (ServerName, Category, ItemName, PropertyName);
+
 DECLARE Paths CURSOR
 LOCAL FAST_FORWARD
 FOR
@@ -52,7 +48,7 @@ BEGIN
 	FETCH NEXT FROM Paths INTO @CurrPath;
 	IF @@FETCH_STATUS <> 0 BREAK;
 
-	SET @Cmd = N'BULK INSERT dbo.InstanceProperties
+	SET @Cmd = N'BULK INSERT #InstanceProperties
 FROM ''' + @CurrPath + N'''
 WITH (CODEPAGE = ''65001'', FIELDTERMINATOR='','')'
 	PRINT @Cmd;
@@ -62,69 +58,115 @@ END
 CLOSE Paths;
 DEALLOCATE Paths;
 
-GO
 
 -- Cleanup unicode remnants
-UPDATE dbo.InstanceProperties SET ServerName = REPLACE(ServerName, N'ן»¿', '')
+UPDATE #InstanceProperties SET ServerName = REPLACE(ServerName, N'ן»¿', '')
 WHERE ServerName LIKE 'ן»¿%'
-GO
 
---SELECT * FROM dbo.InstanceProperties -- debug
-GO
+
+--SELECT * FROM #InstanceProperties -- debug
+
 
 -- Perform comparisons
 
 DECLARE @ServersCount int
 
-SELECT @ServersCount = COUNT(DISTINCT ServerName) FROM dbo.InstanceProperties WHERE ServerName IS NOT NULL;
+SELECT @ServersCount = COUNT(DISTINCT ServerName) FROM #InstanceProperties WHERE ServerName IS NOT NULL;
 
-DECLARE @MatchedItems AS TABLE (Category VARCHAR(100), ItemName VARCHAR(500), PRIMARY KEY (Category, ItemName))
+DECLARE @MatchedItems AS TABLE (Category VARCHAR(100), ItemName VARCHAR(500), PropertyName VARCHAR(500) NULL, UNIQUE (Category, ItemName, PropertyName))
 
 INSERT INTO @MatchedItems
-SELECT Category, ItemName
-FROM dbo.InstanceProperties
-GROUP BY Category, ItemName
+SELECT Category, ItemName, PropertyName
+FROM #InstanceProperties
+GROUP BY Category, ItemName, PropertyName
 HAVING COUNT(DISTINCT ServerName) = @ServersCount
+OPTION(RECOMPILE)
 
 ;
 WITH Srv AS
-(SELECT DISTINCT ServerName FROM dbo.InstanceProperties WHERE ServerName IS NOT NULL)
+(SELECT DISTINCT ServerName FROM #InstanceProperties WHERE ServerName IS NOT NULL)
 , ItemNonMatches AS
 (
 	SELECT Category, ItemName
-	FROM dbo.InstanceProperties
+	FROM #InstanceProperties
 	WHERE
 	-- Ignore 2nd level categories
 		Category NOT LIKE '%: %'
 	GROUP BY Category, ItemName
 	HAVING COUNT(DISTINCT ServerName) < @ServersCount
 )
+, PropertiesNonMatches AS
+(
+	SELECT Category, ItemName, PropertyName
+	FROM #InstanceProperties AS i
+	WHERE NOT EXISTS (SELECT NULL FROM ItemNonMatches AS inm WHERE i.Category = inm.Category AND i.ItemName = inm.ItemName)
+	AND i.PropertyName IS NOT NULL
+	GROUP BY Category, ItemName, PropertyName
+	HAVING COUNT(DISTINCT ServerName) < @ServersCount
+)
 SELECT Issue = 'Missing Item'
 , Category, ItemName, PropertyName = CONVERT(varchar(500),NULL)
-, Details = (SELECT [@ServerName] = ServerName
+, Details = (SELECT missing = (SELECT [@ServerName] = ServerName
 	 FROM Srv
 	 WHERE NOT EXISTS
 	 (SELECT NULL
-	  FROM dbo.InstanceProperties AS i
+	  FROM #InstanceProperties AS i
 	  WHERE i.ServerName = Srv.ServerName
 	  AND i.Category = inm.Category
 	  AND i.ItemName = inm.ItemName
 	 )
-	 FOR XML PATH('srv'), TYPE)
+	 FOR XML PATH('val'), TYPE)
+	 , existing = (
+	  SELECT [@ServerName] = ServerName, [@PropertyName] = i.PropertyName, [text()] = i.[PropertyValue]
+	  FROM #InstanceProperties AS i
+	  WHERE i.Category = inm.Category
+	  AND i.ItemName = inm.ItemName
+	  FOR XML PATH('val'), TYPE
+	  )
+	 FOR XML PATH('details'), TYPE
+	 )
 FROM ItemNonMatches AS inm
+
+UNION ALL
+
+SELECT Issue = 'Missing Property'
+, Category, ItemName, PropertyName = inm.PropertyName
+, Details = (SELECT missing = (SELECT [@ServerName] = ServerName
+	 FROM Srv
+	 WHERE NOT EXISTS
+	 (SELECT NULL
+	  FROM #InstanceProperties AS i
+	  WHERE i.ServerName = Srv.ServerName
+	  AND i.Category = inm.Category
+	  AND i.ItemName = inm.ItemName
+	  AND i.PropertyName = inm.PropertyName
+	 )
+	 FOR XML PATH('val'), TYPE)
+	 , existing = (
+	  SELECT [@ServerName] = ServerName, [@PropertyName] = i.PropertyName, [text()] = i.[PropertyValue]
+	  FROM #InstanceProperties AS i
+	  WHERE i.Category = inm.Category
+	  AND i.ItemName = inm.ItemName
+	  AND i.PropertyName = inm.PropertyName
+	  FOR XML PATH('val'), TYPE
+	  )
+	 FOR XML PATH('details'), TYPE
+	 )
+FROM PropertiesNonMatches AS inm
 
 UNION ALL
 
 SELECT Issue = 'Value is different', Category, ItemName, PropertyName
 , Details =
 	(SELECT [@ServerName] = ServerName, [text()] = PropertyValue
-	 FROM dbo.InstanceProperties AS v
+	 FROM #InstanceProperties AS v
 	 WHERE v.Category = i.Category
 	 AND v.ItemName = i.ItemName
 	 AND v.PropertyName = i.PropertyName
 	 FOR XML PATH('val'), TYPE)
-FROM dbo.InstanceProperties AS i
-WHERE EXISTS (SELECT NULL FROM @MatchedItems MI WHERE MI.Category = i.Category AND MI.ItemName = i.ItemName)
+FROM #InstanceProperties AS i
+WHERE EXISTS (SELECT NULL FROM @MatchedItems MI WHERE MI.Category = i.Category AND MI.ItemName = i.ItemName AND EXISTS (SELECT i.PropertyName INTERSECT SELECT MI.PropertyName))
 GROUP BY Category, ItemName, PropertyName
 HAVING COUNT(DISTINCT PropertyValue) > 1
+OPTION(RECOMPILE)
 GO
