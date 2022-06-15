@@ -9,7 +9,7 @@ Description:
 Supported versions:
 	SQL Server 2017 (14.x) and newer | Azure SQL Database | Azure SQL Managed Instance
 */
-DECLARE @CCICandidateMinSizeGB int = 10, @DaysBack int = 30;
+DECLARE @CCICandidateMinSizeGB int = 10, @DaysBack int = 7;
 
 
 SET NOCOUNT ON;
@@ -82,7 +82,8 @@ LEFT JOIN sys.dm_db_index_usage_stats AS ius ON t.object_id = ius.object_id AND 
 WHERE i.index_id <= 1 -- clustered index or heap
 AND tos.table_size_mb > @CCICandidateMinSizeGB * 1024. -- consider sufficiently large tables only
 AND t.is_ms_shipped = 0
-AND tos.leaf_update_count = 0 -- conservatively require a CCI candidate to have no updates, seeks, or lookups
+-- conservatively require a CCI candidate to have no updates, seeks, or lookups
+AND tos.leaf_update_count = 0
 AND tos.singleton_lookup_count = 0
 AND (
     i.index_id = 0 OR 
@@ -139,6 +140,8 @@ BEGIN
 
 	INSERT INTO @results
 	EXEC @spExecuteSql @CMD, N'@CCICandidateMinSizeGB int', @CCICandidateMinSizeGB;
+
+	RAISERROR(N'Database "%s": %d finding(s)',0,1,@CurrDB,@@ROWCOUNT) WITH NOWAIT;
 END
 
 CLOSE DBs;
