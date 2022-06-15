@@ -20,8 +20,8 @@ More info: https://eitanblumin.com/2018/10/31/t-sql-script-to-fix-orphaned-db-us
 DECLARE
 	    @Database			sysname	= NULL	-- Filter by a specific database. Leave NULL for all databases.
 	 ,  @WriteableDBsOnly		bit	= 0	-- Set to 1 to ignore read-only databases.
-	 ,  @DropEmptyOwnedSchemas	bit	= 0	-- Set to 1 to drop schemas without objects if an orphan user owns them. Otherwise, change their owner to [dbo]. Not relevant if user is dbo.
-	 ,  @DropOwnedObjects		bit	= 0	-- Set to 1 to drop objects if an orphan user owns them. Otherwise, change their schema to [dbo]. Not relevant if user is dbo.
+	 ,  @DropEmptyOwnedSchemas	bit	= 1	-- Set to 1 to drop schemas without objects if an orphan user owns them. Otherwise, change their owner to [dbo]. Not relevant if user is dbo.
+	 ,  @DropOwnedObjects		bit	= 1	-- Set to 1 to drop objects if an orphan user owns them. Otherwise, change their schema to [dbo]. Not relevant if user is dbo.
 
 SET NOCOUNT ON;
 
