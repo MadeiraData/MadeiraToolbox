@@ -13,16 +13,17 @@ SELECT
 	s.session_id,
 	s.status,
 	s.host_name,
+	s.host_process_id,
 	c.client_net_address,
 	login_name			= CASE
 								WHEN s.login_name = s.original_login_name THEN s.login_name 
 								ELSE s.login_name + ' (' + s.original_login_name + ')' 
 						  END,
 	s.program_name,
-	database_name		= DB_NAME(r.database_id),
+	database_name		= DB_NAME(ISNULL(r.database_id, s.database_id)),
 	r.command,
 	running_statement	= SUBSTRING(st.text, r.statement_start_offset/2+1, ((CASE WHEN r.statement_end_offset = -1 THEN DATALENGTH(st.text) ELSE r.statement_end_offset END - r.statement_start_offset)/2) + 1),
-	query_text			= st.text,
+	query_text			= ISNULL(st.text, ib.event_info),
 	xml_query_plan		= qp.query_plan,
 	current_wait_type	= r.wait_type,
 	r.last_wait_type,
@@ -51,10 +52,11 @@ LEFT OUTER JOIN
 	sys.dm_exec_requests r
 	ON
 		s.session_id = r.session_id 
-	AND r.status NOT IN ('background','sleeping')
 OUTER APPLY
 	sys.dm_exec_sql_text(r.sql_handle) st
 OUTER APPLY
 	sys.dm_exec_query_plan(r.plan_handle) qp
+OUTER APPLY
+	sys.dm_exec_input_buffer(s.session_id, r.request_id) ib
 WHERE
 	s.session_id <> @@SPID
