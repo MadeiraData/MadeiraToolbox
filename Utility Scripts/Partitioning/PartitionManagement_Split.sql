@@ -28,6 +28,7 @@ EXEC dbo.[PartitionManagement_Split]
 	, @PartitionIncrementExpression = 'DATEADD(month, 1, CONVERT(datetime, @CurrentRangeValue))'
 	, @PartitionRangeInterval = @PartitionRangeInterval
 	, @DebugOnly = 0
+	, @AllowDataMovementForColumnstore = 1 -- this will enable data movement for non-empty partitions with columnstore
 */
 CREATE OR ALTER PROCEDURE dbo.[PartitionManagement_Split]
   @PartitionFunctionName sysname
@@ -37,6 +38,8 @@ CREATE OR ALTER PROCEDURE dbo.[PartitionManagement_Split]
 , @BufferIntervals int = 200
 , @PartitionRangeInterval sql_variant = NULL
 , @DebugOnly bit = 0
+, @Verbose bit = 0
+, @AllowDataMovementForColumnstore bit = 0 /* SPLIT is not supported for non-empty partitions with columnstore indexes (error 35346). This will MOVE such partitions to a staging table and then re-insert them back. */
 AS
 BEGIN
 
@@ -77,6 +80,7 @@ DECLARE
 , @CurrentTotalPartitionCount int
 , @LastPartitionNumber int
 , @LastPartitionHasData bit
+, @PartitionFunctionId int
 , @CMD nvarchar(max)
 , @MaxValueFromTable sysname
 , @MaxValueFromColumn sysname
@@ -85,7 +89,8 @@ DECLARE
 
 
 SELECT TOP (1)
-  @CurrentTotalPartitionCount = pf.fanout
+  @PartitionFunctionId = pf.function_id
+, @CurrentTotalPartitionCount = pf.fanout
 , @LastPartitionNumber = rv.boundary_id
 , @LastPartitionHasData = CASE WHEN p.rows > 0 THEN 1 ELSE 0 END
 , @MaxPartitionRangeValue = rv.value
@@ -108,7 +113,13 @@ LEFT JOIN sys.partitions AS p ON rv.boundary_id = p.partition_number AND p.objec
 LEFT JOIN sys.index_columns AS ic ON ic.object_id = p.object_id AND ic.index_id = p.index_id AND ic.partition_ordinal > 0
 LEFT JOIN sys.columns AS c ON c.object_id = p.object_id AND c.column_id = ic.column_id
 WHERE pf.name = @PartitionFunctionName
-ORDER BY CASE WHEN p.rows > 0 THEN 0 ELSE 1 END ASC, rv.boundary_id DESC, p.rows DESC, ix.index_id ASC
+ORDER BY CASE WHEN @TargetRangeValue IS NULL AND p.rows > 0 THEN 0 ELSE 1 END ASC, rv.boundary_id DESC, p.rows DESC, ix.index_id ASC
+
+IF @PartitionFunctionId IS NULL
+BEGIN
+	RAISERROR(N'Partition function "%s" is invalid',16,1,@PartitionFunctionName);
+	RETURN -1;
+END
 
 IF @PartitionRangeInterval IS NULL AND @MaxPartitionRangeValue IS NOT NULL
 BEGIN
@@ -116,14 +127,14 @@ BEGIN
 	SELECT TOP (1)
 		@PartitionRangeInterval = CONVERT(sql_variant, CONVERT(' + @PartitionKeyDataType + N', @MaxPartitionRangeValue) - CONVERT(' + @PartitionKeyDataType + N', rv.value))
 	FROM sys.partition_range_values AS rv
-	INNER JOIN sys.partition_functions AS f ON rv.function_id = f.function_id
-	WHERE f.name = @PartitionFunctionName
-	AND rv.boundary_id < @LastPartitionNumber
+	WHERE rv.function_id = @PartitionFunctionId
+	AND rv.boundary_id <= @LastPartitionNumber
 	ORDER BY rv.boundary_id DESC'
 
+	IF @Verbose = 1 PRINT @CMD;
 	EXEC sp_executesql @CMD
-		, N'@PartitionRangeInterval sql_variant OUTPUT, @MaxPartitionRangeValue sql_variant, @PartitionFunctionName sysname, @LastPartitionNumber int'
-		, @PartitionRangeInterval OUTPUT, @MaxPartitionRangeValue, @PartitionFunctionName, @LastPartitionNumber
+		, N'@PartitionRangeInterval sql_variant OUTPUT, @MaxPartitionRangeValue sql_variant, @PartitionFunctionId int, @LastPartitionNumber int'
+		, @PartitionRangeInterval OUTPUT, @MaxPartitionRangeValue, @PartitionFunctionId, @LastPartitionNumber
 END
 
 SET @PartitionIncrementExpression = ISNULL(@PartitionIncrementExpression, N'CONVERT(float, @CurrentRangeValue) + CONVERT(float, @PartitionRangeInterval)')
@@ -133,16 +144,19 @@ DECLARE @MissingIntervals int = 0, @CurrentRangeValue sql_variant, @IsCurrentRan
 IF @ActualMaxValue IS NULL AND @MaxValueFromColumn IS NOT NULL AND @MaxValueFromTable IS NOT NULL
 BEGIN
 	SET @CMD = N'SELECT @ActualMaxValue = CONVERT(sql_variant, MAX(' + @MaxValueFromColumn + N')) FROM ' + @MaxValueFromTable;
+	IF @Verbose = 1 PRINT @CMD;
 	EXEC sp_executesql @CMD, N'@ActualMaxValue sql_variant OUTPUT', @ActualMaxValue OUTPUT;
 END
 
 IF @LastPartitionNumber IS NULL AND @ActualMaxValue IS NOT NULL
 BEGIN
 	SET @CMD = N'SET @LastPartitionNumber = $PARTITION.' + QUOTENAME(@PartitionFunctionName) + N'(CONVERT(' + @PartitionKeyDataType + N', @ActualMaxValue))'
+	IF @Verbose = 1 PRINT @CMD;
 	EXEC sp_executesql @CMD, N'@LastPartitionNumber int OUTPUT, @ActualMaxValue sql_variant', @LastPartitionNumber OUTPUT, @ActualMaxValue
 END
 
 SET @CMD = N'SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @MaxPartitionRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
+IF @Verbose = 1 PRINT @CMD;
 EXEC sp_executesql @CMD
 	, N'@IsSmaller bit OUTPUT, @MaxPartitionRangeValue sql_variant, @TargetRangeValue sql_variant'
 	, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @MaxPartitionRangeValue, @TargetRangeValue;
@@ -158,6 +172,7 @@ BEGIN
 		SET @CMD = N'SET @CurrentRangeValue = ' + @PartitionIncrementExpression
 		SET @CMD = @CMD + CHAR(13) + CHAR(10)
 			+ N'; SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @CurrentRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
+		IF @Verbose = 1 PRINT @CMD;
 		EXEC sp_executesql @CMD
 			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant'
 			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue;
@@ -170,6 +185,7 @@ BEGIN
 END
 
 SET @CMD = N'SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @MaxPartitionRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
+IF @Verbose = 1 PRINT @CMD;
 EXEC sp_executesql @CMD
 	, N'@IsSmaller bit OUTPUT, @MaxPartitionRangeValue sql_variant, @TargetRangeValue sql_variant'
 	, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @MaxPartitionRangeValue, @TargetRangeValue;
@@ -186,6 +202,10 @@ SET @Msg = CONCAT(
 )
 RAISERROR(N'%s', 0,1, @Msg) WITH NOWAIT;
 
+DECLARE @StagingTablesToRecover AS TABLE(StagingTable sysname, RecoverCommand nvarchar(max));
+
+BEGIN TRAN;
+
 IF @MissingIntervals > 0 OR @IsCurrentRangeValueSmallerThanTargetValue = 1
 BEGIN
 	SET @CurrentRangeValue = @MaxPartitionRangeValue;
@@ -195,14 +215,16 @@ BEGIN
 	BEGIN
 		SET @IsCurrentRangeValueSmallerThanTargetValue = 0;
 		SET @CMD = N'SET @CurrentRangeValue = ' + @PartitionIncrementExpression
-		SET @CMD = @CMD + CHAR(13) + CHAR(10) 
-			+ N'; SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @CurrentRangeValue) <= CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
+		SET @CMD = @CMD 
+			+ CHAR(13) + CHAR(10) + N'; SET @LastPartitionNumber = $PARTITION.' + QUOTENAME(@PartitionFunctionName) + N'(CONVERT(' + @PartitionKeyDataType + N', @CurrentRangeValue))'
+			+ CHAR(13) + CHAR(10) + N'; SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @CurrentRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
+		IF @Verbose = 1 PRINT @CMD;
 		EXEC sp_executesql @CMD
-			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant'
-			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue;
+			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant, @LastPartitionNumber int OUTPUT'
+			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue, @LastPartitionNumber OUTPUT;
 		
 		SET @Msg = CONCAT(CONVERT(nvarchar(24), GETDATE(), 121), N' - Splitting range: ', CONVERT(nvarchar(max), @CurrentRangeValue))
-		RAISERROR(N'%s', 0,1, @Msg) WITH NOWAIT;
+		RAISERROR(N'%s (partition %d)', 0,1, @Msg, @LastPartitionNumber) WITH NOWAIT;
 		
 		-- Execute NEXT USED for all dependent partition schemes:
 		DECLARE @CurrPS sysname, @CurrFG sysname, @NextFG sysname
@@ -212,7 +234,6 @@ BEGIN
 		FOR
 		select ps.name, dst.name
 		from sys.partition_schemes AS ps
-		inner join sys.partition_functions AS f ON ps.function_id = f.function_id
 		cross apply
 		(
 			select top (1) dds.data_space_id, fg.name
@@ -221,7 +242,7 @@ BEGIN
 			where dds.partition_scheme_id = ps.data_space_id
 			order by dds.destination_id desc
 		) as dst
-		where f.name = @PartitionFunctionName;
+		where ps.function_id = @PartitionFunctionId;
 
 		OPEN PSFG;
 
@@ -244,22 +265,133 @@ BEGIN
 
 			SET @CMD = @CMD + QUOTENAME(@NextFG);
 
-			RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
+			IF @Verbose = 1 PRINT @CMD;
 			IF @DebugOnly = 0 EXEC (@CMD);
 		END
 
 		CLOSE PSFG;
 		DEALLOCATE PSFG;
+		
+		DECLARE @CurrObjectId int;
+
+		DECLARE PartitionedTables CURSOR
+		LOCAL FAST_FORWARD
+		FOR
+		SELECT p.object_id
+		FROM sys.partitions AS p
+		INNER JOIN sys.indexes AS ix ON ix.object_id = p.object_id AND ix.index_id = p.index_id
+		INNER JOIN sys.partition_schemes AS ps ON ix.data_space_id = ps.data_space_id
+		WHERE p.partition_number = @LastPartitionNumber -- current partition
+		AND ix.[type_desc] LIKE N'%COLUMNSTORE%' -- columnstore indexes only
+		AND p.[rows] > 0 -- not empty
+		AND ps.function_id = @PartitionFunctionId
+		GROUP BY p.object_id
+
+		OPEN PartitionedTables;
+
+		WHILE 1=1
+		BEGIN
+			FETCH NEXT FROM PartitionedTables INTO @CurrObjectId;
+			IF @@FETCH_STATUS <> 0 BREAK;
+				
+			SET @CMD = QUOTENAME(OBJECT_SCHEMA_NAME(@CurrObjectId)) + N'.' + QUOTENAME(OBJECT_NAME(@CurrObjectId))
+			RAISERROR(N'Columnstore index found on table %s with non-empty partition %d',0,1,@CMD,@LastPartitionNumber) WITH NOWAIT;
+			
+			-- Truncate non-empty partitions on tables with a columnstore index
+			IF @AllowDataMovementForColumnstore = 1
+			BEGIN
+				DECLARE @ColumnsList nvarchar(max), @PartitioningKeyColumn sysname, @StagingTableName sysname;
+				SET @ColumnsList = NULL;
+				SET @PartitioningKeyColumn = NULL;
+
+				SELECT @ColumnsList = ISNULL(@ColumnsList + N', ', N'') + QUOTENAME([name])
+				FROM sys.columns
+				WHERE object_id = @CurrObjectId
+				AND is_computed = 0
+
+				SELECT @PartitioningKeyColumn = c.name
+				FROM sys.index_columns AS ic
+				INNER JOIN sys.indexes AS ix ON ic.object_id = ix.object_id AND ic.index_id = ix.index_id
+				INNER JOIN sys.columns AS c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+				WHERE ic.partition_ordinal > 0
+				AND ix.type_desc LIKE N'%COLUMNSTORE%'
+				AND ic.object_id = @CurrObjectId
+
+				WHILE 1=1
+				BEGIN
+					SET @StagingTableName = QUOTENAME(OBJECT_SCHEMA_NAME(@CurrObjectId)) + N'.' + QUOTENAME(OBJECT_NAME(@CurrObjectId) + N'_STAGING_' + REPLACE(NEWID(),N'-',N''))
+					IF OBJECT_ID(@StagingTableName) IS NULL BREAK;
+				END
+
+				SET @CMD = N'
+				SELECT ' + @ColumnsList + N'
+				INTO ' + @StagingTableName + N'
+				FROM ' + QUOTENAME(OBJECT_SCHEMA_NAME(@CurrObjectId)) + N'.' + QUOTENAME(OBJECT_NAME(@CurrObjectId)) + N'
+				WHERE $PARTITION.' + QUOTENAME(@PartitionFunctionName) + N'(' + QUOTENAME(@PartitioningKeyColumn) + N') = ' + CONVERT(nvarchar(max), @LastPartitionNumber) + N';
+
+				RAISERROR(N''Saved %d rows in ' + @StagingTableName + N''',0,1,@@ROWCOUNT) WITH NOWAIT;
+
+				TRUNCATE TABLE ' + QUOTENAME(OBJECT_SCHEMA_NAME(@CurrObjectId)) + N'.' + QUOTENAME(OBJECT_NAME(@CurrObjectId)) + N' WITH (PARTITIONS (' + CONVERT(nvarchar(max), @LastPartitionNumber) + N'));'
+				
+				INSERT INTO @StagingTablesToRecover (StagingTable, RecoverCommand)
+				VALUES (@StagingTableName,
+				CASE WHEN CONVERT(bit, OBJECTPROPERTY(@CurrObjectId, 'TableHasIdentity')) = 1 THEN N'
+				SET IDENTITY_INSERT ' + QUOTENAME(OBJECT_SCHEMA_NAME(@CurrObjectId)) + N'.' + QUOTENAME(OBJECT_NAME(@CurrObjectId)) + N' ON;'
+				ELSE N'' END + N'
+
+				INSERT INTO ' + QUOTENAME(OBJECT_SCHEMA_NAME(@CurrObjectId)) + N'.' + QUOTENAME(OBJECT_NAME(@CurrObjectId)) + N'
+				(' + @ColumnsList + N')
+				SELECT
+				 ' + @ColumnsList + N'
+				FROM ' + @StagingTableName + N'
+				
+				RAISERROR(N''Recovered %d rows from ' + @StagingTableName + N''',0,1,@@ROWCOUNT) WITH NOWAIT;
+
+				' + CASE WHEN CONVERT(bit, OBJECTPROPERTY(@CurrObjectId, 'TableHasIdentity')) = 1 THEN N'
+				SET IDENTITY_INSERT ' + QUOTENAME(OBJECT_SCHEMA_NAME(@CurrObjectId)) + N'.' + QUOTENAME(OBJECT_NAME(@CurrObjectId)) + N' OFF;'
+				ELSE N'' END + N'
+
+				DROP TABLE ' + @StagingTableName + N';')
+
+				IF @Verbose = 1 PRINT @CMD;
+				IF @DebugOnly = 0 EXEC sp_executesql @CMD;
+			END
+		END
+	
+		CLOSE PartitionedTables;
+		DEALLOCATE PartitionedTables;
 
 		-- Execute SPLIT on the partition function
 		SET @CMD = N'ALTER PARTITION FUNCTION ' + QUOTENAME(@PartitionFunctionName) + N'() SPLIT RANGE(CONVERT(' + @PartitionKeyDataType + N', @CurrentRangeValue)); -- ' + CONVERT(nvarchar(MAX), @CurrentRangeValue)
-		RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
+		IF @Verbose = 1 RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
 		IF @DebugOnly = 0 EXEC sp_executesql @CMD, N'@CurrentRangeValue sql_variant', @CurrentRangeValue;
 	
 	END
 END
 ELSE
 	PRINT N'No new partition ranges required.'
+	
+-- Recover any data saved in staging tables due to columnstore indexes
+DECLARE StagingTables CURSOR
+LOCAL FAST_FORWARD
+FOR
+SELECT StagingTable, RecoverCommand
+FROM @StagingTablesToRecover
+
+OPEN StagingTables;
+
+WHILE 1=1
+BEGIN
+	FETCH NEXT FROM StagingTables INTO @StagingTableName, @CMD;
+	IF @@FETCH_STATUS <> 0 BREAK;
+	IF @Verbose = 1 PRINT @CMD;
+	IF @DebugOnly = 0 EXEC sp_executesql @CMD
+END
+
+CLOSE StagingTables;
+DEALLOCATE StagingTables;
+
+COMMIT TRAN;
 
 SET @Msg = CONCAT(CONVERT(nvarchar(24), GETDATE(), 121), N' - Done.')
 RAISERROR(N'%s', 0,1, @Msg) WITH NOWAIT;
