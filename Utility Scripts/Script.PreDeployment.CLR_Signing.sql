@@ -54,17 +54,45 @@ GO
 -- Database context must be switched to [master] when creating the key and login
 use [master];
 GO
--- Create asymmetric key from DLL
-IF NOT EXISTS (SELECT * FROM master.sys.asymmetric_keys WHERE name = '$(CLRKeyName)')
-	CREATE ASYMMETRIC KEY [$(CLRKeyName)]
-	FROM EXECUTABLE FILE = '$(PathToSignedDLL)'
+IF NOT EXISTS (select * from sys.asymmetric_keys WHERE name = '$(CLRKeyName)')
+BEGIN
+	BEGIN TRY
+		PRINT N'Creating encryption key from: $(PathToSignedDLL)'
+		CREATE ASYMMETRIC KEY [$(CLRKeyName)]
+		FROM EXECUTABLE FILE = '$(PathToSignedDLL)'
+	END TRY
+	BEGIN CATCH
+		IF ERROR_NUMBER() = 15396
+		BEGIN
+			RAISERROR(N'An encryption key with the same thumbprint was already created in this database with a different name.', 0,1);
+			IF EXISTS(
+				SELECT *
+				FROM sys.asymmetric_keys AS ak
+				LEFT JOIN sys.syslogins AS l ON l.sid = ak.sid
+				WHERE l.sid IS NULL
+			)
+			BEGIN
+				RAISERROR(N'Looks like there is no login for the existing encryption key. Please create one manually!', 11,1);
+			END
+		END
+		ELSE
+		BEGIN
+			THROW;
+		END
+	END CATCH
+END
 GO
--- Create server login from asymmetric key
-IF NOT EXISTS (SELECT name FROM master.sys.syslogins WHERE name = '$(CLRLoginName)')
+IF NOT EXISTS (select name from sys.syslogins where name = '$(CLRLoginName)')
+AND EXISTS (select * from sys.asymmetric_keys WHERE name = '$(CLRKeyName)')
+BEGIN
+	PRINT N'Creating login from encryption key...'
 	CREATE LOGIN [$(CLRLoginName)] FROM ASYMMETRIC KEY [$(CLRKeyName)];
+END
 GO
--- Grant UNSAFE/EXTERNAL_ACCESS/SAFE ASSEMBLY permissions to login which was created from DLL signing key
-GRANT UNSAFE ASSEMBLY TO [$(CLRLoginName)];
+IF EXISTS (select name from sys.syslogins where name = '$(CLRLoginName)')
+BEGIN
+	GRANT UNSAFE ASSEMBLY TO [$(CLRLoginName)];
+END
 GO
 -- Return execution context to intended target database
 USE [$(DatabaseName)];
