@@ -11,8 +11,8 @@ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 IF OBJECT_ID('tempdb..#Results') IS NOT NULL DROP TABLE #Results;
 CREATE TABLE #Results
 (
-database_name	sysname NULL,
-schema_name	sysname NULL,
+[database_name]	sysname NULL,
+[schema_name]	sysname NULL,
 table_name	sysname NULL,
 total_columns_count int NULL,
 redundant_index_name	sysname NULL,
@@ -122,8 +122,8 @@ AND ISNULL(DUPE1.filter_definition, '''') = ISNULL(DUPE2.filter_definition, ''''
 ;
 
 SELECT
-database_name = DB_NAME(),
-schema_name = sch.name,
+[database_name] = DB_NAME(),
+[schema_name] = sch.name,
 table_name = tb.name,
 total_columns_count = (SELECT COUNT(*) FROM sys.columns AS allc WHERE allc.object_id = tb.object_id AND allc.is_computed = 0),
 ind1.name as redundant_index_name,
@@ -224,16 +224,16 @@ CLOSE DBs;
 DEALLOCATE DBs;
 
 SELECT *,
-DisableIfActiveCmd = N'USE ' + QUOTENAME(database_name) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' DISABLE;',
-DropCmd = N'USE ' + QUOTENAME(database_name) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IndexID'') IS NOT NULL DROP INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N';'
+DisableIfActiveCmd = N'USE ' + QUOTENAME([database_name]) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N' DISABLE;',
+DropCmd = N'USE ' + QUOTENAME([database_name]) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IndexID'') IS NOT NULL DROP INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N';'
 FROM #Results
-ORDER BY database_name, schema_name, table_name, redundant_index_name
+ORDER BY [database_name], [schema_name], table_name, redundant_index_name
 OPTION(RECOMPILE);
 
 IF @CompareIncludeColumnsToo = 0
 BEGIN
 
-SELECT database_name, schema_name, table_name, containing_index_name, containing_key_columns, containing_include_columns
+SELECT [database_name], [schema_name], table_name, containing_index_name, containing_key_columns, containing_include_columns
 , containing_index_filter, containing_index_clustered, containing_index_unique
 , total_columns_count
 , this_index_columns_count = 
@@ -242,37 +242,37 @@ SELECT database_name, schema_name, table_name, containing_index_name, containing
 (SELECT COUNT(*) FROM string_split(containing_key_columns, ','))
 , incNew.NewIncludeColumns
 , ExpandIndexCommand = CASE WHEN ISNULL(containing_include_columns, N'') <> ISNULL(incNew.NewIncludeColumns, N'') THEN
-	N'USE ' + QUOTENAME(database_name) + N'; CREATE'
+	N'USE ' + QUOTENAME([database_name]) + N'; CREATE'
 	+ CASE WHEN containing_index_unique = 1 THEN N' UNIQUE' ELSE N'' END
-	+ N' NONCLUSTERED INDEX ' + QUOTENAME(containing_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name)
+	+ N' NONCLUSTERED INDEX ' + QUOTENAME(containing_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name)
 	+ N' (' + containing_key_columns + N')' + ISNULL(N' INCLUDE(' + incNew.NewIncludeColumns + N')', N'') + ISNULL(N' WHERE ' + containing_index_filter, N'')
 	+ N' WITH (DROP_EXISTING = ON); '
-	ELSE N'/* ' + QUOTENAME(database_name) + N': leave index ' + QUOTENAME(containing_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' unchanged */' END
+	ELSE N'/* ' + QUOTENAME([database_name]) + N': leave index ' + QUOTENAME(containing_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N' unchanged */' END
 , DisableRedundantIndexes = 
 STUFF((
 SELECT 
-N'; USE ' + QUOTENAME(database_name) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N' DISABLE;'
+N'; USE ' + QUOTENAME([database_name]) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N' DISABLE;'
 + N' /* key columns: ' + red.redundant_key_columns + ISNULL(N', include: ' + red.redundant_include_columns, N'') + ISNULL(N', filter: ' + red.redundant_index_filter, N'') + N' */'
 FROM #Results AS red
 WHERE EXISTS
 (
-	SELECT red.database_name, red.schema_name, red.table_name, red.containing_index_name
+	SELECT red.[database_name], red.[schema_name], red.table_name, red.containing_index_name
 	INTERSECT
-	SELECT cont.database_name, cont.schema_name, cont.table_name, cont.containing_index_name
+	SELECT cont.[database_name], cont.[schema_name], cont.table_name, cont.containing_index_name
 )
 FOR XML PATH('')
 ), 1, 2, '')
 , DropRedundantIndexes = 
 STUFF((
 SELECT 
-N'; USE ' + QUOTENAME(database_name) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IndexID'') IS NOT NULL DROP INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME(schema_name) + N'.' + QUOTENAME(table_name) + N';'
+N'; USE ' + QUOTENAME([database_name]) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IndexID'') IS NOT NULL DROP INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N';'
 + N' /* key columns: ' + red.redundant_key_columns + ISNULL(N', include: ' + red.redundant_include_columns, N'') + ISNULL(N', filter: ' + red.redundant_index_filter, N'') + N' */'
 FROM #Results AS red
 WHERE EXISTS
 (
-	SELECT red.database_name, red.schema_name, red.table_name, red.containing_index_name
+	SELECT red.[database_name], red.[schema_name], red.table_name, red.containing_index_name
 	INTERSECT
-	SELECT cont.database_name, cont.schema_name, cont.table_name, cont.containing_index_name
+	SELECT cont.[database_name], cont.[schema_name], cont.table_name, cont.containing_index_name
 )
 FOR XML PATH('')
 ), 1, 2, '')
@@ -290,9 +290,9 @@ CROSS APPLY
 			CROSS APPLY string_split(red.redundant_include_columns, ',') AS inc
 			WHERE EXISTS
 			(
-				SELECT red.database_name, red.schema_name, red.table_name, red.containing_index_name
+				SELECT red.[database_name], red.[schema_name], red.table_name, red.containing_index_name
 				INTERSECT
-				SELECT cont.database_name, cont.schema_name, cont.table_name, cont.containing_index_name
+				SELECT cont.[database_name], cont.[schema_name], cont.table_name, cont.containing_index_name
 			)
 
 			EXCEPT
@@ -307,12 +307,12 @@ CROSS APPLY
 WHERE NOT EXISTS
 (SELECT NULL FROM #Results AS other WHERE EXISTS
 	(
-		SELECT other.database_name, other.schema_name, other.table_name, other.redundant_index_name
+		SELECT other.[database_name], other.[schema_name], other.table_name, other.redundant_index_name
 		INTERSECT
-		SELECT cont.database_name, cont.schema_name, cont.table_name, cont.containing_index_name
+		SELECT cont.[database_name], cont.[schema_name], cont.table_name, cont.containing_index_name
 	)
 )
-GROUP BY database_name, schema_name, table_name, containing_index_name, containing_key_columns, containing_include_columns
+GROUP BY [database_name], [schema_name], table_name, containing_index_name, containing_key_columns, containing_include_columns
 , containing_index_filter, containing_index_clustered, containing_index_unique, total_columns_count
 , incNew.NewIncludeColumns
 OPTION(RECOMPILE);
