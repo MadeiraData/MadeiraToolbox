@@ -23,11 +23,11 @@ Arguments:
 
 Result:
 	The result will be in the following structure:
-	<... all source table columns ...>
 	SYS_CHANGE_OPERATION (I/U/D = Insert/Update/Delete)
 	SYS_CHANGE_VERSION (the Change-Tracking version number responsible for this operation)
 	SYS_CHANGE_TRACKING_CURRENT_VERSION (the current change tracking version. same for all records. use this for next execution with the @CTLastPulledVersion parameter)
-	<... Primary Key Columns ...> (this may cause duplicate columns but is necessary for Delete operations)
+	<... Primary Key Columns ...>
+	<... all other source table columns ...>
 */
 CREATE PROCEDURE #GetChangeTrackingDelta
 	 @TableName nvarchar(1000)
@@ -41,7 +41,7 @@ BEGIN
 	SET NOCOUNT, XACT_ABORT ON;
 
 	DECLARE @SpExecuteSql nvarchar(1000), @TableObjId int
-	DECLARE @PKColumns nvarchar(MAX), @PKJoinExpr nvarchar(max)
+	DECLARE @PKColumns nvarchar(MAX), @PKJoinExpr nvarchar(MAX), @DataColumns nvarchar(MAX)
 	DECLARE @CTMinValidVersion bigint, @CTCurrentVersion bigint
 
 	SET @DBName = ISNULL(@DBName, DB_NAME());
@@ -77,24 +77,28 @@ BEGIN
 	END
 
 	EXEC @SpExecuteSql N'
-	SELECT @PKColumns = ISNULL(@PKColumns + N'', '', N'''') + N''ct.'' + QUOTENAME(c.name),
-	@PKJoinExpr = ISNULL(@PKJoinExpr + CHAR(10) + N''AND '', N'''') + N''src.'' + QUOTENAME(c.name) + N'' = ct.'' + QUOTENAME(c.name)
-	FROM sys.indexes AS ix
-	INNER JOIN sys.index_columns AS ixc ON ix.object_id = ixc.object_id AND ix.index_id = ixc.index_id
-	INNER JOIN sys.columns AS c ON ix.object_id = c.object_id AND ixc.column_id = c.column_id
-	WHERE ix.object_id = @TableObjId
-	AND ix.is_primary_key = 1
+	SELECT
+	  @PKColumns = CASE WHEN ixc.column_id = c.column_id THEN ISNULL(@PKColumns + N'', '', N'''') + N''ct.'' + QUOTENAME(c.name) ELSE @PKColumns END
+	, @PKJoinExpr = CASE WHEN ixc.column_id = c.column_id THEN ISNULL(@PKJoinExpr + CHAR(10) + N''AND '', N'''') + N''src.'' + QUOTENAME(c.name) + N'' = ct.'' + QUOTENAME(c.name) ELSE @PKJoinExpr END
+	, @DataColumns = CASE WHEN ixc.column_id = c.column_id THEN @DataColumns ELSE ISNULL(@DataColumns, N'''') + N'', src.'' + QUOTENAME(c.name) END
+	FROM sys.columns AS c 
+	LEFT JOIN sys.indexes AS ix ON ix.object_id = c.object_id AND ix.is_primary_key = 1
+	LEFT JOIN sys.index_columns AS ixc ON ix.object_id = ixc.object_id AND ix.index_id = ixc.index_id AND ixc.column_id = c.column_id
+	WHERE c.object_id = @TableObjId
+	AND c.is_computed = 0
 
 	SET @CTCurrentVersion = CHANGE_TRACKING_CURRENT_VERSION();'
-		, N'@TableObjId int, @PKColumns nvarchar(max) OUTPUT, @PKJoinExpr nvarchar(max) OUTPUT, @CTCurrentVersion bigint OUTPUT'
-		, @TableObjId, @PKColumns OUTPUT, @PKJoinExpr OUTPUT, @CTCurrentVersion OUTPUT;
+		, N'@TableObjId int, @PKColumns nvarchar(max) OUTPUT, @PKJoinExpr nvarchar(max) OUTPUT, @DataColumns nvarchar(max) OUTPUT, @CTCurrentVersion bigint OUTPUT'
+		, @TableObjId, @PKColumns OUTPUT, @PKJoinExpr OUTPUT, @DataColumns OUTPUT, @CTCurrentVersion OUTPUT;
 
-	SET @OutputCommand = N'SELECT src.*, ct.SYS_CHANGE_OPERATION, ct.SYS_CHANGE_VERSION
+	SET @OutputCommand = N'SELECT ct.SYS_CHANGE_OPERATION, ct.SYS_CHANGE_VERSION
 	, ' + CONVERT(nvarchar(max), @CTCurrentVersion) + N' AS SYS_CHANGE_TRACKING_CURRENT_VERSION /* @CTCurrentVersion */
 	, ' + @PKColumns + N'
+	' + ISNULL(@DataColumns, N'') + N'
 	FROM ' + @TableName + N' AS src
 	RIGHT JOIN CHANGETABLE (CHANGES ' + @TableName + N', ' + CONVERT(nvarchar(max), @CTLastPulledVersion) + N') AS ct /* @CTLastPulledVersion */
-	ON ' + @PKJoinExpr
+	ON ' + @PKJoinExpr + N'
+	WHERE ct.SYS_CHANGE_VERSION <= @CTCurrentVersion'
 
 	IF @Debug = 1
 	SELECT @DBName AS DBName, @TableName AS TableName, @CTLastPulledVersion AS LastPulledVersion
@@ -102,7 +106,9 @@ BEGIN
 	, @OutputCommand AS OutputCommand, @PKJoinExpr AS PKJoinExpr, @PKColumns AS PKColumns
 
 	PRINT @OutputCommand
-	EXEC @SpExecuteSql @OutputCommand, N' @CTLastPulledVersion bigint, @CTCurrentVersion bigint',  @CTLastPulledVersion, @CTCurrentVersion
+	EXEC @SpExecuteSql @OutputCommand, N' @CTLastPulledVersion bigint, @CTCurrentVersion bigint',  @CTLastPulledVersion, @CTCurrentVersion;
+
+	SET @CTLastPulledVersion = @CTCurrentVersion
 END
 GO
 
