@@ -75,7 +75,7 @@ Catch
 
 if ($needLogin)
 {
-    Connect-AzAccount -Subscription $SubscriptionName | Out-Null
+    $azAccount = Connect-AzAccount -Subscription $SubscriptionName
 }
 
 ## Switch to the correct directory and subscription
@@ -83,12 +83,13 @@ if ($needLogin)
 Get-AzSubscription | Where-Object {$_.Name -eq $SubscriptionName} | ForEach-Object {
     Write-Output "Switching to subscription '$($_.Name)' in TenantId '$($_.TenantId)'"
     $SubscriptionId = $_.Id
+    $TenantId = $_.TenantId
     Connect-AzAccount -Subscription $SubscriptionName -Tenant $_.TenantId | Out-Null
 }
 
 if ($SubscriptionId -eq "" -or $SubscriptionId -eq $null)
 {
-    Stop-PSFFunction -Message "No suitable subscription found" -Category InvalidArgument
+    Write-Error -Message "No suitable subscription found" -Category InvalidArgument -ErrorAction Stop -CategoryTargetName '$SubscriptionName' -CategoryTargetType "string" -CategoryReason "Subscription name not found"
 }
 
 
@@ -100,7 +101,9 @@ if ($SubscriptionId -eq "" -or $SubscriptionId -eq $null)
 #name,currentSku.name,currentSku.tier,currentSku.capacity,location
 $azsqlservers = Get-AzSqlServer
 $azsqldbs = $azsqlservers | Get-AzSqlDatabase
-$azsqldbs | Select ResourceGroupName, ServerName, DatabaseName, Location, CurrentServiceObjectiveName, Edition, SkuName, MaxSizeBytes, Capacity, BackupStorageRedundancy | ConvertTo-Csv -NoTypeInformation | Out-File $filePath
+$azsqldbs | Select-Object @{name='TenantId';expr={$TenantId}}, @{name='SubscriptionName';expr={$SubscriptionName}}, ResourceGroupName, ServerName, DatabaseName, Location, CurrentServiceObjectiveName, Edition, SkuName, MaxSizeBytes, Capacity, BackupStorageRedundancy | ConvertTo-Csv -NoTypeInformation | Out-File $filePath
+
+Write-Host "Wrote $($azsqldbs.Count) database(s) to $filePath" -ForegroundColor Green
 
 #endregion main
 
