@@ -34,7 +34,9 @@ advanced server option.
 				COUNT_BIG(1) AS [Plans_Count],
 				SUM(CAST(size_in_bytes AS DECIMAL(18, 2))) / 1024 / 1024 AS [Plan_Size_In_MB]
 			FROM
-				sys.dm_exec_cached_plans
+				sys.dm_exec_cached_plans 
+			WHERE 
+				usecounts = 1
 			GROUP BY
 				objtype
 		)
@@ -48,9 +50,10 @@ advanced server option.
 			  SUM(CAST([Plans_Count] AS DECIMAL(18,2))) OVER(PARTITION BY [1])
 			  ,
 			  'P'
-			  ) AS [Cached_Plans_Ratio]
+			  ) AS Cached_Plans_Ratio
 	FROM
 		Cached_Plan_Types
 	ORDER BY
-		[Cached_Plans_Ratio] DESC
-
+	    CAST([Plans_Count] AS DECIMAL(18,2))
+	    /
+	    SUM(CAST([Plans_Count] AS DECIMAL(18,2))) OVER(PARTITION BY [1]) DESC
