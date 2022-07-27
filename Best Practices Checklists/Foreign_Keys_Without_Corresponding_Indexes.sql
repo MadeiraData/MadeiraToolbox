@@ -26,10 +26,6 @@ SELECT
 	ForeignKeyColumns	= ForeignKeysWithColumns.ForeignKeyColumnList,
 	ReferencedSchemaName	= OBJECT_SCHEMA_NAME (ForeignKeysWithColumns.ReferencedObjectId) ,
 	ReferencedTableName	= OBJECT_NAME (ForeignKeysWithColumns.ReferencedObjectId) ,
-	UserUpdates		= ISNULL(UsageStats.user_updates, 0) ,
-	UserScans		= ISNULL(UsageStats.user_scans, 0) ,
-	LastUpdate		= UsageStats.last_user_update ,
-	LastScan		= UsageStats.last_user_scan ,
 	TotalRows		= ISNULL(PartitionStats.TotalRows, 0),
 	RemediationScript	= 'CREATE NONCLUSTERED INDEX '
 				+ QUOTENAME(
@@ -130,20 +126,6 @@ AND (
 	OR
 	ForeignKeysWithColumns.ForeignKeyColumnList LIKE REPLACE(REPLACE(IndexesWithColumns.IndexKeysList,'[','_'),']','_') + N'%'
 	)
-OUTER APPLY
-(
-	SELECT
-		us.user_updates ,
-		us.user_scans ,
-		us.last_user_update ,
-		us.last_user_scan
-	FROM
-		sys.dm_db_index_usage_stats AS us
-	WHERE
-		us.database_id = DB_ID()
-	AND	us.object_id = ForeignKeysWithColumns.ObjectId
-	AND	us.index_id <= 1
-) AS UsageStats
 OUTER APPLY
 (
 	SELECT
