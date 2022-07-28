@@ -55,7 +55,7 @@ SET @CMD = N'
  SUM(partitions.rows) > 200000'
 
 IF OBJECT_ID('tempdb..#tmp') IS NOT NULL DROP TABLE #tmp;
-CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IndexName SYSNAME NULL, RowsCount INT, IndexSizeKB INT, UpdatesCount INT NULL, DropCMD NVARCHAR(MAX), TableCreatedDate DATETIME NULL, LastStatsDate DATETIME);
+CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IndexName SYSNAME NULL, RowsCount BIGINT, IndexSizeKB INT, UpdatesCount BIGINT NULL, DropCMD NVARCHAR(MAX), TableCreatedDate DATETIME NULL, LastStatsDate DATETIME);
 
 IF CONVERT(int, SERVERPROPERTY('EngineEdition')) <> 5
 BEGIN
