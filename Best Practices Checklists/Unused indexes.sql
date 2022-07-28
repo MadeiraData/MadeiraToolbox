@@ -48,7 +48,7 @@ HAVING
  SUM(partitions.rows) > ' + CAST(@MinimumRowsInTable AS NVARCHAR(MAX))
 
 IF OBJECT_ID('tempdb..#tmp') IS NOT NULL DROP TABLE #tmp;
-CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IndexName SYSNAME NULL, RowsCount INT, IndexSizeKB INT, UpdatesCount INT NULL, TableCreatedDate DATETIME NULL, LastStatsDate DATETIME);
+CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IndexName SYSNAME NULL, RowsCount BIGINT, IndexSizeKB BIGINT, UpdatesCount BIGINT NULL, TableCreatedDate DATETIME NULL, LastStatsDate DATETIME);
 
 DECLARE @CurrDB sysname, @spExecuteSql nvarchar(1000), @InstanceStartTime datetime;
 
