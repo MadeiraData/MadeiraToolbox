@@ -27,7 +27,7 @@ ADD EVENT
 ADD TARGET
 	event_file
 	(
-		 SET filename = N'C:\CourseFolder\Errors.xel'
+		 SET filename = N'C:\XEvents\Errors.xel'
 		)
 WITH
 (
@@ -58,7 +58,7 @@ AS
 	SELECT
 		RawEvent = CAST (event_data AS XML)
 	FROM
-		sys.fn_xe_file_target_read_file (N'C:\CourseFolder\Errors*.xel' , NULL , NULL , NULL)
+		sys.fn_xe_file_target_read_file (N'C:\XEvents\Errors*.xel' , NULL , NULL , NULL)
 ) ,
 
 	ExtractedEvents
