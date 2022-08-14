@@ -2,7 +2,7 @@ DECLARE
 	@RCA bit = 1,
 	@MinimumSizeInPlanCacheMB int = 256,
 	@Top int = 10,
-	@PlanCountThreshold int = 50
+	@PlanCountThreshold int = 5
 ;
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -50,12 +50,14 @@ BEGIN
 	, qplan.query_plan AS example_query_plan, qtext.text AS example_sql_batch
 	, MoreDetailsCmd = N'
 	SELECT TOP ' + CONVERT(nvarchar(max), @Top) + N' 
-	qplan.query_plan, txt.text, qs.*
+	ClearPlanHandleFromCacheCmd = N''DBCC FREEPROCCACHE ('' + CONVERT(nvarchar(max), qs.plan_handle, 1) + N'');''
+	, qplan.query_plan, txt.text, qs.*
 	FROM sys.dm_exec_query_stats AS qs
 	CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qplan
 	CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS txt
 	WHERE qs.query_hash = ' + + CONVERT(nvarchar(max), res.QueryHash, 1) + N'
 	ORDER BY qs.execution_count DESC'
+	, ClearSqlHandleFromCacheCmd = N'DBCC FREEPROCCACHE (' + CONVERT(nvarchar(max), qs_p_handle.sql_handle, 1) + N');'
 	FROM @Result AS res
 	CROSS APPLY
 	(
