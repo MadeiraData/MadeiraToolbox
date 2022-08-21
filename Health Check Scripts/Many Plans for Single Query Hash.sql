@@ -2,7 +2,7 @@ DECLARE
 	@RCA bit = 1,
 	@MinimumSizeInPlanCacheMB int = 256,
 	@Top int = 10,
-	@PlanCountThreshold int = 10
+	@PlanCountThreshold int = 5
 ;
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
