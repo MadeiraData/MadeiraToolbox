@@ -74,8 +74,8 @@ The script accepts the following parameters:
 * @IncrementValue varchar(10) = NULL - specify this in conjunction with @IncrementColumn, if you want to load the target table incrementally:
 	* if your @IncrementColumn is a date, define @IncrementValue as 'YY, 1'/'MM, 1'/'DD, 1', depending on the desired chunk size.
 	* if your @IncrementColumn is a number, define @IncrementValue as '1045678' or more, depending on the desired chunk size.
-* @EndDate nvarchar(8) = CONVERT(nvarchar(8), GETDATE(), 112) -- desired last day in the target table
-* @IncludeIdentity bit = 1 - specify if the target table includes an identity column (1) or not (0)
+* @EndDate nvarchar(8) = CONVERT(nvarchar(8), GETDATE(), 112) -- desired last day in the target table.
+* @IncludeIdentity bit = 1 - specify if the target table includes an identity column (1) or not (0).
 * @ExecuteInsert bit = 0 - execute the table load process (1) or print the script (0).
 ***
 ## 5. Creating statistics
