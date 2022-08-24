@@ -48,14 +48,46 @@ IF @RCA = 1
 BEGIN
 	SELECT QueryHash, query_plan_hash, DistinctPlans, DB_NAME(DatabaseId) AS DatabaseName, TotalSizeMB, TotalSizeMB / @PlanCacheTotalSize * 100 AS PercentOfTotalCache
 	, qplan.query_plan AS example_query_plan, qtext.text AS example_sql_batch
+	, StatsPerQueryPlanHashCmd = N';
+	WITH QueryPlanHashes
+	AS
+	(
+	SELECT TOP (' + CONVERT(nvarchar(max), @Top) + N') qs.query_plan_hash, qs.query_hash
+	, TotalDistinctExecPlans = COUNT(*)
+	, TotalExecutionCount = SUM(qs.execution_count)
+	, TotalWorkerTime = SUM(qs.total_worker_time)
+	, TotalElapsedTime = SUM(qs.total_elapsed_time)
+	, TotalPhysicalReads = SUM(qs.total_physical_reads)
+	, TotalLogicalReads = SUM(qs.total_logical_reads)
+	, TotalLogicalWrites = SUM(qs.total_logical_writes)
+	, TotalGrantKB = SUM(qs.total_grant_kb)
+	, TotalUsedGrantKB = SUM(qs.total_used_grant_kb)
+	FROM sys.dm_exec_query_stats AS qs
+	WHERE qs.query_hash = ' + CONVERT(nvarchar(max), res.QueryHash, 1) + N'
+	GROUP BY qs.query_plan_hash, qs.query_hash
+	ORDER BY TotalExecutionCount DESC, TotalElapsedTime DESC
+	)
+	SELECT qs.*
+	, ExampleQueryPlan = ex.query_plan
+	, ExampleQueryText = ex.text
+	FROM QueryPlanHashes AS qs
+	CROSS APPLY (
+		SELECT TOP 1 qplan.query_plan, txt.text
+		FROM sys.dm_exec_query_stats AS qs2
+		CROSS APPLY sys.dm_exec_query_plan(qs2.plan_handle) AS qplan
+		CROSS APPLY sys.dm_exec_sql_text(qs2.sql_handle) AS txt
+		WHERE qs2.query_hash = qs.query_hash
+		AND qs2.query_plan_hash = qs.query_plan_hash
+		ORDER BY qs2.execution_count DESC
+		) AS ex'
 	, MoreDetailsCmd = N'
-	SELECT TOP ' + CONVERT(nvarchar(max), @Top) + N' 
+	SELECT TOP (' + CONVERT(nvarchar(max), @Top) + N')
 	ClearPlanHandleFromCacheCmd = N''DBCC FREEPROCCACHE ('' + CONVERT(nvarchar(max), qs.plan_handle, 1) + N'');''
 	, qplan.query_plan, qs.query_plan_hash, txt.text, qs.*
 	FROM sys.dm_exec_query_stats AS qs
 	CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qplan
 	CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS txt
-	WHERE qs.query_hash = ' + + CONVERT(nvarchar(max), res.QueryHash, 1) + N'
+	WHERE qs.query_hash = ' + CONVERT(nvarchar(max), res.QueryHash, 1) + N'
 	ORDER BY qs.execution_count DESC'
 	, ClearSqlHandleFromCacheCmd = N'DBCC FREEPROCCACHE (' + CONVERT(nvarchar(max), qs_p_handle.sql_handle, 1) + N');'
 	FROM @Result AS res
