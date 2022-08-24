@@ -2,7 +2,8 @@ DECLARE
 	@RCA bit = 1,
 	@MinimumSizeInPlanCacheMB int = 256,
 	@Top int = 10,
-	@PlanCountThreshold int = 5
+	@PlanCountThreshold int = 5,
+	@CountByPlanHandleInsteadOfPlanHash bit = 0
 ;
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -27,7 +28,7 @@ IF @PlanCountThreshold < @DBsCount
 INSERT INTO @Result
 SELECT TOP (@Top)
     qs.query_hash
-  , COUNT(DISTINCT qs.query_plan_hash)
+  , COUNT(DISTINCT (CASE WHEN @CountByPlanHandleInsteadOfPlanHash = 1 THEN qs.plan_handle ELSE qs.query_plan_hash END))
   , CAST(pa.value AS int)
   , CAST(SUM(ts.totalSize) / 1024.0 / 1024.0 AS decimal(19,2)) AS totalSize
 FROM sys.dm_exec_query_stats qs
@@ -40,7 +41,7 @@ CROSS APPLY
 ) AS ts
 WHERE pa.attribute = 'dbid'
 GROUP BY qs.query_hash, pa.value
-HAVING COUNT(DISTINCT qs.query_plan_hash) >= @PlanCountThreshold
+HAVING COUNT(DISTINCT (CASE WHEN @CountByPlanHandleInsteadOfPlanHash = 1 THEN qs.plan_handle ELSE qs.query_plan_hash END)) >= @PlanCountThreshold
 ORDER BY totalSize DESC
 OPTION (RECOMPILE);
 
