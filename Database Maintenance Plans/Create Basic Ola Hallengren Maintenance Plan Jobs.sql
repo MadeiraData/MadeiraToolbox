@@ -90,10 +90,11 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'sp_delet
 		@on_success_step_id=0, 
 		@on_fail_action=2, 
 		@on_fail_step_id=0, 
-		@retry_attempts=0, 
-		@retry_interval=0, 
+		@retry_attempts=2, 
+		@retry_interval=5, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
-		@command=N'DECLARE @CleanupDate datetime
+		@command=N'SET DEADLOCK_PRIORITY LOW;
+DECLARE @CleanupDate datetime
 SET @CleanupDate = DATEADD(dd,-30,GETDATE())
 EXECUTE dbo.sp_delete_backuphistory @oldest_date = @CleanupDate', 
 		@database_name=N'msdb', 
@@ -108,10 +109,11 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'sp_purge
 		@on_success_step_id=0, 
 		@on_fail_action=2, 
 		@on_fail_step_id=0, 
-		@retry_attempts=0, 
-		@retry_interval=0, 
+		@retry_attempts=2, 
+		@retry_interval=5, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
-		@command=N'DECLARE @CleanupDate datetime
+		@command=N'SET DEADLOCK_PRIORITY LOW;
+DECLARE @CleanupDate datetime
 SET @CleanupDate = DATEADD(dd,-30,GETDATE())
 EXECUTE dbo.sp_purge_jobhistory @oldest_date = @CleanupDate', 
 		@database_name=N'msdb', 
@@ -126,10 +128,11 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'sp_maint
 		@on_success_step_id=0, 
 		@on_fail_action=2, 
 		@on_fail_step_id=0, 
-		@retry_attempts=0, 
-		@retry_interval=0, 
+		@retry_attempts=2, 
+		@retry_interval=5, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
-		@command=N'DECLARE @dt datetime; 
+		@command=N'SET DEADLOCK_PRIORITY LOW;
+DECLARE @dt datetime; 
 SET @dt = DATEADD(DAY,-30,GETDATE());
 
 EXECUTE msdb..sp_maintplan_delete_log null,null,@dt;', 
@@ -145,10 +148,11 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'CommandL
 		@on_success_step_id=0, 
 		@on_fail_action=2, 
 		@on_fail_step_id=0, 
-		@retry_attempts=0, 
-		@retry_interval=0, 
+		@retry_attempts=2, 
+		@retry_interval=5, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
-		@command=N'DELETE FROM [dbo].[CommandLog]
+		@command=N'SET DEADLOCK_PRIORITY LOW;
+DELETE FROM [dbo].[CommandLog]
 WHERE StartTime < DATEADD(dd,-30,GETDATE())', 
 		@database_name=@DatabaseName, 
 		@output_file_name=@LogOutput, 
@@ -167,8 +171,8 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Output F
 		@on_success_step_id=0, 
 		@on_fail_action=2, 
 		@on_fail_step_id=0, 
-		@retry_attempts=0, 
-		@retry_interval=0, 
+		@retry_attempts=2, 
+		@retry_interval=5, 
 		@os_run_priority=0, @subsystem=N'CmdExec', 
 		@command=@CleanupCmd, 
 		@output_file_name=@LogOutput, 
