@@ -1,6 +1,6 @@
 /*
 Author: Eitan Blumin (t: @EitanBlumin | b: https://eitanblumin.com)
-Description: Use this script to retrieve all unused indexes across all of your databases.
+Description: Use this script to retrieve all unused ix across all of your databases.
 The data returned includes various index usage statistics and a corresponding drop command.
 Supports both on-premise instances, as well as Azure SQL Databases.
 */
@@ -10,52 +10,53 @@ SET @CMD = N'
  PRINT DB_NAME();
  SELECT
  db_name() AS DBNAme,
- OBJECT_SCHEMA_NAME(indexes.object_id) as SchemaName,
- OBJECT_NAME(indexes.object_id) AS Table_name,
- indexes.name AS Index_name,
- SUM(partitions.rows),
- SUM(partition_stats.reserved_page_count) * 8,
- ''USE '' + QUOTENAME(DB_NAME()) + N''; DROP INDEX ''+QUOTENAME(indexes.name)+'' ON ''+QUOTENAME(db_name())+''.''+ QUOTENAME(OBJECT_SCHEMA_NAME(indexes.object_id))+''.''+QUOTENAME(OBJECT_NAME(indexes.object_id)) as dropcmd ,
- STATS_DATE(indexes.object_id, indexes.index_id) StatsDate,
- tables.create_date,
- ISNULL(usage_stats.user_updates, 0) + ISNULL(usage_stats.system_updates, 0)
+ OBJECT_SCHEMA_NAME(ix.object_id) as SchemaName,
+ OBJECT_NAME(ix.object_id) AS Table_name,
+ ix.name AS Index_name,
+ SUM(p.rows),
+ SUM(ps.reserved_page_count) * 8,
+ ''USE '' + QUOTENAME(DB_NAME()) + N''; ALTER INDEX ''+QUOTENAME(ix.name)+'' ON ''+QUOTENAME(db_name())+''.''+ QUOTENAME(OBJECT_SCHEMA_NAME(ix.object_id))+''.''+QUOTENAME(OBJECT_NAME(ix.object_id)) + '' DISABLE'' as disableCmd ,
+ ''USE '' + QUOTENAME(DB_NAME()) + N''; DROP INDEX ''+QUOTENAME(ix.name)+'' ON ''+QUOTENAME(db_name())+''.''+ QUOTENAME(OBJECT_SCHEMA_NAME(ix.object_id))+''.''+QUOTENAME(OBJECT_NAME(ix.object_id)) as dropcmd ,
+ STATS_DATE(ix.object_id, ix.index_id) StatsDate,
+ t.create_date,
+ ISNULL(us.user_updates, 0) + ISNULL(us.system_updates, 0)
  FROM
- sys.indexes
- INNER JOIN sys.tables
- ON indexes.object_id = tables.object_id 
- AND tables.create_date < DATEADD(dd, -30, GETDATE())
- AND tables.is_ms_shipped = 0
- AND indexes.index_id > 1
- AND indexes.is_primary_key = 0
- AND indexes.is_unique = 0
- AND indexes.is_disabled = 0
- AND indexes.is_hypothetical = 0
- INNER JOIN sys.partitions
- ON indexes.object_id = partitions.object_id
- AND indexes.index_id = partitions.index_id
- LEFT JOIN sys.dm_db_index_usage_stats AS usage_stats
- ON indexes.index_id = usage_stats.index_id AND usage_stats.OBJECT_ID = indexes.OBJECT_ID
- LEFT JOIN sys.dm_db_partition_stats AS partition_stats
- ON indexes.index_id = partition_stats.index_id AND partition_stats.OBJECT_ID = indexes.OBJECT_ID
+ sys.indexes ix
+ INNER JOIN sys.tables t
+ ON ix.object_id = t.object_id 
+ AND t.create_date < DATEADD(dd, -30, GETDATE())
+ AND t.is_ms_shipped = 0
+ AND ix.index_id > 1
+ AND ix.is_primary_key = 0
+ AND ix.is_unique = 0
+ AND ix.is_disabled = 0
+ AND ix.is_hypothetical = 0
+ INNER JOIN sys.partitions p
+ ON ix.object_id = p.object_id
+ AND ix.index_id = p.index_id
+ LEFT JOIN sys.dm_db_index_usage_stats AS us
+ ON ix.index_id = us.index_id AND us.OBJECT_ID = ix.OBJECT_ID
+ LEFT JOIN sys.dm_db_partition_stats AS ps
+ ON ix.index_id = ps.index_id AND ps.OBJECT_ID = ix.OBJECT_ID
  WHERE
- usage_stats.user_updates > 100
- AND ISNULL(usage_stats.system_seeks,0) = 0
- AND ISNULL(usage_stats.user_seeks,0) = 0
- AND ISNULL(usage_stats.user_scans,0) = 0
+ us.user_updates > 100
+ AND ISNULL(us.system_seeks,0) = 0
+ AND ISNULL(us.user_seeks,0) = 0
+ AND ISNULL(us.user_scans,0) = 0
  GROUP BY
- indexes.object_id,
- tables.create_date,
- indexes.index_id,
- indexes.name,
- usage_stats.user_seeks,
- usage_stats.user_scans,
- usage_stats.user_updates,
- usage_stats.system_updates
+ ix.object_id,
+ t.create_date,
+ ix.index_id,
+ ix.name,
+ us.user_seeks,
+ us.user_scans,
+ us.user_updates,
+ us.system_updates
  HAVING
- SUM(partitions.rows) > 200000'
+ SUM(p.rows) > 200000'
 
 IF OBJECT_ID('tempdb..#tmp') IS NOT NULL DROP TABLE #tmp;
-CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IndexName SYSNAME NULL, RowsCount BIGINT, IndexSizeKB INT, UpdatesCount BIGINT NULL, DropCMD NVARCHAR(MAX), TableCreatedDate DATETIME NULL, LastStatsDate DATETIME);
+CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IndexName SYSNAME NULL, RowsCount BIGINT, IndexSizeKB INT, UpdatesCount BIGINT NULL, DisableCMD NVARCHAR(MAX), DropCMD NVARCHAR(MAX), TableCreatedDate DATETIME NULL, LastStatsDate DATETIME);
 
 IF CONVERT(int, SERVERPROPERTY('EngineEdition')) <> 5
 BEGIN
@@ -66,7 +67,7 @@ BEGIN
 END'
 	EXEC sp_executesql N'IF (SELECT sqlserver_start_time FROM sys.dm_os_sys_info) < DATEADD(dd,-14,GETDATE())
 BEGIN
- INSERT INTO #tmp(DBName, SchemaName, TableName, IndexName, RowsCount, IndexSizeKB, DropCMD, LastStatsDate, TableCreatedDate, UpdatesCount)
+ INSERT INTO #tmp(DBName, SchemaName, TableName, IndexName, RowsCount, IndexSizeKB, disableCMD, DropCMD, LastStatsDate, TableCreatedDate, UpdatesCount)
  EXEC sp_MSforeachdb @CMD 
 END', N'@CMD nvarchar(max)', @CMD;
 END
