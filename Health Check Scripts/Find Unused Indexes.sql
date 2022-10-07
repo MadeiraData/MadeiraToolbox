@@ -15,7 +15,7 @@ SET @CMD = N'
  ix.name AS Index_name,
  SUM(p.rows),
  SUM(ps.reserved_page_count) * 8,
- ''USE '' + QUOTENAME(DB_NAME()) + N''; ALTER INDEX ''+QUOTENAME(ix.name)+'' ON ''+QUOTENAME(db_name())+''.''+ QUOTENAME(OBJECT_SCHEMA_NAME(ix.object_id))+''.''+QUOTENAME(OBJECT_NAME(ix.object_id)) + '' DISABLE'' as disableCmd ,
+ ''USE '' + QUOTENAME(DB_NAME()) + N''; ALTER INDEX ''+QUOTENAME(ix.name)+'' ON ''+QUOTENAME(db_name())+''.''+ QUOTENAME(OBJECT_SCHEMA_NAME(ix.object_id))+''.''+QUOTENAME(OBJECT_NAME(ix.object_id)) + '' DISABLE'' as DisableCmd ,
  ''USE '' + QUOTENAME(DB_NAME()) + N''; DROP INDEX ''+QUOTENAME(ix.name)+'' ON ''+QUOTENAME(db_name())+''.''+ QUOTENAME(OBJECT_SCHEMA_NAME(ix.object_id))+''.''+QUOTENAME(OBJECT_NAME(ix.object_id)) as dropcmd ,
  STATS_DATE(ix.object_id, ix.index_id) StatsDate,
  t.create_date,
@@ -67,7 +67,7 @@ BEGIN
 END'
 	EXEC sp_executesql N'IF (SELECT sqlserver_start_time FROM sys.dm_os_sys_info) < DATEADD(dd,-14,GETDATE())
 BEGIN
- INSERT INTO #tmp(DBName, SchemaName, TableName, IndexName, RowsCount, IndexSizeKB, disableCMD, DropCMD, LastStatsDate, TableCreatedDate, UpdatesCount)
+ INSERT INTO #tmp(DBName, SchemaName, TableName, IndexName, RowsCount, IndexSizeKB, DisableCMD, DropCMD, LastStatsDate, TableCreatedDate, UpdatesCount)
  EXEC sp_MSforeachdb @CMD 
 END', N'@CMD nvarchar(max)', @CMD;
 END
@@ -77,6 +77,6 @@ BEGIN
 	EXEC sp_executesql @CMD;
 END
 
-SELECT *
+SELECT *, '(''' + IndexName + ''')'
 FROM #tmp
 ORDER BY DBName ASC, IndexSizeKB DESC, RowsCount DESC
