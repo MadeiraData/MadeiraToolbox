@@ -22,7 +22,7 @@ SET @CMD = N'
  ISNULL(us.user_updates, 0) + ISNULL(us.system_updates, 0)
  FROM
  sys.indexes ix
- INNER JOIN sys.tables t
+ INNER HASH JOIN sys.tables t
  ON ix.object_id = t.object_id 
  AND t.create_date < DATEADD(dd, -30, GETDATE())
  AND t.is_ms_shipped = 0
