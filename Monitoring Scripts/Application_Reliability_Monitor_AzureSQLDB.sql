@@ -97,26 +97,33 @@ sqlserver.session_id,
 sqlserver.sql_text
 )
 WHERE ([package0].[equal_boolean]([sqlserver].[is_system],(0)))
-AND [severity]>=(10) AND [sqlserver].[sql_text]<>N''
-AND (
- error_number = (102)
- OR error_number = (105)
- OR error_number = (205)
- OR error_number = (207)
- OR error_number = (208)
- OR error_number = (245)
- OR error_number = (2812)
- --OR error_number = (18456)
- OR error_number = (15281)
- OR sqlserver.like_i_sql_unicode_string(message, N'%permission%')
- OR sqlserver.like_i_sql_unicode_string(message, N'%denied%')
+AND [sqlserver].[sql_text]<>N''
+AND ((
+	error_number = (102)
+	OR error_number = (105)
+	OR error_number = (205)
+	OR error_number = (207)
+	OR error_number = (208)
+	OR error_number = (245)
+	OR error_number = (2812)
+	--OR error_number = (18456)
+	OR error_number = (15281)
     )
-
+    OR
+    (
+    [severity]>(10) 
+    AND (
+    sqlserver.like_i_sql_unicode_string(message, N'%permission%')
+    OR sqlserver.like_i_sql_unicode_string(message, N'%denied%')
+    	)
+    )
+   )
 AND (sqlserver.client_app_name <> 'Microsoft SQL Server Management Studio - Transact-SQL IntelliSense')
 AND (sqlserver.client_app_name <> 'Microsoft SQL Server Management Studio - Query')
 AND (sqlserver.client_app_name <> 'Microsoft SQL Server Management Studio')
 AND (sqlserver.client_app_name <> 'SQLServerCEIP')
 AND (sqlserver.client_app_name <> 'check_mssql_health')
+AND (sqlserver.client_app_name <> 'DmvCollector')
 AND (sqlserver.client_app_name <> 'SQL Server Performance Investigator')
 AND (sqlserver.client_app_name NOT LIKE 'SolarWinds%')
 AND ([sqlserver].[sql_text] NOT LIKE '%Invalid object name ''dbo.__MigrationHistory''.%')
