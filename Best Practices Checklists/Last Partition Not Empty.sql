@@ -2,8 +2,8 @@ SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
 DECLARE @Results AS TABLE
-(database_id int, object_id int, rows int, partition_number int, partition_scheme sysname, partition_function sysname, filegroup_name sysname, last_boundary_range sql_variant
-, total_table_rows int);
+(database_id int, object_id int, rows bigint, partition_number int, partition_scheme sysname, partition_function sysname, filegroup_name sysname, last_boundary_range sql_variant
+, total_table_rows bigint);
 
 IF (CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 9 AND CONVERT(int, SERVERPROPERTY('EngineEdition')) IN (3,5,6,8)) -- Enterprise equivalent of SQL 2005+
 OR (CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) > 13) -- SQL 2017+
@@ -38,7 +38,7 @@ BEGIN
 	(
 		SELECT TOP 1 p.rows, p.partition_number, ps.name AS partition_scheme, pf.name AS partition_function, fg.name AS filegroup_name, last_range.value AS last_boundary_range
 		FROM sys.partitions AS p
-		INNER JOIN sys.indexes AS ix ON p.object_id = ix.object_id AND p.index_id = ix.index_id
+		INNER HASH JOIN sys.indexes AS ix ON p.object_id = ix.object_id AND p.index_id = ix.index_id
 		INNER JOIN sys.partition_schemes AS ps ON ix.data_space_id = ps.data_space_id
 		INNER JOIN sys.partition_functions AS pf ON ps.function_id = pf.function_id
 		INNER JOIN sys.destination_data_spaces dds ON p.partition_number = dds.destination_id AND ps.data_space_id = dds.partition_scheme_id
