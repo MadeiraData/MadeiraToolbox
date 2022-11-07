@@ -9,8 +9,9 @@ SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
 DECLARE
-	 @MinutesBack int = 1
+	 @MinutesBack int = 60
 	,@MinimumEventsForFlush int = 100
+	,@MinimumEventsForOutput int = 1
 
 DECLARE @RCount bigint
 SELECT @RCount = CAST(xet.target_data AS xml).value('(RingBufferTarget/@eventCount)[1]','bigint')
@@ -69,7 +70,22 @@ username  = session_events.event_xml.value (N'(event/action[@name="username"]/va
 sql_text  = session_events.event_xml.value (N'(event/action[@name="sql_text"]/value)[1]' , N'NVARCHAR(1000)')
 FROM #events AS session_events
 ) AS ev
---WHERE @RCount >= 2
+WHERE @RCount >= @MinimumEventsForOutput
+/* filter out non-critical apps */
+AND (client_app_name NOT IN (
+'Microsoft SQL Server Management Studio - Transact-SQL IntelliSense'
+,'Microsoft SQL Server Management Studio - Query'
+,'Microsoft SQL Server Management Studio'
+,'SQLServerCEIP'
+,'check_mssql_health'
+,'DmvCollector'
+,'SQL Server Performance Investigator'))
+AND (client_app_name NOT LIKE 'SolarWinds%')
+AND (client_app_name NOT LIKE 'Red Gate Software%')
+/* filter out known driver/ORM errors */
+AND ([message] NOT LIKE '%Invalid object name ''dbo.__MigrationHistory''.%')
+AND ([message] NOT LIKE '%Invalid object name ''dbo.EdmMetadata''.%')
+AND ([message] NOT LIKE '%Invalid object name ''MSysConf''.%')
 GROUP BY [database_name], [error_number], [message], session_id, client_app_name, client_host_name, client_process_id, username, sql_text
 OPTION (RECOMPILE);
 
@@ -118,6 +134,7 @@ AND ((
     	)
     )
    )
+/* filter out non-critical apps */
 AND (sqlserver.client_app_name <> 'Microsoft SQL Server Management Studio - Transact-SQL IntelliSense')
 AND (sqlserver.client_app_name <> 'Microsoft SQL Server Management Studio - Query')
 AND (sqlserver.client_app_name <> 'Microsoft SQL Server Management Studio')
@@ -126,12 +143,14 @@ AND (sqlserver.client_app_name <> 'check_mssql_health')
 AND (sqlserver.client_app_name <> 'DmvCollector')
 AND (sqlserver.client_app_name <> 'SQL Server Performance Investigator')
 AND (sqlserver.client_app_name NOT LIKE 'SolarWinds%')
-AND ([sqlserver].[sql_text] NOT LIKE '%Invalid object name ''dbo.__MigrationHistory''.%')
-AND ([sqlserver].[sql_text] NOT LIKE '%Invalid object name ''dbo.EdmMetadata''.%')
+AND (sqlserver.client_app_name NOT LIKE 'Red Gate Software%')
+/* filter out known driver/ORM errors */
+AND ([message] NOT LIKE '%Invalid object name ''dbo.__MigrationHistory''.%')
+AND ([message] NOT LIKE '%Invalid object name ''dbo.EdmMetadata''.%')
+AND ([message] NOT LIKE '%Invalid object name ''MSysConf''.%')
 )
 ADD TARGET package0.ring_buffer(SET max_events_limit=(1000),max_memory=(8192))
-WITH (MAX_MEMORY=8 MB,EVENT_RETENTION_MODE=ALLOW_SINGLE_EVENT_LOSS,MAX_DISPATCH_LATENCY=30 SECONDS,MAX_EVENT_SIZE=0 KB
-,MEMORY_PARTITION_MODE=PER_CPU,TRACK_CAUSALITY=OFF,STARTUP_STATE=ON)
+WITH (MAX_MEMORY=8 MB,EVENT_RETENTION_MODE=ALLOW_SINGLE_EVENT_LOSS,MAX_DISPATCH_LATENCY=30 SECONDS,TRACK_CAUSALITY=OFF,STARTUP_STATE=ON)
 ;
 END
 
