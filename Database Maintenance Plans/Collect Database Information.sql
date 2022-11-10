@@ -33,25 +33,25 @@ SELECT
 	IsCdcEnabled					= [Databases].is_cdc_enabled ,
 	IsPartOfAvailabilityGroup		=
 		CASE
-			WHEN group_database_id IS NULL	-- Applies to: SQL Server (starting with SQL Server 2012 (11.x)) and Azure SQL Database
+			WHEN [Databases].group_database_id IS NULL	-- Applies to: SQL Server (starting with SQL Server 2012 (11.x)) and Azure SQL Database
 				THEN 0
 			ELSE
 				1
 		END ,
-	IsAcceleratedDatabaseRecoveryOn	= is_accelerated_database_recovery_on	-- Applies to: SQL Server (starting with SQL Server 2019 (15.x)) and Azure SQL Database
+	IsAcceleratedDatabaseRecoveryOn	= [Databases].is_accelerated_database_recovery_on	-- Applies to: SQL Server (starting with SQL Server 2019 (15.x)) and Azure SQL Database
 FROM
 	sys.databases AS [Databases]
 CROSS APPLY
 (
 	SELECT
-		DataFilesCount	= COUNT (CASE WHEN [type] = 0 THEN [type] END) ,
-		DataSize_GB		= CAST (ROUND (CAST (SUM (CASE WHEN [type] = 0 THEN size END) AS DECIMAL(19,2)) * 8.0 / 1024.0 / 1024.0 , 2) AS DECIMAL(19,2)) ,
-		LogFilesCount	= COUNT (CASE WHEN [type] = 1 THEN [type] END) ,
-		LogSize_GB		= CAST (ROUND (CAST (SUM (CASE WHEN [type] = 1 THEN size END) AS DECIMAL(19,2)) * 8.0 / 1024.0 / 1024.0 , 2) AS DECIMAL(19,2))
+		DataFilesCount	= COUNT (CASE WHEN [MasterFiles].[type] = 0 THEN [type] ELSE NULL END) ,
+		DataSize_GB		= CAST (ROUND (CAST (SUM (CASE WHEN [MasterFiles].[type] = 0 THEN size ELSE 0 END) AS DECIMAL(19,2)) * 8.0 / 1024.0 / 1024.0 , 2) AS DECIMAL(19,2)) ,
+		LogFilesCount	= COUNT (CASE WHEN [MasterFiles].[type] = 1 THEN [type] ELSE NULL END) ,
+		LogSize_GB		= CAST (ROUND (CAST (SUM (CASE WHEN [MasterFiles].[type] = 1 THEN size ELSE 0 END) AS DECIMAL(19,2)) * 8.0 / 1024.0 / 1024.0 , 2) AS DECIMAL(19,2))
 	FROM
-		sys.master_files AS MasterFiles
+		sys.master_files AS [MasterFiles]
 	WHERE
-		MasterFiles.database_id = [Databases].database_id
+		[MasterFiles].database_id = [Databases].database_id
 )
 AS
 	DatabaseFiles
