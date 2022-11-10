@@ -224,10 +224,35 @@ CLOSE DBs;
 DEALLOCATE DBs;
 
 SELECT *,
+DisableIfActiveCmd = CASE WHEN DropPriority > 1 THEN N'-- do not drop' ELSE N'USE ' + QUOTENAME([database_name]) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N' DISABLE;' END,
+DropCmd = CASE WHEN DropPriority > 1 THEN N'-- do not drop' ELSE N'USE ' + QUOTENAME([database_name]) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IndexID'') IS NOT NULL DROP INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N';' END
+FROM
+(
+SELECT *,
+IsIdentical = CASE WHEN [redundant_key_columns] = containing_key_columns AND ISNULL(redundant_include_columns,'') = ISNULL(containing_include_columns,'') THEN 1 ELSE 0 END,
+containing_indexes_count = COUNT(*) OVER (PARTITION BY [database_name], [schema_name], table_name, redundant_index_name),
+DropPriority = ROW_NUMBER() OVER (PARTITION BY [database_name], [schema_name], table_name, redundant_key_columns, redundant_include_columns ORDER BY redundant_index_pages DESC, redundant_index_seeks ASC, redundant_index_scans ASC)
+FROM #Results
+) AS q
+ORDER BY [database_name], [schema_name], table_name, redundant_index_name
+OPTION(RECOMPILE);
+
+SELECT [database_name], [schema_name], table_name, redundant_index_name
+, containing_indexes_count
+, DisableIfActiveCmd, DropCmd
+FROM (
+SELECT *,
+IsIdentical = CASE WHEN [redundant_key_columns] = containing_key_columns AND ISNULL(redundant_include_columns,'') = ISNULL(containing_include_columns,'') THEN 1 ELSE 0 END,
+containing_indexes_count = COUNT(*) OVER (PARTITION BY [database_name], [schema_name], table_name, redundant_index_name),
+DropPriority = ROW_NUMBER() OVER (PARTITION BY [database_name], [schema_name], table_name, redundant_key_columns, redundant_include_columns ORDER BY redundant_index_pages DESC, redundant_index_seeks ASC, redundant_index_scans ASC),
 DisableIfActiveCmd = N'USE ' + QUOTENAME([database_name]) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IsDisabled'') = 0 ALTER INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N' DISABLE;',
 DropCmd = N'USE ' + QUOTENAME([database_name]) + N'; IF INDEXPROPERTY(OBJECT_ID(''' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N'''), ''' + redundant_index_name + N''', ''IndexID'') IS NOT NULL DROP INDEX ' + QUOTENAME(redundant_index_name) + N' ON ' + QUOTENAME([schema_name]) + N'.' + QUOTENAME(table_name) + N';'
 FROM #Results
-ORDER BY [database_name], [schema_name], table_name, redundant_index_name
+) AS q
+WHERE DropPriority = 1
+GROUP BY [database_name], [schema_name], table_name, redundant_index_name
+, containing_indexes_count
+, DisableIfActiveCmd, DropCmd
 OPTION(RECOMPILE);
 
 IF @CompareIncludeColumnsToo = 0
