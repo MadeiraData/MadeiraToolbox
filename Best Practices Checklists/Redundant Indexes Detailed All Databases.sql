@@ -238,6 +238,9 @@ ORDER BY [database_name], [schema_name], table_name, redundant_index_name
 OPTION(RECOMPILE);
 
 SELECT [database_name], [schema_name], table_name, redundant_index_name
+, redundant_index_seeks
+, redundant_index_mb = redundant_index_pages / 128.0
+, redundant_index_updates
 , containing_indexes_count
 , DisableIfActiveCmd, DropCmd
 FROM (
@@ -251,6 +254,9 @@ FROM #Results
 ) AS q
 WHERE DropPriority = 1
 GROUP BY [database_name], [schema_name], table_name, redundant_index_name
+, redundant_index_seeks
+, redundant_index_pages
+, redundant_index_updates
 , containing_indexes_count
 , DisableIfActiveCmd, DropCmd
 OPTION(RECOMPILE);
