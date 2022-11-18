@@ -4,6 +4,7 @@ DECLARE
  , @MinimumDaysOld	INT = 35 -- adjust as needed
  , @MaxDOP		INT = NULL -- set to 1 to reduce server workload
  , @SampleRatePercent	INT = NULL -- set to number between 1 and 100 to force a specific sample rate, where 100 = FULLSCAN
+ , @ExcludeSysStats	BIT = 0 --set to 1 to exclude the system stats like '_WA_Sys_%'
  , @ExecuteRemediation	BIT = 0 -- set to 1 to automatically execute UPDATE STATISTICS remediation commands
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
@@ -49,7 +50,8 @@ SET @qry = N'
      HAVING SUM(ps.rows) >= ' + CONVERT(nvarchar(max), @MinimumTableRows) + N'
      ) AS ps
      ON t.object_id = ps.object_id 
-  INNER JOIN sys.stats AS stat ON t.object_id = stat.object_id
+  INNER JOIN sys.stats AS stat ON t.object_id = stat.object_id'
+    + CASE WHEN @ExcludeSysStats = 1 THEN N' AND stat.name NOT LIKE ''_WA_Sys_%''' ELSE '' END + N'
   LEFT JOIN sys.indexes AS ix ON t.object_id = ix.object_id AND stat.stats_id = ix.index_id
   CROSS APPLY
     (
