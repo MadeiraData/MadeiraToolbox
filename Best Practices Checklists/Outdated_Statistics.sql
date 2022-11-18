@@ -4,7 +4,7 @@ DECLARE
  , @MinimumDaysOld	INT = 35 -- adjust as needed
  , @MaxDOP		INT = NULL -- set to 1 to reduce server workload
  , @SampleRatePercent	INT = NULL -- set to number between 1 and 100 to force a specific sample rate, where 100 = FULLSCAN
- , @ExcludeSysStats	BIT = 1 --set to 1 to exclude the system stats like '_WA_Sys_%'
+ , @ExcludeSysStats	BIT = 0 --set to 1 to exclude the system stats like '_WA_Sys_%'
  , @ExecuteRemediation	BIT = 0 -- set to 1 to automatically execute UPDATE STATISTICS remediation commands
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
