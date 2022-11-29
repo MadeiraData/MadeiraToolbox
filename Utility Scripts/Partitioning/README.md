@@ -49,7 +49,7 @@ All partition schemes dependent on this function, and in turn, all tables and in
 
 This parameter receives a comma-separated list of filegroup names (one or more), that would work in a round-robin method when creating new partition ranges. For example:
 
-```
+```sql
 @RoundRobinFileGroups = 'PRIMARY'
 ```
 
@@ -57,7 +57,7 @@ The example above would create new partition ranges in the PRIMARY filegroup onl
 
 Another example:
 
-```
+```sql
 @RoundRobinFileGroups = 'FG1,FG2,FG3'
 ```
 
@@ -78,7 +78,7 @@ This is a sql_variant parameter, but its underlying data type must be compatible
 
 You can specify a dynamic SQL expression in this parameter, to determine how each new partition range would be calculated, based on the last range value. For example:
 
-```
+```sql
 @PartitionIncrementExpression = N'DATEADD(month, 1, CONVERT(datetime, @CurrentRangeValue))'
 ```
 
@@ -86,7 +86,7 @@ This will add one month to each new partition range. Note the usage of the varia
 
 Another example:
 
-```
+```sql
 @PartitionIncrementExpression = N'CONVERT(bigint, @CurrentRangeValue) + CONVERT(bigint, @PartitionRangeInterval)'
 ```
 
@@ -109,7 +109,7 @@ When set to 1, this parameter can be used to only print out the generated comman
 
 **Example 1: Create monthly partitions one year forward**
 
-```
+```sql
 DECLARE @FutureValue datetime = DATEADD(year,1, CONVERT(date, GETDATE()))
 
 EXEC dbo.[PartitionManagement_Split]
@@ -122,7 +122,7 @@ EXEC dbo.[PartitionManagement_Split]
 
 **Example 2: Create 200 buffer partitions beyond the current populated value, using the last interval as the increment, and two round-robin filegroups**
 
-```
+```sql
 EXEC dbo.[PartitionManagement_Split]
 	  @PartitionFunctionName = 'MyPartitionFunctionName'
 	, @RoundRobinFileGroups = 'FG_Partitions_1,FG_Partitions_2'
@@ -162,7 +162,7 @@ When set to 1, this parameter can be used to only print out the generated comman
 
 **Example 1: Purge partitions one year back, based on minimum value to keep**
 
-```
+```sql
 DECLARE @MinDateValueToKeep datetime = DATEADD(year, -1, GETDATE())
 
 EXEC dbo.[PartitionManagement_Purge]
@@ -174,7 +174,7 @@ EXEC dbo.[PartitionManagement_Purge]
 
 **Example 2: Purge old partitions and enforce a minimal number of partitions**
 
-```
+```sql
 DECLARE @MinDateValueToKeep datetime = DATEADD(year, -1, GETDATE())
 
 EXEC dbo.[PartitionManagement_Purge]
