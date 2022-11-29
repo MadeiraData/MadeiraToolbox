@@ -219,6 +219,7 @@ BEGIN
   
   SET @spExecuteSQL = QUOTENAME(@CurrDB) + N'..sp_executesql';
   
+  IF @Verbose = 1 RAISERROR(N'%s',0,1,@CMD) WITH NOWAIT;
   EXEC @spExecuteSQL @CMD WITH RECOMPILE; -- don't cache exec plans
   RAISERROR(N'Found %d vulnerable securable(s) for database "%s"',0,1,@@ROWCOUNT,@CurrDB) WITH NOWAIT;
   
@@ -236,7 +237,7 @@ CREATE TABLE #results
 
 IF @EnableRevokeSimulation_To_CheckForAffectedUsers = 1
 BEGIN
-DECLARE @CurrSecurableId int, @CurrUsername sysname, @CurrRevokeCmd nvarchar(MAX), @CurrGrantCmd nvarchar(MAX), @CurrState sysname
+DECLARE @CurrSecurableId int, @CurrUsername sysname, @CurrSID uniqueidentifier, @CurrRevokeCmd nvarchar(MAX), @CurrGrantCmd nvarchar(MAX), @CurrState sysname
 DECLARE @CMD2 nvarchar(MAX)
 
 SET @CMD = N'EXECUTE AS USER = @Username;
@@ -285,6 +286,7 @@ BEGIN
 	IF @CloneDatabaseName_ForRevokeSimulation IS NOT NULL
 	BEGIN
 		-- Clone target database without data
+		IF @Verbose = 1 RAISERROR(N'DBCC CLONEDATABASE([%s], [%s]);',0,1,@CurrDB, @CloneDatabaseName_ForRevokeSimulation) WITH NOWAIT;
 		DBCC CLONEDATABASE(@CurrDB, @CloneDatabaseName_ForRevokeSimulation);
 
 		-- Enable the cloned database to be writeable
@@ -299,10 +301,12 @@ BEGIN
 		SET @spExecuteSQL = QUOTENAME(@CurrDB) + N'..sp_executesql'
 	END
 	
+	RAISERROR(N'%s -- Checking in database "%s" (%s) --', 0,1, @CurrRevokeCmd, @CurrDB, @spExecuteSQL) WITH NOWAIT;
+
 	DECLARE UsersToCheck CURSOR
 	LOCAL FAST_FORWARD
 	FOR
-	SELECT [user_name]
+	SELECT [user_name], [sid]
 	FROM #dbusers
 	WHERE [database_name] = @CurrDB
 	AND ([grantor_count] = 0 OR @EnableRevokeSimulation_ForWithGrantOption = 1)
@@ -312,20 +316,25 @@ BEGIN
 
 	WHILE 1=1
 	BEGIN
-		FETCH NEXT FROM UsersToCheck INTO @CurrUsername;
+		FETCH NEXT FROM UsersToCheck INTO @CurrUsername, @CurrSID;
 		IF @@FETCH_STATUS <> 0 BREAK;
 
 		IF @Verbose = 1 RAISERROR(N'-- Checking for username "%s" in database "%s" (%s) --', 0,1, @CurrUsername, @CurrDB, @spExecuteSQL) WITH NOWAIT;
+
+		IF SUSER_SNAME(@CurrSID) IS NULL
+		BEGIN
+			RAISERROR(N'-- No login found for username "%s" in database "%s". It is probably orphaned. --', 0,1, @CurrUsername, @CurrDB) WITH NOWAIT;
+			CONTINUE;
+		END
 
 		DECLARE @RCount int;
 
 		BEGIN TRY
 			BEGIN TRAN;
 			
-			IF @Verbose = 1 PRINT @CurrRevokeCmd;
 			EXEC @spExecuteSQL @CurrRevokeCmd;
 
-			IF @Verbose = 1 PRINT @CMD;
+			RAISERROR(N'-- Checking revoke impact for user "%s" (securable Id %d)...',0,1,@CurrUsername, @CurrSecurableId) WITH NOWAIT;
 			EXEC @spExecuteSQL @CMD, N'@Username sysname, @CurrSecurableId int, @RCount int OUTPUT', @CurrUsername, @CurrSecurableId, @RCount OUTPUT;
 
 			IF @Verbose = 1 
@@ -333,7 +342,7 @@ BEGIN
 				IF @RCount = 0
 					RAISERROR(N'-- OK --',0,1) WITH NOWAIT;
 				ELSE
-					RAISERROR(N'-- !!! WARNING !!! --',0,1) WITH NOWAIT;
+					RAISERROR(N'-- !!! WARNING !!! Found %d missing permission(s) --',0,1,@RCount) WITH NOWAIT;
 			END
 
 			COMMIT TRAN;
