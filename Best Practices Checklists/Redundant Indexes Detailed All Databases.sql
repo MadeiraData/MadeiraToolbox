@@ -316,6 +316,11 @@ CROSS APPLY
 		SELECT ', ' + includeColumn
 		FROM
 		(
+			SELECT LTRIM(RTRIM(inc.[value])) AS includeColumn
+			FROM string_split(cont.containing_include_columns, ',') AS inc
+			
+			UNION
+
 			SELECT DISTINCT LTRIM(RTRIM(inc.[value])) AS includeColumn
 			FROM #Results AS red
 			CROSS APPLY string_split(red.redundant_include_columns, ',') AS inc
