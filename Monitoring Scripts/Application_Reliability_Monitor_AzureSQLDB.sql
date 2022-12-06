@@ -108,7 +108,6 @@ sqlserver.client_hostname,
 sqlserver.client_pid,
 sqlserver.username,
 sqlserver.database_name,
-sqlserver.nt_username,
 sqlserver.session_id,
 sqlserver.sql_text
 )
