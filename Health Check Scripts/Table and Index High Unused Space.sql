@@ -1,8 +1,8 @@
 DECLARE
 	@TopPerDB		int		= 50,
-	@MinimumRowCount	int		= 1000,
-	@MinimumUnusedSizeMB	int		= 1024,
-	@MinimumUnusedSpacePct	int		= 40,
+	@MinimumRowCount	bigint		= 1000,
+	@MinimumUnusedSizeMB	bigint		= 1024,
+	@MinimumUnusedSpacePct	bigint		= 40,
 	@RebuildIndexOptions	varchar(max)	= 'ONLINE = ON, MAXDOP = 4, SORT_IN_TEMPDB = ON' -- , RESUMABLE = ON  -- adjust as needed
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT ON;
@@ -12,7 +12,7 @@ DECLARE @TempResult AS TABLE (DatabaseName sysname NOT NULL, SchemaName sysname 
 , DatabaseID int NOT NULL, ObjectId int NOT NULL, IndexId int NULL
 , CompressionType tinyint NULL, CompressionType_Desc AS (CASE CompressionType WHEN 0 THEN 'NONE' WHEN 1 THEN 'ROW' WHEN 2 THEN 'PAGE' WHEN 3 THEN 'COLUMNSTORE' WHEN 4 THEN 'COLUMNSTORE_ARCHIVE' ELSE 'UNKNOWN' END)
 , RowCounts bigint NULL, TotalSpaceMB money NULL, UsedSpaceMB money NULL, UnusedSpaceMB money NULL
-, UserSeeks int NULL, UserScans int NULL, UserLookups int NULL, UserUpdates int NULL);
+, UserSeeks bigint NULL, UserScans bigint NULL, UserLookups bigint NULL, UserUpdates bigint NULL);
 
 SELECT @command = '
 SELECT TOP (' + CONVERT(nvarchar(max), @TopPerDB) + N')
