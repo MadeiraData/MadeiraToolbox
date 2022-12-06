@@ -6,7 +6,8 @@ DECLARE
 	,@EnabledSchedulesOnly	bit = 0
 
 SELECT m.[name], SUSER_SNAME([m].[ownersid]) AS [owner], m.createdate
--- UPDATE m SET m.ownersid = 0x01 -- set owner to sa
+-- UPDATE m SET m.ownersid = 0x01 -- set owner to sa. you could also use SUSER_SID('MyLoginName')
+-- OUTPUT inserted.[name] AS maintenance_plan, SUSER_SNAME(deleted.ownersid) AS old_owner, SUSER_SNAME(inserted.ownersid) AS new_owner
 FROM msdb.dbo.sysssispackages AS m
 WHERE m.packagetype = 6
 AND m.id IN (SELECT id FROM msdb.dbo.sysmaintplan_plans)
