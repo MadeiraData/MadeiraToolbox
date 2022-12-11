@@ -19,6 +19,10 @@ Description:
 	You can also use this to generate a log resizing command,
 	for the purpose of reducing VLF count.
 */
+DECLARE
+	@ShowShrinkableLogsOnly	bit = 0
+
+
 SET NOCOUNT ON;
 SELECT
 	DatabaseName		= db.name
@@ -31,6 +35,8 @@ SELECT
       , PotentialSizeMB		= iter.potsize
       , PotentialVLFCount	= potential.PotentialVLFCount
       , LastLogBackup		= ldetails.log_backup_time
+      , LogActiveSizeMB		= ldetails.active_log_size_mb
+      , LogSinceBackupMB	= ldetails.log_since_last_log_backup_mb
       , ShrinkCmd		= N'USE ' + QUOTENAME(db.name) + N'; CHECKPOINT; DBCC SHRINKFILE ('
 				+ QUOTENAME(f.name) + N' , 0, TRUNCATEONLY) WITH NO_INFOMSGS;'
       
@@ -54,7 +60,7 @@ CROSS APPLY
 		FROM	sys.dm_db_log_info(db.database_id) AS li
 		WHERE	li.file_id = f.file_id
 	) AS linfo
-	--WHERE	VLFActives = 0		-- uncomment this to only return shrinkable transaction logs
+	WHERE	(@ShowShrinkableLogsOnly = 0 OR VLFActives = 0)
 	ORDER BY CASE WHEN VLFActives = 0 THEN 0 ELSE 1 END ASC, vlf_active ASC
 ) AS lstat
 CROSS APPLY (SELECT f.size / 128) AS m(size_mb)
@@ -86,4 +92,4 @@ WHERE
 	--AND db.database_id > 4		-- uncomment this to return user databases only
 	--AND db.recovery_model_desc = 'FULL'	-- uncomment this to only return databases with FULL recovery model
 	--AND lstat.VLFTotalCount > 300		-- uncomment this to filter transaction logs based on VLF count
-ORDER BY Total_VLFs DESC, Tail_Log_MB DESC;
+ORDER BY Tail_Log_MB DESC, Total_VLFs DESC;
