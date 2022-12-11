@@ -42,7 +42,7 @@ END
 
 --SELECT @OutputFilePath
 SET @OutputFilePath =
-	REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+	REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
 		@OutputFilePath
 		, N'$(ESCAPE_SQUOTE(SQLLOGDIR))\', @LogDirectory)
 		, N'$(ESCAPE_SQUOTE(JOBNAME))', @JobName)
@@ -51,16 +51,21 @@ SET @OutputFilePath =
 		, N'$(ESCAPE_SQUOTE(STEPID))', @jobStepId)
 		, N'$(ESCAPE_SQUOTE(DATE))', N'%')
 		, N'$(ESCAPE_SQUOTE(TIME))', N'%')
+		, N'$(ESCAPE_SQUOTE(STRTDT))', N'%')
+		, N'$(ESCAPE_SQUOTE(STRTTM))', N'%')
+		, N'[', N'_'), N']', N'_')
 
 RAISERROR(N'Job Name: %s, Step Name: %s', 0, 1, @JobName, @jobStepName);
 RAISERROR(N'Log Directory: %s', 0, 1, @LogDirectory);
-RAISERROR(N'Output File Path: %s', 0, 1, @OutputFilePath);
+RAISERROR(N'Output File Path Qualifier: %s', 0, 1, @OutputFilePath);
 
 -- If there are wildcards in the path, we'll need to parse the folder contents to find the exact file
 IF CHARINDEX('%', @OutputFilePath) > 0
 BEGIN
-	SET @LogDirectory = LEFT(@OutputFilePath, LEN(@OutputFilePath) - CHARINDEX(N'\', REVERSE(@OutputFilePath)) + 1)
+	SET @LogDirectory = LEFT(@OutputFilePath, LEN(@OutputFilePath) - ISNULL(NULLIF(CHARINDEX(N'\', REVERSE(@OutputFilePath)),0),CHARINDEX(N'/', REVERSE(@OutputFilePath))) + 1)
 	SET @OutputFilePath = REPLACE(@OutputFilePath, @LogDirectory, N'')
+	
+	RAISERROR(N'Searching in log folder: %s',0,1,@LogDirectory) WITH NOWAIT;
 
 	DECLARE @FilesList table (id int IDENTITY(1,1) NOT NULL, subdir nvarchar(MAX) NULL, depth smallint NOT NULL, isFile tinyint NOT NULL);
 	INSERT INTO @FilesList (subdir, depth, isFile)
