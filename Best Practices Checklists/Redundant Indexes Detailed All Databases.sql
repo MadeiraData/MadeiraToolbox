@@ -4,6 +4,7 @@ DECLARE @MinimumRowsInTable INT = 100000
 --set below to 0 to only compare by key columns, but this will also generate recommendations
 --for new include column sets that encompass all redundant indexes per each containing index:
 DECLARE @CompareIncludeColumnsToo BIT = 1
+-- TODO: Known issue is that duplicate key/include columns show up in the creation script for the new covering index. Need to fix.
 
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -20,16 +21,20 @@ redundant_key_columns	nvarchar(MAX) NULL,
 redundant_include_columns	nvarchar(MAX) NULL,
 redundant_index_filter	nvarchar(MAX) NULL,
 redundant_index_seeks	bigint NULL,
+redundant_index_last_user_seek	datetime NULL,
 redundant_index_scans	bigint NULL,
 redundant_index_updates	bigint NULL,
+redundant_index_last_user_update datetime NULL,
 redundant_index_pages	bigint NULL,
 containing_index_name	sysname NULL,
 containing_key_columns	nvarchar(MAX) NULL,
 containing_include_columns	nvarchar(MAX) NULL,
 containing_index_filter	nvarchar(MAX) NULL,
 containing_index_seeks	bigint NULL,
+containing_index_last_user_seek	datetime NULL,
 containing_index_scans	bigint NULL,
 containing_index_updates bigint NULL,
+containing_index_last_user_update datetime NULL,
 containing_index_pages	bigint NULL,
 containing_index_clustered bit NULL,
 containing_index_unique bit NULL
@@ -149,8 +154,10 @@ ORDER BY keyCol.key_ordinal
 FOR XML PATH('''')), 1, 2, ''''),
 tbl.redundant_index_filter,
 redundant_index_seeks = us1.user_seeks,
+redundant_index_last_user_seek = us1.last_user_seek,
 redundant_index_scans = us1.user_scans,
 redundant_index_updates = us1.user_updates,
+redundant_index_last_user_update = us1.last_user_update,
 redundant_index_pages = (SELECT SUM(reserved_page_count) FROM sys.dm_db_partition_stats AS ps WHERE ind1.index_id = ps.index_id AND ps.OBJECT_ID = ind1.OBJECT_ID),
 containing_index_name = ind2.name,
 containing_key_columns = STUFF
@@ -175,8 +182,10 @@ ORDER BY keyCol.key_ordinal
 FOR XML PATH('''')), 1, 2, ''''),
 tbl.containing_index_filter,
 containing_index_seeks = us2.user_seeks,
+containing_index_last_user_seek = us2.last_user_seek,
 containing_index_scans = us2.user_scans,
 containing_index_updates = us2.user_updates,
+containing_index_last_user_update = us2.last_user_update,
 containing_index_pages = (SELECT SUM(reserved_page_count) FROM sys.dm_db_partition_stats AS ps WHERE ind2.index_id = ps.index_id AND ps.OBJECT_ID = ind2.OBJECT_ID),
 containing_index_clustered = CASE WHEN ind2.index_id = 1 THEN 1 ELSE 0 END,
 containing_index_unique = ind2.is_unique
@@ -239,8 +248,10 @@ OPTION(RECOMPILE);
 
 SELECT [database_name], [schema_name], table_name, redundant_index_name
 , redundant_index_seeks
+, redundant_index_last_user_seek = MAX(redundant_index_last_user_seek)
 , redundant_index_mb = redundant_index_pages / 128.0
 , redundant_index_updates
+, redundant_index_last_user_update = MAX(redundant_index_last_user_update)
 , containing_indexes_count
 , DisableIfActiveCmd, DropCmd
 FROM (
