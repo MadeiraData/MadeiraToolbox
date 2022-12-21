@@ -79,9 +79,13 @@ AND (client_app_name NOT IN (
 ,'SQLServerCEIP'
 ,'check_mssql_health'
 ,'DmvCollector'
-,'SQL Server Performance Investigator'))
+,'SQL Server Performance Investigator'
+,'DataGrip'))
+AND (client_app_name NOT LIKE 'DBeaver%')
+AND (client_app_name NOT LIKE 'azdata-%')
 AND (client_app_name NOT LIKE 'SolarWinds%')
 AND (client_app_name NOT LIKE 'Red Gate Software%')
+AND (client_app_name NOT LIKE 'MonTarget%')
 /* filter out known driver/ORM errors */
 AND ([message] NOT LIKE '%Invalid object name ''dbo.__MigrationHistory''.%')
 AND ([message] NOT LIKE '%Invalid object name ''dbo.EdmMetadata''.%')
@@ -114,25 +118,37 @@ sqlserver.sql_text
 WHERE ([package0].[equal_boolean]([sqlserver].[is_system],(0)))
 AND [sqlserver].[sql_text]<>N''
 AND ((
-	error_number = (102)
-	OR error_number = (105)
-	OR error_number = (205)
-	OR error_number = (207)
-	OR error_number = (208)
-	OR error_number = (245)
-	OR error_number = (2812)
-	--OR error_number = (18456)
-	OR error_number = (15281)
+ error_number = (102)
+ OR error_number = (105)
+ OR error_number = (205)
+ OR error_number = (207)
+ OR error_number = (208)
+ OR error_number = (245)
+ OR error_number = (2812)
+ --OR error_number = (18456)
+ OR error_number = (15281)
     )
-    OR
+ OR
     (
     [severity]>(10) 
     AND (
-    sqlserver.like_i_sql_unicode_string(message, N'%permission%')
-    OR sqlserver.like_i_sql_unicode_string(message, N'%denied%')
-    	)
+    sqlserver.like_i_sql_unicode_string([message], N'%permission%')
+    OR sqlserver.like_i_sql_unicode_string([message], N'%denied%')
+     )
     )
-   )
+ OR
+    (
+      error_number = (2628) AND
+      (
+       [message] LIKE 'String or binary data would be truncated in table ''%'', column ''%''. Truncated value: ''%''%union%'''
+       OR [message] LIKE 'String or binary data would be truncated in table ''%'', column ''%''. Truncated value: ''%''%select%'''
+       OR [message] LIKE 'String or binary data would be truncated in table ''%'', column ''%''. Truncated value: ''%''%when%'''
+       OR [message] LIKE 'String or binary data would be truncated in table ''%'', column ''%''. Truncated value: ''%''%from%'''
+       OR [message] LIKE 'String or binary data would be truncated in table ''%'', column ''%''. Truncated value: ''%''%case%'''
+       OR [message] LIKE 'String or binary data would be truncated in table ''%'', column ''%''. Truncated value: ''%''%0x[0123456789]%'''
+      )
+    )
+ )
 /* filter out non-critical apps */
 AND (sqlserver.client_app_name <> 'Microsoft SQL Server Management Studio - Transact-SQL IntelliSense')
 AND (sqlserver.client_app_name <> 'Microsoft SQL Server Management Studio - Query')
@@ -141,15 +157,19 @@ AND (sqlserver.client_app_name <> 'SQLServerCEIP')
 AND (sqlserver.client_app_name <> 'check_mssql_health')
 AND (sqlserver.client_app_name <> 'DmvCollector')
 AND (sqlserver.client_app_name <> 'SQL Server Performance Investigator')
+AND (sqlserver.client_app_name <> 'DataGrip')
+AND (sqlserver.client_app_name NOT LIKE 'DBeaver%')
+AND (sqlserver.client_app_name NOT LIKE 'azdata-%')
 AND (sqlserver.client_app_name NOT LIKE 'SolarWinds%')
 AND (sqlserver.client_app_name NOT LIKE 'Red Gate Software%')
+AND (sqlserver.client_app_name NOT LIKE 'MonTarget%')
 /* filter out known driver/ORM errors */
 AND ([message] NOT LIKE '%Invalid object name ''dbo.__MigrationHistory''.%')
 AND ([message] NOT LIKE '%Invalid object name ''dbo.EdmMetadata''.%')
 AND ([message] NOT LIKE '%Invalid object name ''MSysConf''.%')
 )
-ADD TARGET package0.ring_buffer(SET max_events_limit=(1000),max_memory=(8192))
-WITH (MAX_MEMORY=8 MB,EVENT_RETENTION_MODE=ALLOW_SINGLE_EVENT_LOSS,MAX_DISPATCH_LATENCY=30 SECONDS,TRACK_CAUSALITY=OFF,STARTUP_STATE=ON)
+ADD TARGET package0.ring_buffer(SET max_events_limit=(200),max_memory=(4096))
+WITH (MAX_MEMORY=4 MB,EVENT_RETENTION_MODE=ALLOW_SINGLE_EVENT_LOSS,MAX_DISPATCH_LATENCY=30 SECONDS,TRACK_CAUSALITY=OFF,STARTUP_STATE=ON)
 ;
 END
 
