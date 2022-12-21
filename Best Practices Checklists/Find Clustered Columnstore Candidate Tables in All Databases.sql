@@ -7,7 +7,7 @@ Description:
 	Based on Azure SQL Tip #1290:
 	https://github.com/microsoft/azure-sql-tips/wiki/Azure-SQL-Database-tips#tip_id-1290
 Supported versions:
-	SQL Server 2017 (14.x) and newer | Azure SQL Database | Azure SQL Managed Instance
+	SQL Server 2016 (16.x) SP1 and newer | Azure SQL Database | Azure SQL Managed Instance
 */
 DECLARE @CCICandidateMinSizeGB int = 10, @DaysBack int = 7;
 
@@ -15,9 +15,65 @@ DECLARE @CCICandidateMinSizeGB int = 10, @DaysBack int = 7;
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-DECLARE @results table (dbName sysname NULL, cci_candidate_count int NULL, details nvarchar(max) NULL);
+DECLARE @results table ([database_name] sysname NULL, [schema_name] sysname NULL, [table_name] sysname NULL
+, [columns_count] int NULL, [table_size_mb] float NULL, [partition_count] int NULL
+, [insert_count] int NULL, [update_count] int NULL, [delete_count] int NULL, [singleton_lookup_count] int NULL
+, [range_scan_count] int NULL, [seek_count] int NULL, [full_scan_count] int NULL, [lookup_count] int NULL
+);
+DECLARE @SQLVersion int = CONVERT(int, SERVERPROPERTY('ProductMajorVersion'))
+DECLARE @SQLBuild int = CONVERT(int, SERVERPROPERTY('ProductBuild'))
+DECLARE @IsVersionSupported bit = 1, @OutputMessage nvarchar(200)
 DECLARE @CMD nvarchar(MAX);
 
+-- Check for too recent server uptime
+IF EXISTS (
+	SELECT NULL
+	FROM sys.dm_os_sys_info
+	WHERE sqlserver_start_time > DATEADD(DAY, -@DaysBack, GETDATE())
+	)
+BEGIN
+	SET @IsVersionSupported = 0;
+	SELECT @OutputMessage = N'Server ' + @@SERVERNAME + N' uptime is since ' + CONVERT(nvarchar(MAX), sqlserver_start_time, 121)
+	+ N' (time now: ' + CONVERT(nvarchar(MAX), GETDATE(), 121) + N')'
+	FROM sys.dm_os_sys_info
+	WHERE sqlserver_start_time > DATEADD(DAY, -@DaysBack, GETDATE())
+	OPTION (RECOMPILE);
+END
+/* Check for unsupported versions */
+ELSE IF (
+	CONVERT(varchar(256), SERVERPROPERTY('Edition')) <> 'SQL Azure' /* on-prem */
+	AND (
+		@SQLVersion < 13 /* SQL 2014 and older */
+		OR (@SQLVersion = 13 AND @SQLBuild < 4000) /* SQL 2016 before SP1 */
+	    )
+   )
+BEGIN
+	SET @IsVersionSupported = 0;
+	SET @OutputMessage = N'Server ' + @@SERVERNAME + N' SQL major version is ' + CONVERT(nvarchar(MAX), CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff))
+	+ N' ' + CONVERT(nvarchar(MAX), SERVERPROPERTY('ProductLevel')) + N', ' + CONVERT(nvarchar(max), SERVERPROPERTY('Edition'));
+END
+ELSE IF (
+	CONVERT(varchar(256), SERVERPROPERTY('Edition')) = 'SQL Azure' /* Azure SQL */
+	AND CONVERT(varchar(128), SERVERPROPERTY('EngineEdition')) <> 8 /* Not Azure SQL Managed Instance */
+	AND OBJECT_ID('sys.database_service_objectives') IS NOT NULL /* we can check Azure SQL DB SLO */
+   )
+BEGIN
+	-- columnstore indexes are available in Azure SQL Database Premium tiers, Standard tiers - S3 and above, and all vCore tiers
+	EXEC sp_executesql N'
+	SELECT @IsVersionSupported = 0
+	, @OutputMessage = N''Database '' + QUOTENAME(DB_NAME()) + N'' is at Service Tier '' + service_objective COLLATE database_default
+	FROM sys.database_service_objectives
+	WHERE database_id = DB_ID() 
+	AND (
+		edition = ''Basic''
+		OR (edition = ''Standard'' AND service_objective IN (''S0'', ''S1'', ''S2''))
+	    )'
+	, N'@IsVersionSupported bit OUTPUT, @OutputMessage nvarchar(200) OUTPUT'
+	, @IsVersionSupported OUTPUT, @OutputMessage OUTPUT WITH RECOMPILE
+END
+
+IF @IsVersionSupported = 1
+BEGIN
 SET @CMD = N'WITH any_partition AS
 (
 SELECT p.object_id, p.index_id, p.partition_number, p.rows, p.data_compression_desc, ps.used_page_count * 8 / 1024. AS partition_size_mb,
@@ -59,75 +115,46 @@ SELECT cp.object_id,
 FROM candidate_partition AS cp
 CROSS APPLY sys.dm_db_index_operational_stats(DB_ID(), cp.object_id, cp.index_id, cp.partition_number) AS ios -- assumption: a representative workload has populated index operational stats for relevant tables
 GROUP BY cp.object_id
-),
-cci_candidate_table AS
-(
-SELECT QUOTENAME(OBJECT_SCHEMA_NAME(t.object_id)) COLLATE DATABASE_DEFAULT AS schema_name,
-       QUOTENAME(t.name) COLLATE DATABASE_DEFAULT AS table_name,
-       columns_count = (SELECT COUNT(*) FROM sys.columns AS c WHERE c.object_id = t.object_id AND c.is_computed = 0),
-       tos.table_size_mb,
-       tos.partition_count,
-       tos.lead_insert_count AS insert_count,
-       tos.leaf_update_count AS update_count,
-       tos.leaf_delete_count AS delete_count,
-       tos.singleton_lookup_count AS singleton_lookup_count,
-       tos.range_scan_count AS range_scan_count,
-       ISNULL(ius.user_seeks, 0) AS seek_count,
-       ISNULL(ius.user_scans, 0) AS full_scan_count,
-       ISNULL(ius.user_lookups, 0) AS lookup_count
+)
+SELECT [database_name]		= DB_NAME(),
+       schema_name		= OBJECT_SCHEMA_NAME(t.object_id) COLLATE DATABASE_DEFAULT,
+       table_name		= t.name COLLATE DATABASE_DEFAULT,
+       columns_count		= (SELECT COUNT(*) FROM sys.columns AS c WHERE c.object_id = t.object_id AND c.is_computed = 0),
+       table_size_mb		= tos.table_size_mb,
+       partition_count		= tos.partition_count,
+       insert_count		= tos.lead_insert_count,
+       update_count		= tos.leaf_update_count,
+       delete_count		= tos.leaf_delete_count,
+       singleton_lookup_count	= tos.singleton_lookup_count,
+       range_scan_count		= tos.range_scan_count,
+       seek_count		= ISNULL(ius.user_seeks, 0),
+       full_scan_count		= ISNULL(ius.user_scans, 0),
+       lookup_count		= ISNULL(ius.user_lookups, 0)
 FROM sys.tables AS t
-INNER JOIN sys.indexes AS i ON t.object_id = i.object_id
+INNER JOIN sys.indexes AS i ON t.object_id = i.object_id AND i.index_id <= 1 -- clustered index or heap
 INNER JOIN table_operational_stats AS tos ON t.object_id = tos.object_id
-LEFT JOIN sys.dm_db_index_usage_stats AS ius ON t.object_id = ius.object_id AND i.index_id = ius.index_id
-WHERE i.index_id <= 1 -- clustered index or heap
+LEFT JOIN sys.dm_db_index_usage_stats AS ius ON ius.database_id = DB_ID() AND t.object_id = ius.object_id AND i.index_id = ius.index_id
+WHERE t.is_ms_shipped = 0
 AND tos.table_size_mb > @CCICandidateMinSizeGB * 1024. -- consider sufficiently large tables only
-AND t.is_ms_shipped = 0
 -- conservatively require a CCI candidate to have no updates, seeks, or lookups
 AND tos.leaf_update_count = 0
 AND tos.singleton_lookup_count = 0
 AND (
     i.index_id = 0 OR 
-	(ius.user_lookups = 0
-	AND ius.user_seeks = 0
-	AND ius.user_scans > 0) -- require a CCI candidate to have some full scans
-    )
-),
-cci_candidate_details AS
-(
-SELECT STRING_AGG(
-        CAST(CONCAT(
-                ''schema: '', schema_name, '', '',
-                ''table: '', table_name, '', '',
-                ''table size (MB): '', FORMAT(table_size_mb, ''#,0.00''), '', '',
-                ''columns count: '', FORMAT(columns_count, ''#,0''), '', '',
-                ''partition count: '', FORMAT(partition_count, ''#,0''), '', '',
-                ''inserts: '', FORMAT(insert_count, ''#,0''), '', '',
-                ''updates: '', FORMAT(update_count, ''#,0''), '', '',
-                ''deletes: '', FORMAT(delete_count, ''#,0''), '', '',
-                ''singleton lookups: '', FORMAT(singleton_lookup_count, ''#,0''), '', '',
-                ''range scans: '', FORMAT(range_scan_count, ''#,0''), '', '',
-                ''seeks: '', FORMAT(seek_count, ''#,0''), '', '',
-                ''full scans: '', FORMAT(full_scan_count, ''#,0''), '', '',
-                ''lookups: '', FORMAT(lookup_count, ''#,0'')
-                ) AS nvarchar(max)), CHAR(10)
-        ) WITHIN GROUP (ORDER BY schema_name, table_name)
-       AS details,
-       COUNT(1) AS cci_candidate_count
-FROM cci_candidate_table
-)
-SELECT DB_NAME(), cci_candidate_count, ccd.details
-FROM cci_candidate_details AS ccd
-WHERE ccd.details IS NOT NULL'
+	(ISNULL(ius.user_lookups, 0) = 0
+	AND ISNULL(ius.user_seeks, 0) = 0
+	AND ISNULL(ius.user_scans, 0) > 0) -- require a CCI candidate to have some full scans
+    )'
 
 DECLARE @CurrDB sysname, @spExecuteSql nvarchar(1000);
 
 DECLARE DBs CURSOR
 LOCAL FAST_FORWARD
 FOR
-SELECT [name]
+SELECT name
 FROM sys.databases
-WHERE HAS_DBACCESS([name]) = 1
-AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE'
+WHERE HAS_DBACCESS(name) = 1
+AND DATABASEPROPERTYEX(name, 'Updateability') = 'READ_WRITE'
 
 OPEN DBs;
 
@@ -139,7 +166,7 @@ BEGIN
 	SET @spExecuteSql = QUOTENAME(@CurrDB) + N'..sp_executesql'
 
 	INSERT INTO @results
-	EXEC @spExecuteSql @CMD, N'@CCICandidateMinSizeGB int', @CCICandidateMinSizeGB;
+	EXEC @spExecuteSql @CMD, N'@CCICandidateMinSizeGB int', @CCICandidateMinSizeGB WITH RECOMPILE;
 
 	RAISERROR(N'Database "%s": %d finding(s)',0,1,@CurrDB,@@ROWCOUNT) WITH NOWAIT;
 END
@@ -147,23 +174,31 @@ END
 CLOSE DBs;
 DEALLOCATE DBs;
 
+END
+
+
+-- Summary:
 
 SELECT
-	  dbName
-	, cci_candidate_count
-	, v.[value]
+	  Msg = CONCAT(N'Database ', QUOTENAME([database_name]) + N' has ', COUNT(*), N' potential clustered columnstore candidate(s)')
+	, cci_candidate_count = COUNT(*)
 FROM @results AS r
-CROSS APPLY string_split(r.details, CHAR(10)) AS v
+WHERE @IsVersionSupported = 1
+GROUP BY [database_name]
 
 UNION ALL
 
-SELECT NULL, 0, N'Server ' + @@SERVERNAME + N' uptime is since ' + CONVERT(nvarchar(MAX), sqlserver_start_time, 121)
-FROM sys.dm_os_sys_info
-WHERE sqlserver_start_time > DATEADD(DAY, -@DaysBack, GETDATE())
+SELECT CONCAT(N'UNSUPPORTED: ', @OutputMessage), 0
+WHERE @IsVersionSupported = 0
 
-UNION ALL
+OPTION (RECOMPILE);
 
-SELECT NULL, 0, N'Server ' + @@SERVERNAME + N' SQL major version is ' + CONVERT(nvarchar(MAX), CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff))
-	+ N', ' + CONVERT(nvarchar(max), SERVERPROPERTY('Edition'))
-WHERE CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) < 14
-AND CONVERT(varchar(256), SERVERPROPERTY('Edition')) <> 'SQL Azure'
+
+-- Details:
+IF @IsVersionSupported = 1
+BEGIN
+	SELECT *
+	FROM @results AS r
+	WHERE @IsVersionSupported = 1
+	OPTION (RECOMPILE);
+END
