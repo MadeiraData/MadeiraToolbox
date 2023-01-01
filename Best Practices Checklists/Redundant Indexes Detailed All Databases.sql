@@ -1,10 +1,17 @@
+/*
+Detailed Redundant Indexes Check and Remediation for All Databases
+==================================================================
+Author: Eitan Blumin
+Date Created: 2020-07-16
+Last Updated: 2023-01-01
+*/
 
-DECLARE @MinimumRowsInTable INT = 100000
+DECLARE @FilterByDatabase		sysname	= NULL		/* optionally specify a specific database name to check, or leave NULL to check all accessible and writeable databases */
+DECLARE @MinimumRowsInTable		int	= 100000	/* filter tables by minimum number of rows */
+DECLARE @CompareIncludeColumnsToo	bit	= 1		/* set to 0 to only compare by key columns, but this will also generate recommendations for new include column sets that encompass all redundant indexes per each containing index */
 
---set below to 0 to only compare by key columns, but this will also generate recommendations
---for new include column sets that encompass all redundant indexes per each containing index:
-DECLARE @CompareIncludeColumnsToo BIT = 1
--- TODO: Known issue is that duplicate key/include columns show up in the creation script for the new covering index. Need to fix.
+
+
 
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -209,11 +216,17 @@ LOCAL FAST_FORWARD
 FOR 
 SELECT [name]
 FROM sys.databases
-where database_id > 4
-AND HAS_DBACCESS([name]) = 1
-AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE';
+WHERE
+(
+	    @FilterByDatabase IS NULL
+	AND database_id > 4
+	AND HAS_DBACCESS([name]) = 1
+	AND DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE'
+)
+OR @FilterByDatabase = [name];
 
 OPEN DBs;
+
 WHILE 1=1
 BEGIN
 	FETCH NEXT FROM DBs INTO @dbname;
@@ -341,10 +354,10 @@ CROSS APPLY
 				INTERSECT
 				SELECT cont.[database_name], cont.[schema_name], cont.table_name, cont.containing_index_name
 			)
-
+			
 			EXCEPT
 
-			SELECT LTRIM(RTRIM(REPLACE(REPLACE([value], '] ASC', ''), '] DESC', '')))
+			SELECT LTRIM(RTRIM(REPLACE(REPLACE([value], '] ASC', ']'), '] DESC', ']')))
 			FROM string_split(cont.containing_key_columns,',')
 		) AS include_columns
 		FOR XML PATH ('')
