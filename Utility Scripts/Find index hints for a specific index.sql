@@ -53,7 +53,7 @@ FindingType    = ''SqlModules''
 FROM sys.sql_modules AS m
 INNER JOIN sys.objects AS o ON m.object_id = o.object_id
 INNER JOIN sys.schemas AS s ON o.[schema_id] = s.[schema_id]
-WHERE m.definition LIKE N''%INDEX%(%' + @IndexName + N'%'';';
+WHERE m.definition LIKE N''%INDEX%[(=]%' + @IndexName + N'%'';';
 
 DECLARE @CurrDB sysname, @SpExecuteSql nvarchar(1024);
 DECLARE DBs CURSOR
