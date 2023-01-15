@@ -25,7 +25,7 @@ SET @CMD = N'SELECT
 FROM sys.indexes
 INNER JOIN sys.tables ON indexes.object_id = tables.object_id 
 INNER JOIN sys.partitions ON indexes.object_id = partitions.object_id AND indexes.index_id = partitions.index_id
-LEFT JOIN sys.dm_db_index_usage_stats AS usage_stats ON indexes.index_id = usage_stats.index_id AND usage_stats.object_id = indexes.object_id
+LEFT JOIN sys.dm_db_index_usage_stats AS usage_stats ON indexes.index_id = usage_stats.index_id AND usage_stats.object_id = indexes.object_id AND usage_stats.database_id = DB_ID()
 LEFT JOIN sys.dm_db_partition_stats AS partition_stats ON indexes.index_id = partition_stats.index_id AND partition_stats.object_id = indexes.object_id
 WHERE
  ISNULL(usage_stats.user_updates, 0) + ISNULL(usage_stats.system_updates, 0) > ' + CAST(@MinimumUserUpdates AS NVARCHAR(MAX)) + N'
