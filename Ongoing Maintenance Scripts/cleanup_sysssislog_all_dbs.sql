@@ -39,7 +39,7 @@ BEGIN
 		EXEC @spExecuteSQL N'
 		DELETE TOP (@ChunkSize) T
 		FROM [dbo].[sysssislog] AS T WITH(READPAST)
-		WHERE starttime < DATEADD(month, -@DaysBack, GETDATE())'
+		WHERE starttime < DATEADD(dd, -@DaysBack, GETDATE())'
 		, N'@DaysBack int, @ChunkSize int', @DaysBack, @ChunkSize
 		WITH RECOMPILE;
 
