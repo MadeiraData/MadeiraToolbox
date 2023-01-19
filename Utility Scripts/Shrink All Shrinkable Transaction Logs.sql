@@ -20,12 +20,15 @@ Description:
 	for the purpose of reducing VLF count.
 */
 DECLARE
-	@ShowShrinkableLogsOnly	bit = 0
+	@ShowShrinkableLogsOnly	bit = 0,
+	@MinimumFileSizeMB	int = 64
 
 
 SET NOCOUNT ON;
 SELECT
 	DatabaseName		= db.name
+      , RecoveryModel		= db.recovery_model_desc
+      , Logical_FileName	= f.[name]
       , File_Path		= f.physical_name
       , File_Size_MB		= f.size / 128
       , IsShrinkable		= CONVERT(bit, CASE WHEN VLFActives = 0 THEN 1 ELSE 0 END)
@@ -40,10 +43,14 @@ SELECT
       , ShrinkCmd		= N'USE ' + QUOTENAME(db.name) + N'; CHECKPOINT; DBCC SHRINKFILE ('
 				+ QUOTENAME(f.name) + N' , 0, TRUNCATEONLY) WITH NO_INFOMSGS;'
       
-      , ResizeCmd		= N'USE ' + QUOTENAME(db.name) + N'; CHECKPOINT; DBCC SHRINKFILE ('
+      , ShrinkAndResizeCmd		= N'USE ' + QUOTENAME(db.name) + N'; CHECKPOINT; DBCC SHRINKFILE ('
 				+ QUOTENAME(f.name) + N' , 0, TRUNCATEONLY) WITH NO_INFOMSGS; '
 				+ N'USE [master]; ALTER DATABASE ' + QUOTENAME(db.name)
-		+ ' MODIFY FILE ( NAME = N' + QUOTENAME(f.name, '''') + ', SIZE = ' + CONVERT(nvarchar(max), iter.potsize) + N'MB );'
+			+ ' MODIFY FILE ( NAME = N' + QUOTENAME(f.name, '''') + ', SIZE = ' + CONVERT(nvarchar(max), iter.potsize) + N'MB );'
+      , BackupToNulAndShrinkCmd		= N'USE ' + QUOTENAME(db.name) + N'; CHECKPOINT; '
+				+ CASE WHEN db.recovery_model_desc <> 'SIMPLE' THEN N'BACKUP LOG ' + QUOTENAME(db.name) + N' TO DISK = N''NUL'' WITH COMPRESSION, STATS=5;' ELSE N'' END
+				+ N'DBCC SHRINKFILE ('
+				+ QUOTENAME(f.name) + N' , 0, TRUNCATEONLY) WITH NO_INFOMSGS;'
 FROM sys.databases AS db
 INNER JOIN sys.master_files AS f ON db.database_id = f.database_id AND f.type_desc = 'LOG'
 CROSS APPLY sys.dm_db_log_stats (db.database_id) AS ldetails
@@ -89,7 +96,10 @@ CROSS APPLY (SELECT PotentialVLFCount = CASE WHEN iter.potsize <= 64 THEN (iter.
 WHERE
 	HAS_DBACCESS(db.name) = 1
 	AND DATABASEPROPERTYEX(db.name, 'Updateability') = 'READ_WRITE'
+	AND (@MinimumFileSizeMB IS NULL OR f.size / 128.0 >= @MinimumFileSizeMB)
 	--AND db.database_id > 4		-- uncomment this to return user databases only
 	--AND db.recovery_model_desc = 'FULL'	-- uncomment this to only return databases with FULL recovery model
 	--AND lstat.VLFTotalCount > 300		-- uncomment this to filter transaction logs based on VLF count
-ORDER BY Tail_Log_MB DESC, Total_VLFs DESC;
+ORDER BY Tail_Log_MB DESC, Total_VLFs DESC, File_Size_MB DESC;
+
+--EXEC xp_fixeddrives;
