@@ -9,7 +9,10 @@ Description:
 Supported versions:
 	SQL Server 2016 (16.x) SP1 and newer | Azure SQL Database | Azure SQL Managed Instance
 */
-DECLARE @CCICandidateMinSizeGB int = 10, @DaysBack int = 7;
+DECLARE
+	  @CCICandidateMinSizeGB int = 10	-- minimum table size to check
+	, @DaysBack		 int = 7	-- minimum number of days for the server uptime
+	, @StrictMode		 bit = 1	-- optionally set to 0 to also allow tables with lookups, seeks, updates, and deletes
 
 
 SET NOCOUNT ON;
@@ -136,14 +139,19 @@ INNER JOIN table_operational_stats AS tos ON t.object_id = tos.object_id
 LEFT JOIN sys.dm_db_index_usage_stats AS ius ON ius.database_id = DB_ID() AND t.object_id = ius.object_id AND i.index_id = ius.index_id
 WHERE t.is_ms_shipped = 0
 AND tos.table_size_mb > @CCICandidateMinSizeGB * 1024. -- consider sufficiently large tables only
--- conservatively require a CCI candidate to have no updates, seeks, or lookups
-AND tos.leaf_update_count = 0
-AND tos.singleton_lookup_count = 0
 AND (
     i.index_id = 0 OR 
-	(ISNULL(ius.user_lookups, 0) = 0
-	AND ISNULL(ius.user_seeks, 0) = 0
-	AND ISNULL(ius.user_scans, 0) > 0) -- require a CCI candidate to have some full scans
+	(
+	    ISNULL(ius.user_scans, 0) > 0 -- require a CCI candidate to have some full scans'
+	    + CASE WHEN @StrictMode = 1 THEN N'
+-- conservatively require a CCI candidate to have no updates, seeks, or lookups
+	AND ISNULL(ius.user_lookups, 0) = 0
+	AND tos.leaf_update_count = 0
+	AND tos.singleton_lookup_count = 0
+	AND ISNULL(ius.user_seeks, 0) = 0'
+		ELSE N'' END
+	+ N'
+	) 
     )'
 
 DECLARE @CurrDB sysname, @spExecuteSql nvarchar(1000);
@@ -153,7 +161,8 @@ LOCAL FAST_FORWARD
 FOR
 SELECT name
 FROM sys.databases
-WHERE HAS_DBACCESS(name) = 1
+WHERE state = 0
+AND HAS_DBACCESS(name) = 1
 AND DATABASEPROPERTYEX(name, 'Updateability') = 'READ_WRITE'
 
 OPEN DBs;
