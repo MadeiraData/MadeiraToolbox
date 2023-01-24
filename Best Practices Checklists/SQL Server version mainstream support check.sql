@@ -14,6 +14,7 @@ FROM (VALUES
 ,('2016', 13, '7/13/2021'	, '7/14/2026')
 ,('2017', 14, '10/11/2022'	, '10/12/2027')
 ,('2019', 15, '1/7/2025'	, '1/8/2030')
+,('2022', 16, '1/11/2028'	, '1/11/2033')
 ) AS v(SQLVersion, MajorVersion, EoMainstream, EoExtended)
 WHERE 1=1
 AND CONVERT(DATETIME, v.EoMainstream, 101) < GETDATE()
