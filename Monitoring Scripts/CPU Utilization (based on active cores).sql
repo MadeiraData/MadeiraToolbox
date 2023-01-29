@@ -1,7 +1,7 @@
 SET NOCOUNT ON;
 DECLARE @NumOfSamplesToCheck int = 1
 
-declare @totalCPUs int, @activeCPUs int, @TimeStamp bigint, @TotalCPUUtilization float;
+declare @totalCPUs int, @activeCPUs int, @TimeStamp bigint, @TotalCPUUtilization float, @SQLCPUUtilization float;
 
 select @activeCPUs = COUNT(*)
 from sys.dm_os_schedulers
@@ -11,7 +11,7 @@ and status = 'VISIBLE ONLINE';
 select @totalCPUs = cpu_count, @TimeStamp = cpu_ticks / (cpu_ticks/ms_ticks)
 from sys.dm_os_sys_info;
 
-SELECT @TotalCPUUtilization = AVG(100 - SystemIdle)
+SELECT @TotalCPUUtilization = AVG(100 - SystemIdle), @SQLCPUUtilization = AVG(SQLServerCPUUtilization)
 FROM (
  SELECT TOP (@NumOfSamplesToCheck) [timestamp], convert(xml, record) as record
  FROM sys.dm_os_ring_buffers
@@ -26,6 +26,9 @@ CROSS APPLY
 ) AS countervalues
 
 SELECT
-	  @TotalCPUUtilization AS ActualCPUUtilization
+	  @TotalCPUUtilization AS TotalCPUUtilization
+	, @SQLCPUUtilization AS SQLServerCPUUtilization
 -- Extrapolate relative CPU utilization based on total number of cores available to SQL Server:
+	, @activeCPUs AS activeCPUs
+	, @totalCPUs AS totalCPUs
 	, @TotalCPUUtilization / @activeCPUs * @totalCPUs AS RelativeCPUUtilization
