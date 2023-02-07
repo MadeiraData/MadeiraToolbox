@@ -24,9 +24,11 @@ DECLARE
 	@PrimaryCommands nvarchar(4000) = 'CHECKDB',
 	@PrimaryTimeLimitSeconds int = NULL,
 	@SecondaryCommands nvarchar(4000) = 'CHECKALLOC,CHECKTABLE',
-	@SecondaryTimeLimitSeconds int = 60 * 60 * 5
+	@SecondaryTimeLimitSeconds int = 60 * 60 * 5,
+	@SnapshotNamePostfix sysname = '_dbcc_checkdb';
 
 SET NOCOUNT, XACT_ABORT, ARITHABORT, QUOTED_IDENTIFIER ON;
+SET NOEXEC OFF;
 DECLARE @Version int = CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff)
 DECLARE @CurrentAvailabilityGroup sysname, @CurrentAvailabilityGroupRole sysname
 
@@ -38,6 +40,7 @@ BEGIN
     INNER JOIN sys.dm_hadr_availability_replica_states replica_states ON db.replica_id = replica_states.replica_id
     INNER JOIN sys.availability_groups ag ON replica_states.group_id = ag.group_id
     WHERE db.name = @CurrentDatabaseName
+	OPTION(RECOMPILE);
 END
 
 -- if PRIMARY, run CHECKDB WITH PHYSICAL_ONLY and NOINDEX checks
@@ -61,7 +64,23 @@ ELSE IF @CurrentAvailabilityGroupRole = 'SECONDARY'
 BEGIN
 	DECLARE @CMD NVARCHAR(MAX), @SnapshotName SYSNAME;
 
-	SET @SnapshotName = @CurrentDatabaseName + '_dbcc_' + CONVERT(nvarchar(25), GETDATE(), 112) + REPLACE(CONVERT(nvarchar(25), GETDATE(), 114),':','');
+	SET @SnapshotName = @CurrentDatabaseName + @SnapshotNamePostfix;
+	
+	IF DB_ID(@SnapshotName) IS NOT NULL
+	BEGIN
+		IF EXISTS (SELECT NULL FROM sys.databases WHERE [name] = @SnapshotName AND source_database IS NOT NULL)
+		BEGIN
+			RAISERROR(N'Existing snapshot detected: %s',0,1,@SnapshotName) WITH NOWAIT;
+			SET @CMD = N'DROP DATABASE ' + QUOTENAME(@SnapshotName);
+			PRINT @CMD;
+			EXEC (@CMD)
+		END
+		ELSE
+		BEGIN
+			RAISERROR(N'Existing non-snapshot database detected: %s. Please change the snapshot postfix "%s", or drop or rename the existing database.',16,1,@SnapshotName,@SnapshotNamePostfix) WITH NOWAIT;
+			SET NOEXEC ON;
+		END
+	END
 
 	RAISERROR(N'Availability Group "%s" is "%s". Creating database snapshot "%s"', 0, 1, @CurrentAvailabilityGroup, @CurrentAvailabilityGroupRole, @SnapshotName) WITH NOWAIT;
 	
