@@ -6,7 +6,7 @@ Date: 2023-02-13
 */
 DECLARE
 	 @FilterByDBName			sysname		= NULL		-- Optionally filter by a specific database name. Leave NULL to check all accessible CDC-enabled databases.
-	,@LatencyMinutesThreshold	bigint		= 60 * 24	-- Optionally filter only for instances where the MinLSN is this many minutes behind the configured cleanup retention.
+	,@LatencyMinutesThreshold	bigint		= 60 * 25	-- Optionally filter only for instances where the MinLSN is this many minutes behind the configured cleanup retention.
 
 
 /***** NO NEED TO CHANGE ANYTHING BELOW THIS LINE *****/
@@ -71,7 +71,6 @@ select used_page_count = SUM(used_page_count)
 from sys.dm_db_partition_stats AS ps
 where ps.object_id = ct.source_object_id
 ) AS source_pstats'
-	, N'@LatencyMinutesThreshold bigint', @LatencyMinutesThreshold WITH RECOMPILE;
 
 	RAISERROR(N'%s: %d capture instance(s)',0,1,@CurrDB,@@ROWCOUNT) WITH NOWAIT;
 
