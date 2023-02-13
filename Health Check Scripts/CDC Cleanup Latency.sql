@@ -6,7 +6,7 @@ Date: 2023-02-13
 */
 DECLARE
 	 @FilterByDBName			sysname		= NULL		-- Optionally filter by a specific database name. Leave NULL to check all accessible CDC-enabled databases.
-	,@LatencyMinutesThreshold	bigint		= 60 * 25	-- Optionally filter only for instances where the MinLSN is this many minutes behind the configured cleanup retention.
+	,@LatencyMinutesThreshold	bigint		= NULL --60*25	-- Optionally filter only for instances where the MinLSN is this many minutes behind the configured cleanup retention.
 
 
 /***** NO NEED TO CHANGE ANYTHING BELOW THIS LINE *****/
