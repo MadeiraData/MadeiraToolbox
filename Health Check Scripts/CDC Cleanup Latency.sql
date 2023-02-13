@@ -16,7 +16,7 @@ SET NOCOUNT ON;
 
 IF OBJECT_ID('msdb.dbo.cdc_jobs') IS NULL
 BEGIN
-	RAISERROR(N'%s: CDC is not installed on this instance.',0,1,@@SERVERNAME);
+	RAISERROR(N'%s: CDC is not enabled on this instance.',0,1,@@SERVERNAME);
 	SET NOEXEC ON;
 END
 
