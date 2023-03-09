@@ -174,8 +174,8 @@ BEGIN
 			+ N'; SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @CurrentRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
 		IF @Verbose = 1 PRINT @CMD;
 		EXEC sp_executesql @CMD
-			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant'
-			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue;
+			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant, @PartitionRangeInterval sql_variant'
+			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue, @PartitionRangeInterval;
 		
 		SET @i = @i + 1;
 	END
@@ -220,8 +220,8 @@ BEGIN
 			+ CHAR(13) + CHAR(10) + N'; SET @IsSmaller = CASE WHEN CONVERT(' + @PartitionKeyDataType + N', @CurrentRangeValue) < CONVERT(' + @PartitionKeyDataType + N', @TargetRangeValue) THEN 1 ELSE 0 END'
 		IF @Verbose = 1 PRINT @CMD;
 		EXEC sp_executesql @CMD
-			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant, @LastPartitionNumber int OUTPUT'
-			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue, @LastPartitionNumber OUTPUT;
+			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant, @LastPartitionNumber int OUTPUT, @PartitionRangeInterval sql_variant'
+			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue, @LastPartitionNumber OUTPUT, @PartitionRangeInterval;
 		
 		SET @Msg = CONCAT(CONVERT(nvarchar(24), GETDATE(), 121), N' - Splitting range: ', CONVERT(nvarchar(max), @CurrentRangeValue))
 		RAISERROR(N'%s (partition %d)', 0,1, @Msg, @LastPartitionNumber) WITH NOWAIT;
