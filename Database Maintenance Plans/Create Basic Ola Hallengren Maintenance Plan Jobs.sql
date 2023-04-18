@@ -272,6 +272,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'IndexDef
     @FragmentationLevel2 = 40,
     @SortInTempdb = ''Y'',
     @PartitionLevel = ''Y'',
+	@ExecuteAsUser = ''dbo'',
     @LogToTable = ''Y''', 
 		@database_name=@DatabaseName, 
 		@output_file_name=@LogOutput, 
@@ -295,6 +296,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'UpdateSt
     @FragmentationHigh = NULL ,
     @UpdateStatistics = ''ALL'' ,
     @OnlyModifiedStatistics = N''Y'' ,
+	@ExecuteAsUser = ''dbo'',
     @LogToTable = ''Y'';', 
 		@database_name=@DatabaseName, 
 		@output_file_name=@LogOutput, 
@@ -302,7 +304,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'UpdateSt
 IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
 EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
 IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
-EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'IntegrityChecks', 
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'DatabaseMaintenanceSchedule', 
 		@enabled=1, 
 		@freq_type=8, 
 		@freq_interval=64, 
