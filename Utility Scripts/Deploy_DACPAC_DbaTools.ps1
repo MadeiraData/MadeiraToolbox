@@ -171,7 +171,7 @@ if ($ScriptOnly) {
 
 try {
     Write-PSFMessage -Level Important -Message "Publishing DacPac to database $($paramSplat.Database) in server $($paramSplat.SqlInstance)"
-    $DacPacResults = Publish-DbaDacPackage @params -Verbose
+    $DacPacResults = Publish-DbaDacPackage @paramSplat -Verbose
 
     # use these as necessary:
     $DacPacResults
