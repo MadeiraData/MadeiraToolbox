@@ -36,6 +36,7 @@ CREATE OR ALTER PROCEDURE dbo.[PartitionManagement_Purge]
 , @TruncateOldPartitions bit = 1
 , @DebugOnly bit = 0
 AS
+EXECUTE AS USER = 'dbo'
 BEGIN
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT, QUOTED_IDENTIFIER ON;

@@ -41,6 +41,7 @@ CREATE OR ALTER PROCEDURE dbo.[PartitionManagement_Split]
 , @Verbose bit = 0
 , @AllowDataMovementForColumnstore bit = 0 /* SPLIT is not supported for non-empty partitions with columnstore indexes (error 35346). This will MOVE such partitions to a staging table and then re-insert them back. */
 AS
+EXECUTE AS USER = 'dbo'
 BEGIN
 
 SET NOCOUNT, ARITHABORT, XACT_ABORT, QUOTED_IDENTIFIER ON;
