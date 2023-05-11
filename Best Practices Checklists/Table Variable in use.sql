@@ -33,9 +33,16 @@ from sys.dm_exec_cached_plans as cp
 cross apply sys.dm_exec_query_plan(cp.plan_handle) as p
 cross apply sys.dm_exec_sql_text(cp.plan_handle) as t
 WHERE p.query_plan.exist('//Object[substring(@Table,1,2) = "[@"]') = 1
-AND t.dbid > 4 and DB_NAME(t.dbid) NOT IN('ReportServer','MadeiraPerformanceMonitoring','DBA','SQLWATCH')
+AND t.dbid > 4 and DB_NAME(t.dbid) NOT IN('ReportServer','MadeiraPerformanceMonitoring','DBA','SQLWATCH','distribution','HangFire')
 AND ISNULL(OBJECT_NAME(t.objectid, t.dbid),'(null)') NOT IN('IndexOptimize','CommandExecute')
 AND t.text NOT LIKE N'%@jdbc_temp_fkeys_result%'
+ AND
+ (
+ -- include all specific column references (seek predicates) 
+    p.query_plan.exist('//Object[substring(@Table,1,2) = "[@"]/../SeekPredicates/SeekPredicateNew/SeekKeys/Prefix/RangeColumns/ColumnReference') = 1
+ --include all joins with table varibles by checking that no specific columns are referenced in the execution plan
+ OR p.query_plan.exist('//ColumnReference[substring(@Table,1,1) = "@"]') = 1
+ )
 -- ignore databases in secondary AG replicas
 AND DB_NAME(t.dbid) NOT IN
 (
