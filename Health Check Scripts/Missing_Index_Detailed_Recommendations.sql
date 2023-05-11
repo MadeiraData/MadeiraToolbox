@@ -1,5 +1,14 @@
+DECLARE
+  @MinAverageTotalUserCost int = 5
+, @MinAverageUserImpact int = 65
+, @MinSeeksOrScansPerDay int = 100
+, @MinUniqueCompiles int = 20
+
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+DECLARE @daysUptime int;
+SELECT @daysUptime = DATEDIFF(day,sqlserver_start_time,GETDATE()) FROM sys.dm_os_sys_info;
 
 IF OBJECT_ID('tempdb..#Results') IS NOT NULL DROP TABLE #Results;
 CREATE TABLE #Results
@@ -78,8 +87,10 @@ OUTER APPLY
 	FROM sys.indexes AS p
 	WHERE p.object_id = mid.object_id AND p.index_id > 1
 ) AS OtherIndexes
-WHERE user_seeks > 10
-AND avg_user_impact > 15
+WHERE migs.avg_total_user_cost >= @MinAverageTotalUserCost
+AND migs.avg_user_impact >= @MinAverageUserImpact
+AND (migs.user_seeks+migs.user_scans) / @daysUptime >= @MinSeeksOrScansPerDay
+AND migs.unique_compiles >= @MinUniqueCompiles
 AND database_id = DB_ID()
 ORDER BY index_advantage DESC, migs.avg_user_impact DESC'
 
@@ -103,12 +114,20 @@ BEGIN
 	SET @spExecuteSql = QUOTENAME(@dbname) + N'..sp_executesql'
 
 	INSERT INTO #Results
-	EXEC @spExecuteSql @CMD WITH RECOMPILE;
+	EXEC @spExecuteSql @CMD
+		, N'@daysUptime int, @MinAverageTotalUserCost int, @MinAverageUserImpact int, @MinSeeksOrScansPerDay int, @MinUniqueCompiles int'
+		, @daysUptime, @MinAverageTotalUserCost, @MinAverageUserImpact, @MinSeeksOrScansPerDay, @MinUniqueCompiles
+		WITH RECOMPILE;
 END
 CLOSE DBs;
 DEALLOCATE DBs;
 
 SELECT *
+, RunThisForMoreDetails = N'USE ' + QUOTENAME([DatabaseName])
++ N'; EXEC sp_help ' + QUOTENAME(QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName), '''')
++ N'; EXEC sp_spaceused ' + QUOTENAME(QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName), '''')
++ N'; EXEC sp_indexes_rowset @table_schema = ' + QUOTENAME(SchemaName, '''') + N', @table_name = ' + QUOTENAME(TableName, '''')
++ N';'
 , RemediationScript = CONCAT(
  N'CREATE NONCLUSTERED INDEX [IX_rename_me_'
  , index_handle
@@ -131,12 +150,7 @@ SELECT *
  THEN N' )'
  ELSE N''
  END
- ),
-RunThisForMoreDetails = N'USE ' + QUOTENAME([DatabaseName])
-+ N'; EXEC sp_help ' + QUOTENAME(QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName), '''')
-+ N'; EXEC sp_spaceused ' + QUOTENAME(QUOTENAME(SchemaName) + N'.' + QUOTENAME(TableName), '''')
-+ N'; EXEC sp_indexes_rowset @table_schema = ' + QUOTENAME(SchemaName, '''') + N', @table_name = ' + QUOTENAME(TableName, '''')
-+ N';'
+ )
 FROM #Results
 ORDER BY index_advantage DESC
 OPTION(RECOMPILE);
