@@ -210,7 +210,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Integrit
 		@retry_interval=0, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
 		@command=N'EXECUTE [dbo].[DatabaseIntegrityCheck]
-@Databases = ''USER_DATABASES,-rdsadmin'',
+@Databases = ''USER_DATABASES'',
 @MaxDOP=4,
 @LogToTable = ''Y''', 
 		@database_name=@DatabaseName, 
@@ -229,7 +229,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'IndexDef
 		@retry_interval=0, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
 		@command=N'EXECUTE [dbo].[IndexOptimize]
-    @Databases = ''USER_DATABASES,-rdsadmin'' ,
+    @Databases = ''USER_DATABASES'' ,
     @FragmentationLow = NULL,
     @FragmentationMedium = ''INDEX_REORGANIZE,INDEX_REBUILD_ONLINE,INDEX_REBUILD_OFFLINE'',
     @FragmentationHigh = ''INDEX_REBUILD_ONLINE,INDEX_REORGANIZE,INDEX_REBUILD_OFFLINE'',
@@ -254,7 +254,7 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'UpdateSt
 		@retry_interval=0, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
 		@command=N'EXECUTE [dbo].[IndexOptimize]
-    @Databases = ''USER_DATABASES,-rdsadmin'' ,
+    @Databases = ''USER_DATABASES'' ,
     @FragmentationLow = NULL ,
     @FragmentationMedium = NULL ,
     @FragmentationHigh = NULL ,

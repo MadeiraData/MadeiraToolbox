@@ -44,14 +44,16 @@ BEGIN
 END
 ELSE
 BEGIN
-	SET @LogDirectory = LEFT(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)),LEN(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max))) - CHARINDEX('\',REVERSE(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max))))) + N'\'
+	SET @LogDirectory = LEFT(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(MAX)),LEN(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(MAX))) - CHARINDEX('\',REVERSE(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(MAX))))) + N'\'
 END
 
 DECLARE @LogOutput nvarchar(4000)
-DECLARE @jobId BINARY(16)
-DECLARE @ReturnCode INT
+DECLARE @jobId binary(16)
+DECLARE @ReturnCode int
 SET @ReturnCode = 0
 
+IF SERVERPROPERTY('EngineEdition') = 8
+	SET @LogOutput = NULL
 IF CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 13
 	SET @LogOutput = N'$(ESCAPE_SQUOTE(SQLLOGDIR))\$(ESCAPE_SQUOTE(JOBNAME))_$(ESCAPE_SQUOTE(STEPNAME))_$(ESCAPE_SQUOTE(DATE))_$(ESCAPE_SQUOTE(TIME)).txt'
 ELSE IF CONVERT(int, (@@microsoftversion / 0x1000000) & 0xff) >= 12
