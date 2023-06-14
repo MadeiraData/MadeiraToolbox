@@ -977,7 +977,7 @@ AND ags.primary_replica <> @@SERVERNAME
 );'
 
 
-IF OBJECT_ID('distribution.sys.sp_replmonitorhelppublication') IS NOT NULL
+IF HAS_DBACCESS('distribution') = 1 AND OBJECT_ID('distribution.sys.sp_replmonitorhelppublication') IS NOT NULL
 BEGIN
 	PRINT 'Checking: Replication Error(s)';
 	DECLARE @temp_Pub TABLE (
@@ -1004,6 +1004,7 @@ BEGIN
 			,best_runspeedPerf int
 			,average_runspeedPerf int
 			,retention_period_unit tinyint
+			,publisher sysname
 	);
 
 	INSERT INTO @temp_Pub
