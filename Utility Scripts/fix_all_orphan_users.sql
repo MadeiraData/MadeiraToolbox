@@ -1,14 +1,15 @@
 /*
 Author: Eitan Blumin | https://eitanblumin.com | https://madeiradata.com
 Date Created: 2018-01-02
-Last Update: 2022-05-04
+Last Update: 2023-06-18
 Description:
 	Fix All Orphaned Users Within Current Database, or all databases in the instance.
 	Handles 3 possible use-cases:
 	1. Login with same name as user exists - generate ALTER LOGIN to map the user to the login.
 	2. Login with a different name but the same sid exists - generate ALTER LOGIN to map the user to the login.
-	3. No login with same name exists - generate DROP USER to delete the orphan user.
-	4. Orphan user is [dbo] - change the database owner to SA (or whatever SA was renamed to)
+	3. Login SID is identifiable but login doesn't exist in SQL - generate CREATE LOGIN FROM WINDOWS to create a Windows authentication login.
+	4. No login with same name exists - generate DROP USER to delete the orphan user.
+	5. Orphan user is [dbo] - change the database owner to SA (or whatever SA was renamed to)
 
 Remarks:
 	- The script tries to detect automatically whether a user is a member of a Windows Group.
@@ -83,7 +84,7 @@ AND dp.authentication_type <> 0;'
 SET @saName = SUSER_NAME(0x01);
 
 -- Find any Windows Group members:
-DECLARE @AdminsByGroup AS TABLE (AccountName sysname, AccountType sysname NULL, privilege sysname NULL, MappedName sysname NULL, GroupPath sysname NULL);
+DECLARE @AdminsByGroup AS TABLE (AccountName sysname NOT NULL, AccountType sysname NULL, privilege sysname NULL, MappedName sysname NULL, GroupPath sysname NULL);
 DECLARE @CurrentGroup sysname;
 
 DECLARE Groups CURSOR
@@ -114,7 +115,7 @@ END
 CLOSE Groups;
 DEALLOCATE Groups;
 
-DECLARE @results AS TABLE(DBName SYSNAME NULL, UserName SYSNAME, [sid] VARBINARY(128), LoginExists BIT, OwnedSchemas NVARCHAR(MAX) NULL, OwnedObjects NVARCHAR(MAX) NULL);
+DECLARE @results AS TABLE(DBName SYSNAME NULL, UserName SYSNAME NULL, [sid] VARBINARY(128) NULL, LoginExists bit NULL, OwnedSchemas NVARCHAR(MAX) NULL, OwnedObjects NVARCHAR(MAX) NULL);
 DECLARE @CurrDB sysname, @spExecuteSql nvarchar(1000);
 
 DECLARE DBs CURSOR
@@ -160,7 +161,9 @@ CASE WHEN UserName = 'dbo' THEN
 	ELSE N'' END
 	+ N'-- assign orphaned [dbo] to [sa]'
 WHEN SUSER_ID(l.LoginName) IS NOT NULL THEN
-	N'USE ' + QUOTENAME(DBName) + N'; ALTER USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(l.LoginName) + N'; -- existing login found with the same sid'
+	N'USE ' + QUOTENAME(DBName) + N'; ALTER USER ' + QUOTENAME(UserName) + N' WITH LOGIN = ' + QUOTENAME(l.LoginName) + N'; -- existing login found with the same name'
+WHEN LoginExists = 0 AND SUSER_SID(l.LoginName) IS NOT NULL  THEN
+	N'CREATE LOGIN ' + QUOTENAME( l.LoginName ) + ' FROM WINDOWS WITH DEFAULT_DATABASE = [master]; -- trying to recreate a Windows account'
 WHEN LoginExists = 0 THEN
 	N'USE ' + QUOTENAME(DBName) + N'; '
 		+ ISNULL(OwnedObjects, N'') + ISNULL(OwnedSchemas, N'')
