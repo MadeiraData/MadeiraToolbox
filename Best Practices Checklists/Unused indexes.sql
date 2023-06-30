@@ -21,7 +21,28 @@ SET @CMD = N'SELECT
  SUM(partition_stats.reserved_page_count) * 8,
  SUM(ISNULL(usage_stats.user_updates, 0) + ISNULL(usage_stats.system_updates, 0)),
  tables.create_date,
- STATS_DATE(indexes.object_id, indexes.index_id) StatsDate
+ STATS_DATE(indexes.object_id, indexes.index_id) StatsDate,
+ indexes.filter_definition,
+ STUFF
+((
+SELECT '', '' + QUOTENAME(col.name) + CASE WHEN keyCol.is_descending_key = 1 THEN '' DESC'' ELSE '' ASC'' END
+FROM sys.index_columns keyCol
+inner join sys.columns col on keyCol.object_id = col.object_id AND keyCol.column_id = col.column_id
+WHERE indexes.object_id = keyCol.object_id
+AND indexes.index_id = keyCol.index_id
+AND keyCol.is_included_column = 0
+ORDER BY keyCol.key_ordinal
+FOR XML PATH('''')), 1, 2, ''''),
+	STUFF
+((
+SELECT '', '' + QUOTENAME(col.name)
+FROM sys.index_columns keyCol
+inner join sys.columns col on keyCol.object_id = col.object_id AND keyCol.column_id = col.column_id
+WHERE indexes.object_id = keyCol.object_id
+AND indexes.index_id = keyCol.index_id
+AND keyCol.is_included_column = 1
+ORDER BY keyCol.key_ordinal
+FOR XML PATH('''')), 1, 2, '''')
 FROM sys.indexes
 INNER JOIN sys.tables ON indexes.object_id = tables.object_id 
 INNER JOIN sys.partitions ON indexes.object_id = partitions.object_id AND indexes.index_id = partitions.index_id
@@ -43,12 +64,15 @@ GROUP BY
  indexes.object_id,
  tables.create_date,
  indexes.index_id,
- indexes.name
+ indexes.name,
+ indexes.filter_definition
 HAVING
  SUM(partitions.rows) > ' + CAST(@MinimumRowsInTable AS NVARCHAR(MAX))
 
 IF OBJECT_ID('tempdb..#tmp') IS NOT NULL DROP TABLE #tmp;
-CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IndexName SYSNAME NULL, RowsCount BIGINT, IndexSizeKB BIGINT, UpdatesCount BIGINT NULL, TableCreatedDate DATETIME NULL, LastStatsDate DATETIME);
+CREATE TABLE #tmp (DBName SYSNAME, SchemaName SYSNAME, TableName SYSNAME, IndexName SYSNAME NULL, RowsCount BIGINT, IndexSizeKB BIGINT, UpdatesCount BIGINT NULL
+, TableCreatedDate DATETIME NULL, LastStatsDate datetime
+, IndexFilter nvarchar(MAX) NULL, KeyCols nvarchar(MAX) NULL, IncludeCols nvarchar(MAX) NULL);
 
 DECLARE @CurrDB sysname, @spExecuteSql nvarchar(1000), @InstanceStartTime datetime;
 
