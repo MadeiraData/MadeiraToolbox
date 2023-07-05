@@ -408,31 +408,26 @@ BEGIN
 
 	DECLARE 
 		@Rows INT,
-		@CutOffDate DATETIME,
-		@ThresholdRecords_Defualt SMALLINT = 100
+		@CutOffDate DATETIME
 
-		IF @ThresholdRecords IS NOT NULL
-		BEGIN
-			SET @ThresholdRecords_Defualt = @ThresholdRecords
-		END
+	IF @ThresholdRecords IS NULL
+	BEGIN
+		SET @ThresholdRecords = 100
+	END
 		
-		SET @Rows = 1
+	SET @Rows = (SELECT COUNT(*) FROM DBA..DBA_CopyFilesLog)
 		
-		SELECT @CutOffDate = DATEADD(DAY,-@DaysToKeep,GETDATE())
+	SELECT @CutOffDate = DATEADD(DAY,-@DaysToKeep,GETDATE())
 		
-		WHILE @Rows > 0
-		BEGIN
-				IF (SELECT COUNT(*) FROM DBA..DBA_CopyFilesToS3) > @ThresholdRecords_Defualt
-				BEGIN
-	
-					DELETE TOP (100)
-					FROM DBA..DBA_CopyFilesLog
-					WHERE CopyStartTime <= @CutOffDate
+	WHILE @Rows > 0
+	BEGIN
+		DELETE TOP (@ThresholdRecords)
+		FROM DBA..DBA_CopyFilesLog
+		WHERE CopyStartTime <= @CutOffDate
 
-					SET @Rows = @@ROWCOUNT;
-				END
+		SET @Rows = @@ROWCOUNT;
 		
-		END
+	END
 END
 
 
