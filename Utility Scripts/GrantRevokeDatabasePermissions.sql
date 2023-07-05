@@ -1,7 +1,6 @@
 USE MyDB;
 GO
 
-
 /*******************************************************************************************
 Description:	Grant or revoke specified permissions to database principal (user or role).
 Author:			Reut Almog Talmi @ Madeira Data Solutions
