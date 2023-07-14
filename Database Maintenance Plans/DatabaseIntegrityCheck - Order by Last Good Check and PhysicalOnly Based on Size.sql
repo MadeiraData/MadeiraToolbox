@@ -15,7 +15,7 @@ DECLARE @PhysicalOnlyMBThreshold	int	= 1024
 
 
 
-DECLARE @SmallDatabasesList nvarchar(MAX) = 'USER_DATABASES', @LargeDatabasesList nvarchar(MAX), @TimeLimitSeconds int;
+DECLARE @SmallDatabasesList nvarchar(MAX) = 'ALL_DATABASES', @LargeDatabasesList nvarchar(MAX), @TimeLimitSeconds int;
 SET @TimeLimitSeconds = @TimeLimitMinutes * 60
 
 SELECT
@@ -37,7 +37,7 @@ EXEC dbo.DatabaseIntegrityCheck
 IF @LargeDatabasesList IS NOT NULL
 BEGIN
 	EXEC dbo.DatabaseIntegrityCheck
-		@Databases = @LargeDatabasesList@LargeDatabasesList,
+		@Databases = @LargeDatabasesList,
 		@TimeLimit = @TimeLimitSeconds,
 		@PhysicalOnly = 'Y',
 		@LogToTable= 'Y',
