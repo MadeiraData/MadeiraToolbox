@@ -3,7 +3,7 @@ Find All Shrinkable Transaction Logs
 ====================================
 Author: Eitan Blumin
 Date: 2021-10-16
-Last Update: 2023-06-26
+Last Update: 2023-07-03
 Description:
 	This script can be used to find all transaction log files
 	that don't have active VLFs at their tail, making it possible
@@ -27,16 +27,18 @@ Description:
 		Shrink					- Performs DBCC SHRINKFILE with TRUNCATEONLY.
 		ShrinkAndResize			- Performs shrink with TRUNCATEONLY and also ALTER DATABSE MODIFY FILE to set the file size to PotentialSizeMB.
 		BackupToNulAndShrink	- Runs BACKUP LOG to DISK='NUL' in order to force-empty the transaction log file, then shrink with TRUNCATEONLY.
+		DipToSimpleAndShrink	- Changes the Recovery Model to SIMPLE and back in order to force-empty the transaction log file, then shrink with TRUNCATEONLY.
 		!!!!!!!! WARNING !!!!!!!!
-			Running action BackupToNulAndShrink will result in breaking the backup log chain !
+			Running actions BackupToNulAndShrink or DipToSimpleAndShrink will result in breaking the backup log chain !
 			You MUST run a FULL backup after this operation in order to initialize a new backup log chain !!!
 */
 DECLARE
-	  @ShowShrinkableLogsOnly	bit = 1				-- Set to 1 to only show transaction logs that can be shrunk at the tail. Set to 0 for all.
-	, @MinimumFileSizeMB		int = 256			-- Return transaction logs with this minimum MB size only. Set to NULL for all.
-	, @MinimumTailLogMB			int = 128			-- Return transaction logs with this minimum MB tail size only. Set to NULL for all.
-	, @DoAction					sysname = 'None'	-- Supported values: None | Shrink | ShrinkAndResize | BackupToNulAndShrink
-													-- !!!! WARNING !!!! Running action BackupToNulAndShrink will result in breaking the backup log chain!
+	  @ShowShrinkableLogsOnly			bit = 1				-- Set to 1 to only show transaction logs that can be shrunk at the tail. Set to 0 for all.
+	, @MinimumFileSizeMB				int = 256			-- Return transaction logs with this minimum MB size only. Set to NULL for all.
+	, @MinimumTailLogMB					int = 128			-- Return transaction logs with this minimum MB of shrinkable tail size only. Set to NULL for all.
+	, @MinimumActiveLogSinceBackupMB	int = NULL			-- Return transaction logs with this minimum active MB since last log backup only. Set to NULL for all.
+	, @DoAction							sysname = 'None'	-- Supported values: None | Shrink | ShrinkAndResize | BackupToNulAndShrink | DipToSimpleAndShrink
+										-- !!!! WARNING !!!! Running actions BackupToNulAndShrink or DipToSimpleAndShrink will result in breaking the backup log chain!
 
 
 SET NOCOUNT ON;
@@ -58,7 +60,8 @@ DECLARE @Results AS TABLE
 	LogSinceBackupMB		float NULL,
 	ShrinkCmd				nvarchar(max),
 	ShrinkAndResizeCmd		nvarchar(max),
-	BackupToNulAndShrinkCmd	nvarchar(max)
+	BackupToNulAndShrinkCmd	nvarchar(max),
+	DipToSimpleAndShrinkCmd	nvarchar(max)
 )
 
 INSERT INTO @Results
@@ -87,6 +90,10 @@ SELECT
 			+ ' MODIFY FILE ( NAME = N' + QUOTENAME(f.name, '''') + ', SIZE = ' + CONVERT(nvarchar(max), iter.potsize) + N'MB );'
       , BackupToNulAndShrinkCmd		= N'USE ' + QUOTENAME(db.name) + N'; CHECKPOINT; '
 				+ CASE WHEN db.recovery_model_desc <> 'SIMPLE' THEN N'BACKUP LOG ' + QUOTENAME(db.name) + N' TO DISK = N''NUL'' WITH COMPRESSION, STATS=5;' ELSE N'' END
+				+ N'DBCC SHRINKFILE ('
+				+ QUOTENAME(f.name) + N' , 0, TRUNCATEONLY) WITH NO_INFOMSGS;'
+      , DipToSimpleAndShrinkCmd		= N'USE ' + QUOTENAME(db.name) + N'; CHECKPOINT; '
+				+ CASE WHEN db.recovery_model_desc <> 'SIMPLE' THEN N'ALTER DATABASE ' + QUOTENAME(db.name) + N' SET RECOVERY SIMPLE; CHECKPOINT; ALTER DATABASE ' + QUOTENAME(db.name) + N' SET RECOVERY ' + db.recovery_model_desc + N'; CHECKPOINT; ' ELSE N'' END
 				+ N'DBCC SHRINKFILE ('
 				+ QUOTENAME(f.name) + N' , 0, TRUNCATEONLY) WITH NO_INFOMSGS;'
 FROM sys.databases AS db
@@ -136,25 +143,27 @@ WHERE
 	AND DATABASEPROPERTYEX(db.name, 'Updateability') = 'READ_WRITE'
 	AND (@MinimumFileSizeMB IS NULL OR f.size / 128.0 >= @MinimumFileSizeMB)
 	AND (@MinimumTailLogMB IS NULL OR lstat.VLFSize >= @MinimumTailLogMB)
+	AND (@MinimumActiveLogSinceBackupMB IS NULL OR ldetails.log_since_last_log_backup_mb >= @MinimumActiveLogSinceBackupMB)
 	--AND db.database_id > 4		-- uncomment this to return user databases only
 	--AND db.recovery_model_desc = 'FULL'	-- uncomment this to only return databases with FULL recovery model
 	--AND lstat.VLFTotalCount > 300		-- uncomment this to filter transaction logs based on VLF count
-ORDER BY Tail_Log_MB DESC, Total_VLFs DESC, File_Size_MB DESC;
+ORDER BY Tail_Log_MB DESC, Total_VLFs DESC, File_Size_MB DESC
+OPTION(RECOMPILE);
 
 
-IF @@ROWCOUNT > 0 AND @DoAction IN ('Shrink','ShrinkAndResize','BackupToNulAndShrink')
+IF @@ROWCOUNT > 0 AND @DoAction IN ('Shrink','ShrinkAndResize','BackupToNulAndShrink','DipToSimpleAndShrink')
 BEGIN
 	DECLARE @CMD nvarchar(max);
 
-	IF @DoAction = 'BackupToNulAndShrink'
+	IF @DoAction IN ('BackupToNulAndShrink','DipToSimpleAndShrink')
 		RAISERROR(N'
 !!!!!!!! WARNING !!!!!!!!
 
-	Running action BackupToNulAndShrink will result in breaking the backup log chain !
+	Running action %s will result in breaking the backup log chain !
 	You must run a FULL backup after this operation in order to initialize a new backup log chain !!!
 
 !!!!!!!! WARNING !!!!!!!!
-',11,1) WITH NOWAIT;
+',11,1,@DoAction) WITH NOWAIT;
 
 	DECLARE cmd CURSOR
 	LOCAL FAST_FORWARD
@@ -164,6 +173,7 @@ BEGIN
 			WHEN 'Shrink' THEN ShrinkCmd
 			WHEN 'ShrinkAndResize' THEN ShrinkAndResizeCmd
 			WHEN 'BackupToNulAndShrink' THEN BackupToNulAndShrinkCmd
+			WHEN 'DipToSimpleAndShrink' THEN DipToSimpleAndShrinkCmd
 		END
 	FROM @Results
 
