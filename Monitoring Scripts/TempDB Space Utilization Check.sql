@@ -8,6 +8,8 @@ Description:
 	https://www.sqlshack.com/monitor-sql-server-tempdb-database/
 	https://www.mssqltips.com/sqlservertip/4356/track-sql-server-tempdb-space-usage/
 */
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SET NOCOUNT ON;
 
 -- File Stats Overview
 SELECT
