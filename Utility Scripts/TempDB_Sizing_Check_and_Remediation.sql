@@ -21,15 +21,16 @@ Change log:
 */
 
 DECLARE @ClearServerCache 		BIT	= 0 -- If shrinking tempdb files doesn't work, you may have to set this to 1 to clear objects from server cache.
-DECLARE @MaxSizeDiskUtilizationPercent 	FLOAT 	= 90 -- Maximum total percentage to be used for MAXSIZE property. Use NULL for UNLIMITED.
-DECLARE @InitSizeDiskUtilizationPercent FLOAT 	= 50 -- Desired total percentage of disk space to be used for SIZE property.
-DECLARE @InitialSizeMBOverride 		INT 	= NULL -- hard-coded starting size per file for edge cases, overriding the calculation based on disk size. Set to -1 to align all files to the file with the maximum size.
-DECLARE @MaxSizeMBOverride 		INT 	= NULL -- hard-coded max size per file for edge cases, overriding the calculation based on disk size. Set to -1 for UNLIMITED.
-DECLARE @FileGrowthMB 			INT 	= 256 -- Auto-growth increment in MB. Set to -1 to align all files to the file with the maximum auto-growth setting.
+DECLARE @MaxSizeDiskUtilizationPercent 	FLOAT 	= NULL -- Maximum total percentage to be used for MAXSIZE property. Use NULL for UNLIMITED.
+DECLARE @InitSizeDiskUtilizationPercent FLOAT 	= NULL -- Desired total percentage of disk space to be used for SIZE property.
+DECLARE @InitialSizeMBOverride 		INT 	= 1024 -- hard-coded starting size per file for edge cases, overriding the calculation based on disk size. Set to -1 to align all files to the file with the maximum size.
+DECLARE @MaxSizeMBOverride 		INT 	= -1 -- hard-coded max size per file for edge cases, overriding the calculation based on disk size. Set to -1 for UNLIMITED.
+DECLARE @FileGrowthMB 			INT 	= 64 -- Auto-growth increment in MB. Set to -1 to align all files to the file with the maximum auto-growth setting.
 DECLARE @IncludeTransactionLog 		BIT 	= 0 -- Set this to 1 to include the transaction log file in the calculations.
 DECLARE @SpaceUsedMaxPercent 		INT 	= 50 -- Maximum percent space used compared to desired file size, if found to be above this - a warning will be raised.
 DECLARE @ForceShrink			BIT	= 0 -- Set this to 1 to force shrink (use this if actual tempdb file size on disk is larger than what's specified in system tables).
 DECLARE @ForceAllowSameDiskWithOtherDBs	BIT	= 1 -- Set this to 1 to allow for TempDB to be located on the same physical disk with other databases.
+DECLARE @DoNotResize			BIT = 0	-- Set this to 1 to avoid ALTER DATABASE ... MODIFY FILE commands.
 
 /** DO NOT CHANGE ANYTHING BELOW THIS LINE **/
 
@@ -64,7 +65,9 @@ SELECT
  Remediation_Script = 
  CASE WHEN current_size_MB > InitSizeMBPerFile OR @ForceShrink = 1 THEN N'USE tempdb; DBCC SHRINKFILE (N' + QUOTENAME(name, '''') + ' , ' + CONVERT(nvarchar(max),InitSizeMBPerFile) + N') WITH NO_INFOMSGS; '
  ELSE N'' END
-+ 'ALTER DATABASE [tempdb] MODIFY FILE (NAME = ' + QUOTENAME(name, '''') + ', SIZE = ' + CONVERT(nvarchar(max),InitSizeMBPerFile) + N'MB, MAXSIZE = ' + ISNULL(CONVERT(nvarchar(max),MaxSizeMBPerFile) + 'MB','UNLIMITED') + N', FILEGROWTH = ' + CONVERT(nvarchar(max), @FileGrowthMB) + N'MB);'
++ CASE WHEN @DoNotResize = 1 THEN N''
+  ELSE '	ALTER DATABASE [tempdb] MODIFY FILE (NAME = ' + QUOTENAME(name, '''') + ', SIZE = ' + CONVERT(nvarchar(max),InitSizeMBPerFile) + N'MB, MAXSIZE = ' + ISNULL(CONVERT(nvarchar(max),MaxSizeMBPerFile) + 'MB','UNLIMITED') + N', FILEGROWTH = ' + CONVERT(nvarchar(max), @FileGrowthMB) + N'MB);'
+  END
 + CONCAT('-- Current size: ', current_size_MB, ' MB, Space Used: ', current_spaceused_MB, ' MB (', ROUND(current_spaceused_MB * 1.0 / InitSizeMBPerFile * 100,2), ' % of desired size)')
 + CASE WHEN current_spaceused_MB * 1.0 / InitSizeMBPerFile > @SpaceUsedMaxPercent / 100.0 THEN ' !!WARNING!!' ELSE '' END
 --, *
