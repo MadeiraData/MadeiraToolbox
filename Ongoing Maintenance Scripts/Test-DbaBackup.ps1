@@ -59,6 +59,14 @@ function Test-DbaBackup {
         PS C:\> Test-DbaBackup -Path "C:\dbsmart\Temp" -DirectoryRecurse -Destination localhost -Verbose | Out-GridView
         This is what I used for my own internal debugging.
         Remove this example before submitting to dbatools pull request.
+    .EXAMPLE
+        PS C:\> $userName = 'MyUserName'
+        PS C:\> $userPassword = 'MySuperSecurePassword'
+        PS C:\> $secStringPassword = ConvertTo-SecureString $userPassword -AsPlainText -Force
+        PS C:\> $credObject = New-Object System.Management.Automation.PSCredential ($userName, $secStringPassword)
+        PS C:\> Test-DbaBackup -Path "C:\dbsmart\Temp" -DirectoryRecurse -Destination SQL-DBTESTS01 -DestinationCredential $credObject -Verbose | Out-GridView
+
+        Similarly to the last example, but this time use a specific username and password by creating a PSCredential object.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingPlainTextForPassword", "", Justification = "For Parameters DestinationCredential and AzureCredential")]
@@ -116,6 +124,17 @@ function Test-DbaBackup {
                 }
             }
         }
+        
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+        if (Get-PSRepository -Name "PSGallery") {
+            Write-Verbose "$(Get-TimeStamp) PSGallery already registered"
+        } 
+        else {
+            Write-Information "$(Get-TimeStamp) Registering PSGallery"
+            Register-PSRepository -Default
+        }
+
         $modules = @("PSFramework", "PSModuleDevelopment", "dbatools")
         
         foreach ($module in $modules) {
