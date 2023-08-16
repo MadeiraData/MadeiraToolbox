@@ -36,6 +36,7 @@ WHERE p.query_plan.exist('//Object[substring(@Table,1,2) = "[@"]') = 1
 AND t.dbid > 4 and DB_NAME(t.dbid) NOT IN('ReportServer','MadeiraPerformanceMonitoring','DBA','SQLWATCH','distribution','HangFire')
 AND ISNULL(OBJECT_NAME(t.objectid, t.dbid),'(null)') NOT IN('IndexOptimize','CommandExecute')
 AND t.text NOT LIKE N'%@jdbc_temp_fkeys_result%'
+AND t.text NOT LIKE N'%@inserted0%'
  AND
  (
  -- include all specific column references (seek predicates) 
