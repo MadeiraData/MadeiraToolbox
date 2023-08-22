@@ -21,13 +21,11 @@ https://ola.hallengren.com/downloads.html
 perform a PhysicalOnly check for AG databases on all AGs for which the current replica is primary
 */
 EXEC dbo.DatabaseIntegrityCheck
-@AvailabilityGroups = 'ALL_AVAILABILITY_GROUPS',
 @AvailabilityGroupReplicas = 'PRIMARY',  -- <================
 @Databases = 'AVAILABILITY_GROUP_DATABASES',
 @CheckCommands = 'CHECKDB',
 @TimeLimit = 18000,
 @PhysicalOnly = 'Y',  -- <================
-@ExtendedLogicalChecks = 'Y',
 @Updateability = 'ALL',
 @LogToTable= 'Y',
 @Execute = 'Y'
@@ -37,13 +35,11 @@ EXEC dbo.DatabaseIntegrityCheck
 perform a PhysicalOnly check for AG+User databases on all AGs for which the current replica is primary
 */
 EXEC dbo.DatabaseIntegrityCheck
-@AvailabilityGroups = 'ALL_AVAILABILITY_GROUPS',
 @AvailabilityGroupReplicas = 'PRIMARY',  -- <================
 @Databases = 'AVAILABILITY_GROUP_DATABASES, USER_DATABASES',
 @CheckCommands = 'CHECKDB',
 @TimeLimit = 18000,
 @PhysicalOnly = 'Y',  -- <================
-@ExtendedLogicalChecks = 'Y',
 @Updateability = 'ALL',
 @LogToTable= 'Y',
 @Execute = 'Y'
@@ -55,13 +51,11 @@ EXEC dbo.DatabaseIntegrityCheck
 perform a full check for AG databases on all AGs for which the current replica is secondary
 */
 EXEC dbo.DatabaseIntegrityCheck
-@AvailabilityGroups = 'ALL_AVAILABILITY_GROUPS',
 @AvailabilityGroupReplicas = 'SECONDARY',  -- <================
 @Databases = 'AVAILABILITY_GROUP_DATABASES',
 @CheckCommands = 'CHECKDB',
 @TimeLimit = 18000,
 @PhysicalOnly = 'N',  -- <================
-@ExtendedLogicalChecks = 'Y',
 @Updateability = 'ALL',
 @LogToTable= 'Y',
 @Execute = 'Y'
@@ -71,13 +65,11 @@ EXEC dbo.DatabaseIntegrityCheck
 perform a full check for AG+User databases on all AGs for which the current replica is secondary
 */
 EXEC dbo.DatabaseIntegrityCheck
-@AvailabilityGroups = 'ALL_AVAILABILITY_GROUPS',
 @AvailabilityGroupReplicas = 'SECONDARY',  -- <================
 @Databases = 'AVAILABILITY_GROUP_DATABASES, USER_DATABASES',
 @CheckCommands = 'CHECKDB',
 @TimeLimit = 18000,
 @PhysicalOnly = 'N',  -- <================
-@ExtendedLogicalChecks = 'Y',
 @Updateability = 'ALL',
 @LogToTable= 'Y',
 @Execute = 'Y'
