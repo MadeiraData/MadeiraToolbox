@@ -50,7 +50,7 @@ Aliases: `From, Sender, EmailSender`
  
 Property|Value
 ---|---
-Required?|true
+Required?|false
 Position?|1
 Default value|none
 Accept pipeline input?|false
@@ -62,7 +62,7 @@ Aliases: `To, Recipients, EmailRecipients`
 
 Property|Value
 ---|--- 
-Required?|true
+Required?|false
 Position?|2
 Default value|@()
 Accept pipeline input?|false

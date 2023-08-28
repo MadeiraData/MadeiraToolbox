@@ -76,14 +76,14 @@ https://eitanblumin.com
 #>
 Param(
     
-    [Parameter(Mandatory=$true, Position=0,
+    [Parameter(Mandatory=$false, Position=0,
     HelpMessage="Enter the e-mail address of the sender.")]
     [Alias("From","Sender","EmailSender")]
     [ValidateNotNullOrEmpty()]
     [String]
     $emailFrom,
     
-    [Parameter(Mandatory=$true, Position=1,
+    [Parameter(Mandatory=$false, Position=1,
     HelpMessage="Enter a list of one or more e-mail addresses for the recipients.")]
     [Alias("To","Recipients","EmailRecipients")]
     [String[]]
