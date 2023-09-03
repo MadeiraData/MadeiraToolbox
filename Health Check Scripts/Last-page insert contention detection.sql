@@ -11,7 +11,7 @@ BEGIN
 	SELECT
 	Msg = CONCAT(N''PAGELATCH_EX contention found on database '', QUOTENAME(DB_NAME(page_info.database_id)),
 	N'', table '', QUOTENAME(OBJECT_SCHEMA_NAME(page_info.[object_id], r.db_id)), ''.'', QUOTENAME(OBJECT_NAME(page_info.[object_id], r.db_id))
-	, N'', index '', page_info.index_id, N'' (res '', er.wait_resource, N''). Consider enabling OPTIMIZE_FOR_SEQUENTIAL_KEY option for the index.'')
+	, N'', index '', page_info.index_id, N'' (res '', er.wait_resource COLLATE database_default, N''). Consider enabling OPTIMIZE_FOR_SEQUENTIAL_KEY option for the index.'')
 	, contentionCount = COUNT(er.session_id)
 	FROM sys.dm_exec_requests AS er
 		CROSS APPLY sys.dm_exec_sql_text(er.sql_handle) AS st 
