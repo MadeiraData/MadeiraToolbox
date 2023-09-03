@@ -23,7 +23,7 @@ $ListenerSubnet         = "255.255.255.255"
 $ClusterAGRole          = "<MyClusterRoleName>"
 $ClusterNetworkName     = "<MyClusterNetworkName>" # the cluster network name (Use Get-ClusterNetwork on Windows Server 2012 of higher to find the name)
 
-Import-Module FailoverClusters | Out-Null
+Import-Module FailoverClusters -Force | Out-Null
 
 Add-ClusterResource -Name $IPResourceName -ResourceType "IP Address" -Group $ClusterAGRole
 Get-ClusterResource -Name $IPResourceName | Set-ClusterParameter -Multiple @{"Address"="$ListenerILBIP";"ProbePort"=$ListenerProbePort;"SubnetMask"="$ListenerSubnet";"Network"="$ClusterNetworkName";"EnableDhcp"=0}

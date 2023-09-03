@@ -117,7 +117,7 @@ foreach ($module in $modules) {
     } 
     else {
         Write-Information "Installing $module"
-        Install-Module $module -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop | Out-Null
+        Install-Module $module -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop -AllowClobber | Out-Null
         Import-Module $module -Force -Scope Local -PassThru | Out-Null
     }
 }

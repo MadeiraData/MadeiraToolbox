@@ -143,7 +143,7 @@ function Test-DbaBackup {
             } 
             else {
                 Write-Information "Installing $module"
-                Install-Module $module -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop
+                Install-Module $module -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop -AllowClobber
                 Import-Module $module -Force -Scope Local
             }
         }

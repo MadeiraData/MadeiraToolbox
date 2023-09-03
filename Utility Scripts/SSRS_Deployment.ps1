@@ -74,7 +74,7 @@ if (Get-Module -ListAvailable -Name PowerShellGet) {
 } 
 else {
     Write-Information "$(Get-TimeStamp) Installing PowerShellGet"
-    Install-Module PowerShellGet -RequiredVersion 2.2.4 -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop | Out-Null
+    Install-Module PowerShellGet -RequiredVersion 2.2.4 -Force -SkipPublisherCheck -Scope CurrentUser -ErrorAction Stop -AllowClobber | Out-Null
     Import-Module PowerShellGet -Force -Scope Local | Out-Null
 }
 
