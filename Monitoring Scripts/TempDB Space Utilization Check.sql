@@ -77,6 +77,7 @@ SELECT
       , COALESCE(T1.[Total Allocation], 0) + T2.[Total Allocation]				     [Total Allocation]
       , COALESCE(T1.[Net Allocation], 0) + T2.[Net Allocation]					     [Net Allocation]
       , COALESCE(T1.[Query Text], T2.[Query Text])						     [Query Text]
+	  , ses.*
 FROM
 (
 	SELECT
@@ -119,6 +120,8 @@ RIGHT	JOIN
 	OUTER	APPLY sys.dm_exec_sql_text(CN.most_recent_sql_handle) T
 	OUTER	APPLY sys.dm_exec_input_buffer(SS.session_id, NULL) inpbuf
 ) T2	ON T1.session_id = T2.session_id
+LEFT JOIN sys.dm_exec_sessions AS ses
+ON ses.session_id = COALESCE(T1.session_id, T2.session_id)
 ORDER BY
 	[Total Allocation] DESC
       , [Total Allocation User Objects] DESC;
