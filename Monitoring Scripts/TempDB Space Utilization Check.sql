@@ -77,6 +77,7 @@ SELECT
       , COALESCE(T1.[Total Allocation], 0) + T2.[Total Allocation]				     [Total Allocation]
       , COALESCE(T1.[Net Allocation], 0) + T2.[Net Allocation]					     [Net Allocation]
       , COALESCE(T1.[Query Text], T2.[Query Text])						     [Query Text]
+	  , DB_NAME(ses.database_id)											[Database Name]
 	  , ses.*
 FROM
 (
