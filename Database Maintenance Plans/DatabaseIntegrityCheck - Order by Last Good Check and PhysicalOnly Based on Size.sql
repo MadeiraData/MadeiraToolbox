@@ -10,7 +10,7 @@ Prerequisites:
 	- Ola Hallengren's maintenance solution can be downloaded for free from here: https://ola.hallengren.com
 	- SQL Server version 2012 or newer.
 */
-DECLARE @TimeLimitMinutes			int	= 120
+DECLARE @TimeLimitMinutes			int	= 60 * 24
 DECLARE @PhysicalOnlyMBThreshold	int	= 1024
 
 
@@ -19,11 +19,12 @@ DECLARE @SmallDatabasesList nvarchar(MAX) = 'ALL_DATABASES', @LargeDatabasesList
 SET @TimeLimitSeconds = @TimeLimitMinutes * 60
 
 SELECT
-  @SmallDatabasesList = @SmallDatabasesList + N',-' + [name]
-, @LargeDatabasesList = ISNULL(@LargeDatabasesList + N',',N'') + [name]
+  @SmallDatabasesList = @SmallDatabasesList + N',-' + DB_NAME(database_id)
+, @LargeDatabasesList = ISNULL(@LargeDatabasesList + N',',N'') + DB_NAME(database_id)
 FROM sys.master_files
 WHERE type = 0
-GROUP BY [name]
+AND DB_NAME(database_id) NOT IN ('tempdb','model')
+GROUP BY database_id
 HAVING SUM(size) / 128 >= @PhysicalOnlyMBThreshold
 
 -- Small databases
