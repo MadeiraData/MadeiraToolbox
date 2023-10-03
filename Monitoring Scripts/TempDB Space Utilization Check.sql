@@ -76,7 +76,7 @@ SELECT
       , COALESCE(T1.[Net Allocation Internal Objects], 0) + T2.[Net Allocation Internal Objects]     [Net Allocation Internal Objects]
       , COALESCE(T1.[Total Allocation], 0) + T2.[Total Allocation]				     [Total Allocation]
       , COALESCE(T1.[Net Allocation], 0) + T2.[Net Allocation]					     [Net Allocation]
-      , COALESCE(T1.[Query Text], T2.[Query Text])						     [Query Text]
+      , (SELECT COALESCE(T1.[Query Text], T2.[Query Text]) FOR XML PATH(''), TYPE)   [Query Text]
 	  , DB_NAME(ses.database_id)											[Database Name]
 	  , ses.*
 FROM
