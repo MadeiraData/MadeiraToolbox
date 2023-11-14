@@ -4,7 +4,7 @@
 * Created: 28/11/2021
 * Version: 1.0.0
 ***
-Thank you for using my solution! If you have any questions, feel free to e-mail me at <ivanr@madeiradata.com>.
+Thank you for using my solution! If you have any questions, feel free to e-mail me at <lardo.ag@gmail.com>.
 ***
 ## Table of Contents
 1. Overview
