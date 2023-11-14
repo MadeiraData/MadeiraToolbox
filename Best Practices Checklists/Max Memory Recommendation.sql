@@ -46,6 +46,21 @@ SELECT
 	, RecommendedMaxMemForSingleNumaMB		= @RecommendedMaxMemMB
 	, NumaNodes					= @numa
 	, NumaNodesAfinned			= @numa_nodes_afinned
+	
+SELECT PivotTable.[Free Node Memory (KB)] * 100.0 / PivotTable.[Total Node Memory (KB)] AS percent_free, PivotTable.*
+FROM
+(
+SELECT RTRIM(counter_name) AS counter_name, SUM(cntr_value) AS value_kb --, SUM(cntr_value) / 1024 AS value_mb
+FROM sys.dm_os_performance_counters
+where object_name like '%Memory Node%'
+and cntr_value > 0
+group by counter_name
+) AS c
+PIVOT  
+(  
+  SUM(value_kb)  
+  FOR counter_name IN ([Foreign Node Memory (KB)],[Stolen Node Memory (KB)],[Free Node Memory (KB)],[Database Node Memory (KB)],[Total Node Memory (KB)],[Target Node Memory (KB)])  
+) AS PivotTable;
 
 SELECT Recommendation = 'Maximum value for MaxMem setting on this configuration is ' + CONVERT(NVARCHAR,(@RecommendedMaxMemMB/@numa) * @numa_nodes_afinned) + ' MB for a single instance and multi-NUMA'
 WHERE @numa > 1
