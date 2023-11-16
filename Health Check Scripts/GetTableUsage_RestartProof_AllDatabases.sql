@@ -71,6 +71,8 @@ AS
 BEGIN
 	TRUNCATE TABLE [dbo].[IndexUsageStatsSnap]; --clean up the "snapshot" table 
 
+	DECLARE @MyDatabase NVARCHAR(255) = 'IndexUsageStatsDB' --replace with the database inn which you created the above tables
+
 	DECLARE @CurrentDB SYSNAME --declare cursor variable
 	DECLARE @DynamicSQL NVARCHAR(MAX) = N'' --declare cursor variable
 
@@ -98,8 +100,8 @@ BEGIN
 		N'
 		USE '+QUOTENAME(@CurrentDB)+N'; 
 
-		INSERT INTO	
-			[IndexUsageStatsDB].[dbo].[IndexUsageStatsSnap]
+		INSERT INTO	'+
+			QUOTENAME(@MyDatabase)+N'.[dbo].[IndexUsageStatsSnap]
 		(
 			[db_id]
 		,   [db_name]
