@@ -25,6 +25,8 @@ CREATE TABLE [dbo].[IndexUsageStats]
 	[db_name] NVARCHAR(128) NOT NULL,
 	[schema_name] NVARCHAR(128) NOT NULL,
 	[table_name] SYSNAME NOT NULL,
+	[partition_id] BIGINT NOT NULL,
+	[rows_count] INT NOT NULL,
 	[index_id] BIGINT NULL,
 	[index_name] NVARCHAR(128) NOT NULL,
 	[user_scans] BIGINT NOT NULL,
@@ -47,6 +49,8 @@ CREATE TABLE [dbo].[IndexUsageStatsSnap]
 	[db_name] NVARCHAR(128) NOT NULL,
 	[schema_name] NVARCHAR(128) NOT NULL,
 	[table_name] SYSNAME NOT NULL,
+	[partition_id] BIGINT NOT NULL,
+	[rows_count] INT NOT NULL,
 	[index_id] BIGINT NULL,
 	[index_name] NVARCHAR(128) NOT NULL,
 	[user_scans] BIGINT NOT NULL,
@@ -101,6 +105,8 @@ BEGIN
 		,   [db_name]
 		,   [schema_name]
 		,	[table_name]
+        ,   [partition_id]
+		,   [rows_count]
 		,	[index_id]
 		,	[index_name]
 		,	[user_scans]
@@ -117,6 +123,8 @@ BEGIN
 		,   DB_NAME() AS [db_name]
 		,	OBJECT_SCHEMA_NAME(i.object_id) AS [schema_name]
 		,	OBJECT_NAME(i.[object_id], DB_ID()) AS [table_name]
+		,   p.partition_id
+		,   SUM(p.rows) AS [rows_count]
 		,	i.index_id
 		,	i.[name]
 		,	ISNULL(ddius.user_scans, 0)
@@ -135,9 +143,27 @@ BEGIN
 			ddius.index_id = i.index_id
 			AND 
 			ddius.[object_id] = i.[object_id]
+		LEFT OUTER JOIN
+			sys.partitions p
+		ON
+			i.[object_id] = p.[object_id]
 		WHERE 
 			OBJECTPROPERTY(i.[object_id], ''IsUserTable'') = 1
 			AND i.index_id > 0 	-- filter out heaps
+		GROUP BY
+			OBJECT_SCHEMA_NAME(i.object_id)
+		,	OBJECT_NAME(i.[object_id], DB_ID())
+		,   p.partition_id
+		,	i.index_id
+		,	i.[name]
+		,	ISNULL(ddius.user_scans, 0)
+		,	ISNULL(ddius.user_seeks, 0)
+		,	ISNULL(ddius.user_lookups, 0)
+		,	ISNULL(ddius.user_updates, 0)
+		,	ddius.last_user_scan
+		,	ddius.last_user_seek
+		,	ddius.last_user_lookup
+		,	ddius.last_user_update	
 			;
 		'
 		EXEC sp_executesql @DynamicSQL
@@ -157,6 +183,8 @@ BEGIN
 	      ,[db_name]
 	      ,[schema_name]
 	      ,[table_name]
+		  ,[partition_id]
+		  ,[rows_count]
 	      ,[index_id]
 	      ,[index_name]
 	      ,[user_scans]
@@ -212,6 +240,8 @@ BEGIN
 	    , [db_name]
 	    , [schema_name]
 		, [table_name]
+		, [partition_id]
+		, [rows_count]
 		, [index_id]
 		, [index_name]
 		, [user_scans]
@@ -229,6 +259,8 @@ BEGIN
 	    ,[s].[db_name]
 	    ,[s].[schema_name]
 		,[s].[table_name]
+		,[s].[partition_id]
+		,[s].[rows_count]
 		,[s].[index_id]
 		,[s].[index_name]
 		,[s].[user_scans]
