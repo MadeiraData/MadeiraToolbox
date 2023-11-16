@@ -109,7 +109,7 @@ BEGIN
 		,	[last_user_lookup]
 		,	[last_user_update]
 		)
-		SELECT
+		SELECT DISTINCT
 			DB_ID() AS [dbid]
 		,   DB_NAME() AS [db_name]
 		,	OBJECT_SCHEMA_NAME(i.object_id) AS [schema_name]
