@@ -72,14 +72,17 @@ BEGIN
 
 	DECLARE DB_Cursor CURSOR LOCAL FAST_FORWARD --declare cursor for executing dynamic sql against all databases
 	FOR
+
 		SELECT 
 			[name]
 		FROM 
-			master.sys.databases
+			sys.databases
 		WHERE 
 			database_id > 4 --filter out system databases
-			AND
-			is_read_only = 0 --filter out read-only databases
+			AND 
+			DATABASEPROPERTYEX([name], 'Updateability') = 'READ_WRITE' --filter out read-only databases
+			AND 
+			HAS_DBACCESS([name]) = 1
 			
 	OPEN DB_Cursor
 	FETCH NEXT FROM DB_Cursor INTO @CurrentDB
