@@ -50,6 +50,9 @@ https://madeiradata.com
 
 .LINK
 https://eitanblumin.com
+
+.LINK
+https://www.sqlshack.com/a-walk-through-of-moving-database-file-in-sql-server-always-on-availability-group/
 #>
 param
 (
