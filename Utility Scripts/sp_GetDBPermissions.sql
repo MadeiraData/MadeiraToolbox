@@ -169,7 +169,7 @@ AS
 SET NOCOUNT ON
     
 DECLARE @Collation nvarchar(75) 
-SET @Collation = N' COLLATE ' + CAST(SERVERPROPERTY('Collation') AS nvarchar(50))
+SET @Collation = N' COLLATE database_default' --+ CAST(SERVERPROPERTY('Collation') AS nvarchar(50))
     
 DECLARE @sql nvarchar(max)
 DECLARE @sql2 nvarchar(max)
