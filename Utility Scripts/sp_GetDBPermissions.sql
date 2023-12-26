@@ -182,7 +182,7 @@ IF @DBName IS NULL OR @DBName COLLATE DATABASE_DEFAULT = N'All'
     BEGIN
         SET @use = ''
         IF @DBName IS NULL
-            SET @DBName COLLATE DATABASE_DEFAULT = DB_NAME()
+            SET @DBName = DB_NAME()
             --SELECT @DBName COLLATE DATABASE_DEFAULT = db_name(database_id) 
             --FROM sys.dm_exec_requests 
             --WHERE session_id = @@SPID
