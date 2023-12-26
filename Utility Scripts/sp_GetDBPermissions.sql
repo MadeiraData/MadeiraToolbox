@@ -121,7 +121,7 @@ Data is ordered as follows
 -- V5.0
 -- 4/29/2014 - Fix: Removed extra print statements
 -- 4/29/2014 - Fix: Added SET NOCOUNT ON
--- 4/29/2014 - Added a USE statement to the scripts when using the @DBName = 'All' option
+-- 4/29/2014 - Added a USE statement to the scripts when using the @DBName COLLATE DATABASE_DEFAULT = 'All' option
 -- 5/01/2014 - Added @Permission parameter
 -- 5/14/2014 - Added additional permissions based on information from Kendal Van Dyke's
         post http://www.kendalvandyke.com/2014/02/using-sysobjects-when-scripting.html
@@ -169,7 +169,7 @@ AS
 SET NOCOUNT ON
     
 DECLARE @Collation nvarchar(75) 
-SET @Collation = N' COLLATE database_default' --+ CAST(SERVERPROPERTY('Collation') AS nvarchar(50))
+SET @Collation = N' COLLATE ' + CAST(SERVERPROPERTY('Collation') AS nvarchar(50))
     
 DECLARE @sql nvarchar(max)
 DECLARE @sql2 nvarchar(max)
@@ -178,12 +178,12 @@ DECLARE @ObjectList2 nvarchar(max)
 DECLARE @use nvarchar(500)
 DECLARE @AllDBNames sysname
     
-IF @DBName IS NULL OR @DBName = N'All'
+IF @DBName IS NULL OR @DBName COLLATE DATABASE_DEFAULT = N'All'
     BEGIN
         SET @use = ''
         IF @DBName IS NULL
-            SET @DBName = DB_NAME()
-            --SELECT @DBName = db_name(database_id) 
+            SET @DBName COLLATE DATABASE_DEFAULT = DB_NAME()
+            --SELECT @DBName COLLATE DATABASE_DEFAULT = db_name(database_id) 
             --FROM sys.dm_exec_requests 
             --WHERE session_id = @@SPID
     END
@@ -203,9 +203,9 @@ ELSE
 DECLARE @LikeOperator nvarchar(4)
 
 IF @UseLikeSearch = 1
-    SET @LikeOperator = N'COLLATE database_default LIKE'
+    SET @LikeOperator = N'LIKE'
 ELSE 
-    SET @LikeOperator = N'COLLATE database_default ='
+    SET @LikeOperator = N'='
     
 IF @UseLikeSearch = 1
 BEGIN 
@@ -222,7 +222,7 @@ BEGIN
         SET @LoginName = N'%' + @LoginName + N'%'
 END
   
-IF @Print = 1 AND @DBName = N'All'
+IF @Print = 1 AND @DBName COLLATE DATABASE_DEFAULT = N'All'
     BEGIN
         PRINT 'DECLARE @AllDBNames sysname'
         PRINT 'SET @AllDBNames = ''master'''
@@ -231,13 +231,13 @@ IF @Print = 1 AND @DBName = N'All'
 --=========================================================================
 -- Database Principals
 SET @sql =   
-    N'SELECT ' + CASE WHEN @DBName = 'All' THEN N'@AllDBNames' ELSE N'''' + @DBName + N'''' END + N' AS DBName,' + 
+    N'SELECT ' + CASE WHEN @DBName COLLATE DATABASE_DEFAULT = 'All' THEN N'@AllDBNames' ELSE N'''' + @DBName + N'''' END + N' AS DBName,' + 
     N'   DBPrincipals.principal_id AS DBPrincipalId, DBPrincipals.name AS DBPrincipal, SrvPrincipals.name AS SrvPrincipal, ' + NCHAR(13) + 
     N'   DBPrincipals.type, DBPrincipals.type_desc, DBPrincipals.default_schema_name, DBPrincipals.create_date, ' + NCHAR(13) + 
     N'   DBPrincipals.modify_date, DBPrincipals.is_fixed_role, ' + NCHAR(13) +
     N'   Authorizations.name AS RoleAuthorization, DBPrincipals.sid, ' + NCHAR(13) +  
     N'   CASE WHEN DBPrincipals.is_fixed_role = 0 AND DBPrincipals.name NOT IN (''dbo'',''guest'', ''INFORMATION_SCHEMA'', ''public'', ''sys'') THEN ' + NCHAR(13) + 
-    CASE WHEN @DBName = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
+    CASE WHEN @DBName COLLATE DATABASE_DEFAULT = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
     N'            ''IF DATABASE_PRINCIPAL_ID('''''' + DBPrincipals.name + '''''') IS NOT NULL '' + ' + NCHAR(13) + 
     N'           ''DROP '' + CASE DBPrincipals.[type] WHEN ''C'' THEN NULL ' + NCHAR(13) + 
     N'               WHEN ''K'' THEN NULL ' + NCHAR(13) + 
@@ -246,7 +246,7 @@ SET @sql =
     N'               ELSE ''USER'' END + ' + NCHAR(13) + 
     N'           '' ''+QUOTENAME(DBPrincipals.name' + @Collation + N') + '';'' ELSE NULL END AS DropScript, ' + NCHAR(13) + 
     N'   CASE WHEN DBPrincipals.is_fixed_role = 0 AND DBPrincipals.name NOT IN (''dbo'',''guest'', ''INFORMATION_SCHEMA'', ''public'', ''sys'') THEN ' + NCHAR(13) + 
-    CASE WHEN @DBName = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' +NCHAR(13) ELSE N'' END + 
+    CASE WHEN @DBName COLLATE DATABASE_DEFAULT = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' +NCHAR(13) ELSE N'' END + 
     N'            ''IF DATABASE_PRINCIPAL_ID('''''' + DBPrincipals.name + '''''') IS NULL '' + ' + NCHAR(13) + 
     N'           ''CREATE '' + CASE DBPrincipals.[type] WHEN ''C'' THEN NULL ' + NCHAR(13) + 
     N'               WHEN ''K'' THEN NULL ' + NCHAR(13) + 
@@ -368,7 +368,7 @@ BEGIN
     
     SET @sql =  @use + N'INSERT INTO ##DBPrincipals ' + NCHAR(13) + @sql
 
-    IF @DBName = 'All'
+    IF @DBName COLLATE DATABASE_DEFAULT = 'All'
         BEGIN
             -- Declare a READ_ONLY cursor to loop through the databases
             DECLARE cur_DBList CURSOR
@@ -406,15 +406,15 @@ END
 --=========================================================================
 -- Database Role Members
 SET @sql =  
-    N'SELECT ' + CASE WHEN @DBName = 'All' THEN N'@AllDBNames' ELSE N'''' + @DBName + N'''' END + N' AS DBName,' + 
+    N'SELECT ' + CASE WHEN @DBName COLLATE DATABASE_DEFAULT = 'All' THEN N'@AllDBNames' ELSE N'''' + @DBName + N'''' END + N' AS DBName,' + 
     N' Users.principal_id AS UserPrincipalId, Users.name AS UserName, Roles.name AS RoleName, ' + NCHAR(13) + 
-    CASE WHEN @DBName = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
+    CASE WHEN @DBName COLLATE DATABASE_DEFAULT = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
     N'   CASE WHEN Users.is_fixed_role = 0 AND Users.name <> ''dbo'' THEN ' + NCHAR(13) + 
     N'   ''EXEC sp_droprolemember @rolename = ''+QUOTENAME(Roles.name' + @Collation + 
                 N','''''''')+'', @membername = ''+QUOTENAME(CASE WHEN Users.name = ''dbo'' THEN NULL
                 ELSE Users.name END' + @Collation + 
                 N','''''''')+'';'' END AS DropScript, ' + NCHAR(13) + 
-    CASE WHEN @DBName = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
+    CASE WHEN @DBName COLLATE DATABASE_DEFAULT = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
     N'   CASE WHEN Users.is_fixed_role = 0 AND Users.name <> ''dbo'' THEN ' + NCHAR(13) + 
     N'   ''EXEC sp_addrolemember @rolename = ''+QUOTENAME(Roles.name' + @Collation + 
                 N','''''''')+'', @membername = ''+QUOTENAME(CASE WHEN Users.name = ''dbo'' THEN NULL
@@ -522,7 +522,7 @@ BEGIN
 
     SET @sql =  @use + NCHAR(13) + 'INSERT INTO ##DBRoles ' + NCHAR(13) + @sql
     
-    IF @DBName = 'All'
+    IF @DBName COLLATE DATABASE_DEFAULT = 'All'
         BEGIN
             -- Declare a READ_ONLY cursor to loop through the databases
             DECLARE cur_DBList CURSOR
@@ -681,14 +681,14 @@ SET @ObjectList2 =  N'
        ) ' + NCHAR(13)
   
     SET @sql =
-    N'SELECT ' + CASE WHEN @DBName = 'All' THEN N'@AllDBNames' ELSE N'''' + @DBName + N'''' END + N' AS DBName,' + NCHAR(13) + 
+    N'SELECT ' + CASE WHEN @DBName COLLATE DATABASE_DEFAULT = 'All' THEN N'@AllDBNames' ELSE N'''' + @DBName + N'''' END + N' AS DBName,' + NCHAR(13) + 
     N'   Grantee.principal_id AS GranteePrincipalId, Grantee.name AS GranteeName, Grantor.name AS GrantorName, ' + NCHAR(13) + 
     N'   Permission.class_desc, Permission.permission_name, ' + NCHAR(13) + 
     N'   ObjectList.name AS ObjectName, ' + NCHAR(13) + 
     N'   ObjectList.SchemaName, ' + NCHAR(13) + 
     N'   Permission.state_desc,  ' + NCHAR(13) + 
     N'   CASE WHEN Grantee.is_fixed_role = 0 AND Grantee.name <> ''dbo'' THEN ' + NCHAR(13) + 
-    CASE WHEN @DBName = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
+    CASE WHEN @DBName COLLATE DATABASE_DEFAULT = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
     N'   ''REVOKE '' + ' + NCHAR(13) + 
     N'   CASE WHEN Permission.[state]  = ''W'' THEN ''GRANT OPTION FOR '' ELSE '''' END + ' + NCHAR(13) + 
     N'   '' '' + Permission.permission_name' + @Collation + N' +  ' + NCHAR(13) + 
@@ -700,7 +700,7 @@ SET @ObjectList2 =  N'
     N'           ' + @Collation + ' + '' '' ELSE '''' END + ' + NCHAR(13) + 
     N'       '' FROM '' + QUOTENAME(Grantee.name' + @Collation + N')  + ''; '' END AS RevokeScript, ' + NCHAR(13) + 
     N'   CASE WHEN Grantee.is_fixed_role = 0 AND Grantee.name <> ''dbo'' THEN ' + NCHAR(13) + 
-    CASE WHEN @DBName = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
+    CASE WHEN @DBName COLLATE DATABASE_DEFAULT = 'All' THEN N'   ''USE '' + QUOTENAME(@AllDBNames) + ''; '' + ' + NCHAR(13) ELSE N'' END + 
     N'   CASE WHEN Permission.[state]  = ''W'' THEN ''GRANT'' ELSE Permission.state_desc' + @Collation + 
             N' END + ' + NCHAR(13) + 
     N'       '' '' + Permission.permission_name' + @Collation + N' + ' + NCHAR(13) + 
@@ -800,7 +800,7 @@ BEGIN
                 N'INSERT INTO ##DBPermissions ' + NCHAR(13) + 
                 @sql
     
-    IF @DBName = 'All'
+    IF @DBName COLLATE DATABASE_DEFAULT = 'All'
         BEGIN
             -- Declare a READ_ONLY cursor to loop through the databases
             DECLARE cur_DBList CURSOR
@@ -840,9 +840,9 @@ END
 
 IF @Print <> 1
 BEGIN
-    IF @Output = 'None'
+    IF @Output COLLATE DATABASE_DEFAULT = 'None'
         PRINT ''
-    ELSE IF @Output = 'CreateOnly'
+    ELSE IF @Output COLLATE DATABASE_DEFAULT = 'CreateOnly'
     BEGIN
         SELECT CreateScript FROM ##DBPrincipals WHERE CreateScript IS NOT NULL
         UNION ALL
@@ -850,7 +850,7 @@ BEGIN
         UNION ALL
         SELECT GrantScript FROM ##DBPermissions WHERE GrantScript IS NOT NULL
     END 
-    ELSE IF @Output = 'DropOnly' 
+    ELSE IF @Output COLLATE DATABASE_DEFAULT = 'DropOnly' 
     BEGIN
         SELECT DropScript FROM ##DBPrincipals WHERE DropScript IS NOT NULL
         UNION ALL
@@ -858,7 +858,7 @@ BEGIN
         UNION ALL
         SELECT RevokeScript FROM ##DBPermissions WHERE RevokeScript IS NOT NULL
     END
-    ELSE IF @Output = 'ScriptOnly' 
+    ELSE IF @Output COLLATE DATABASE_DEFAULT = 'ScriptOnly' 
     BEGIN
         SELECT DropScript, CreateScript FROM ##DBPrincipals WHERE DropScript IS NOT NULL OR CreateScript IS NOT NULL
         UNION ALL
@@ -866,7 +866,7 @@ BEGIN
         UNION ALL
         SELECT RevokeScript, GrantScript FROM ##DBPermissions WHERE RevokeScript IS NOT NULL OR GrantScript IS NOT NULL
     END
-    ELSE IF @Output = 'Report'
+    ELSE IF @Output COLLATE DATABASE_DEFAULT = 'Report'
     BEGIN
         SELECT DBName, DBPrincipal, SrvPrincipal, type, type_desc,
                 STUFF((SELECT ', ' + ##DBRoles.RoleName
