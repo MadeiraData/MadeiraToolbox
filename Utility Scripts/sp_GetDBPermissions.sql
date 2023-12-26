@@ -203,9 +203,9 @@ ELSE
 DECLARE @LikeOperator nvarchar(4)
 
 IF @UseLikeSearch = 1
-    SET @LikeOperator = N'LIKE'
+    SET @LikeOperator = N'COLLATE database_default LIKE'
 ELSE 
-    SET @LikeOperator = N'='
+    SET @LikeOperator = N'COLLATE database_default ='
     
 IF @UseLikeSearch = 1
 BEGIN 
