@@ -39,7 +39,7 @@ FROM
 	LEFT JOIN sys.dm_exec_query_memory_grants mg ON mg.session_id = er.session_id
 WHERE
 	er.session_id <> @@SPID
-	AND es.[status] = N'running'
+	--AND es.[status] = N'running'
 ORDER BY
 	[Threads] DESC,
 	[Session Total CPU (ms)] DESC,
