@@ -180,9 +180,10 @@ AS
 )
 
 SELECT
+	QueryPlanId					= DENSE_RANK () OVER (ORDER BY DistinctExecutionPlans.QueryPlanHash ASC , DistinctExecutionPlans.QueryHash ASC) ,
 	QueryPlan					= DistinctExecutionPlans.QueryPlan ,
 	LastExecutionTime			= DistinctExecutionPlans.LastExecutionTime ,
-	HashJoinId					= DENSE_RANK () OVER (ORDER BY DistinctExecutionPlans.QueryPlanHash ASC , DistinctExecutionPlans.QueryHash ASC , FinalJoins.NodeId ASC) ,
+	NodeId						= FinalJoins.NodeId ,
 	JoinColumnOrdinalPosition	= FinalJoins.OrdinalPosition ,
 	OuterDatabaseName			= FinalJoins.OuterDatabaseName ,
 	OuterSchemaName	 			= FinalJoins.OuterSchemaName ,
@@ -201,6 +202,7 @@ ON
 AND
 	DistinctExecutionPlans.QueryHash = FinalJoins.QueryHash
 ORDER BY
-	HashJoinId					ASC ,
+	QueryPlanId					ASC ,
+	NodeId						ASC ,
 	JoinColumnOrdinalPosition	ASC;
 GO
