@@ -55,3 +55,9 @@ DEALLOCATE DBs
 
 SELECT *
 FROM #results
+
+
+SELECT j.job_id, j.name AS job_name, js.*
+FROM msdb..sysjobsteps AS js
+INNER JOIN msdb..sysjobs AS j ON js.job_id = j.job_id
+WHERE js.command LIKE @Search
