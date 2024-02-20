@@ -11,8 +11,10 @@ EXEC dbo.[PartitionManagement_Split]
 	  @PartitionFunctionName = 'PF_MyPartitionFunction'
 	, @RoundRobinFileGroups = 'FG_Partitions_1,FG_Partitions_2'
 	, @TargetRangeValue = NULL
+	--, @PartitionRangeInterval = 100000
 	, @BufferIntervals = 200
-	, @DebugOnly = 0
+	, @DebugOnly = 1
+	, @Verbose = 1
 
 GO
 
@@ -87,7 +89,7 @@ DECLARE
 , @MaxValueFromColumn sysname
 , @PartitionKeyDataType sysname
 , @ActualMaxValue sql_variant
-
+, @ExistingBuffer int
 
 SELECT TOP (1)
   @PartitionFunctionId = pf.function_id
@@ -104,6 +106,7 @@ SELECT TOP (1)
 	WHEN tp.name IN ('datetime2','time') THEN N'(' + CONVERT(nvarchar(MAX), params.scale) + N')'
 	ELSE N''
   END)
+, @ExistingBuffer = ISNULL(p.partition_number - pdata.partition_number + 1, 0)
 FROM sys.partition_schemes AS ps
 INNER JOIN sys.partition_functions AS pf ON ps.function_id = pf.function_id
 INNER JOIN sys.partition_range_values AS rv ON rv.function_id = pf.function_id
@@ -113,8 +116,17 @@ LEFT JOIN sys.indexes AS ix ON ix.data_space_id = ps.data_space_id
 LEFT JOIN sys.partitions AS p ON rv.boundary_id = p.partition_number AND p.object_id = ix.object_id AND p.index_id = ix.index_id
 LEFT JOIN sys.index_columns AS ic ON ic.object_id = p.object_id AND ic.index_id = p.index_id AND ic.partition_ordinal > 0
 LEFT JOIN sys.columns AS c ON c.object_id = p.object_id AND c.column_id = ic.column_id
+OUTER APPLY
+(
+	SELECT TOP(1) *
+	FROM sys.partitions AS p2
+	WHERE p2.object_id = p.object_id
+	AND p2.index_id = p.index_id
+	AND p2.rows > 0
+	ORDER BY p2.partition_number DESC
+) AS pdata
 WHERE pf.name = @PartitionFunctionName
-ORDER BY CASE WHEN @TargetRangeValue IS NULL AND p.rows > 0 THEN 0 ELSE 1 END ASC, rv.boundary_id DESC, p.rows DESC, ix.index_id ASC
+ORDER BY rv.boundary_id DESC, p.rows DESC, ix.index_id ASC
 
 IF @PartitionFunctionId IS NULL
 BEGIN
@@ -164,10 +176,10 @@ EXEC sp_executesql @CMD
 
 --IF @TargetRangeValue IS NULL AND @LastPartitionHasData = 1
 BEGIN
-	DECLARE @i int = 0;
+	DECLARE @i int = @ExistingBuffer;
 	SET @CurrentRangeValue = @MaxPartitionRangeValue;
 
-	WHILE (@TargetRangeValue IS NULL AND @i <= @BufferIntervals) OR @IsCurrentRangeValueSmallerThanTargetValue = 1
+	WHILE (@TargetRangeValue IS NULL AND @i <= @BufferIntervals) OR (@TargetRangeValue IS NOT NULL AND @IsCurrentRangeValueSmallerThanTargetValue = 1)
 	BEGIN
 		SET @IsCurrentRangeValueSmallerThanTargetValue = 0;
 		SET @CMD = N'SET @CurrentRangeValue = ' + @PartitionIncrementExpression
@@ -181,7 +193,7 @@ BEGIN
 		SET @i = @i + 1;
 	END
 
-	SET @MissingIntervals = @LastPartitionNumber + @i - @CurrentTotalPartitionCount;
+	SET @MissingIntervals = @LastPartitionNumber + @i - @CurrentTotalPartitionCount - ISNULL(@ExistingBuffer,0);
 	IF @TargetRangeValue IS NULL SET @TargetRangeValue = @CurrentRangeValue;
 END
 
@@ -199,6 +211,7 @@ SET @Msg = CONCAT(
 , N'. @ActualMaxValue: ', CONVERT(nvarchar(MAX), @ActualMaxValue)
 , N'. @TargetRangeValue: ', ISNULL(CONVERT(nvarchar(MAX), @TargetRangeValue), N'(null)')
 , N'. @MissingIntervals: ', ISNULL(CONVERT(nvarchar(MAX), @MissingIntervals), N'(null)')
+, N'. @ExistingBuffer: ', ISNULL(CONVERT(nvarchar(MAX), @ExistingBuffer), N'(null)')
 , N'. @IsCurrentRangeValueSmallerThanTargetValue: ', ISNULL(CONVERT(nvarchar(MAX), @IsCurrentRangeValueSmallerThanTargetValue), N'(null)')
 )
 RAISERROR(N'%s', 0,1, @Msg) WITH NOWAIT;
@@ -224,7 +237,7 @@ BEGIN
 			, N'@IsSmaller bit OUTPUT, @CurrentRangeValue sql_variant OUTPUT, @TargetRangeValue sql_variant, @LastPartitionNumber int OUTPUT, @PartitionRangeInterval sql_variant'
 			, @IsCurrentRangeValueSmallerThanTargetValue OUTPUT, @CurrentRangeValue OUTPUT, @TargetRangeValue, @LastPartitionNumber OUTPUT, @PartitionRangeInterval;
 		
-		SET @Msg = CONCAT(CONVERT(nvarchar(24), GETDATE(), 121), N' - Splitting range: ', CONVERT(nvarchar(max), @CurrentRangeValue))
+		SET @Msg = CONCAT(CONVERT(nvarchar(24), GETDATE(), 121), N' - Splitting range: ', CONVERT(nvarchar(max), CONVERT(bigint, @CurrentRangeValue)))
 		RAISERROR(N'%s (partition %d)', 0,1, @Msg, @LastPartitionNumber) WITH NOWAIT;
 		
 		-- Execute NEXT USED for all dependent partition schemes:
@@ -235,12 +248,14 @@ BEGIN
 		FOR
 		select ps.name, dst.name
 		from sys.partition_schemes AS ps
+		inner join sys.partition_functions as pf on ps.function_id = pf.function_id
 		cross apply
 		(
 			select top (1) dds.data_space_id, fg.name
 			from sys.destination_data_spaces AS dds
 			inner join sys.data_spaces as fg on dds.data_space_id = fg.data_space_id
 			where dds.partition_scheme_id = ps.data_space_id
+			AND dds.destination_id < pf.fanout
 			order by dds.destination_id desc
 		) as dst
 		where ps.function_id = @PartitionFunctionId;
@@ -255,18 +270,20 @@ BEGIN
 			SET @CMD = N'ALTER PARTITION SCHEME ' + QUOTENAME(@CurrPS) + ' NEXT USED ';
 
 			-- Find next FG based on round-robin:
-			SELECT @NextFG = FGName
-			FROM @FileGroups
-			WHERE FGID = (SELECT TOP (1) fg2.FGID + 1 FROM @FileGroups AS fg2 WHERE fg2.FGName = @CurrFG ORDER BY fg2.FGID)
+			SET @NextFG = NULL;
+			SELECT TOP(1) @NextFG = FGName
+			FROM @FileGroups AS fg1
+			WHERE FGID > (SELECT TOP (1) fg2.FGID FROM @FileGroups AS fg2 WHERE fg2.FGName = @CurrFG ORDER BY fg2.FGID)
+			ORDER BY FGID
 
-			IF @@ROWCOUNT = 0
+			IF @NextFG IS NULL
 				SELECT @NextFG = FGName
 				FROM @FileGroups
 				WHERE FGID = 1;
 
-			SET @CMD = @CMD + QUOTENAME(@NextFG);
+			SET @CMD = @CMD + QUOTENAME(@NextFG) + N' -- prev: ' + QUOTENAME(@CurrFG);
 
-			IF @Verbose = 1 PRINT @CMD;
+			PRINT @CMD;
 			IF @DebugOnly = 0 EXEC (@CMD);
 		END
 
