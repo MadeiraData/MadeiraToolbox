@@ -1,10 +1,10 @@
 ﻿param
 (
-[string]$sourceSqlServer,
-[string]$targetSqlServer,
-[string]$agName,
-[pscredential]$sourceSqlCredential,
-[pscredential]$targetSqlCredential,
+[string]$sourceSqlServer = $null,
+[string]$targetSqlServer = $null,
+[string]$agName = $null,
+[pscredential]$sourceSqlCredential = $null,
+[pscredential]$targetSqlCredential = $null,
 [switch]$DisableJobsOnDestination = $null
 )
 
@@ -21,7 +21,7 @@ while ($targetSqlServer -eq $null -or $targetSqlServer -eq "")
     $targetSqlServer = Read-Host -Prompt "Enter the TARGET Sql Server instance address"
 }
 
-if ($agName -eq $null)
+if ($agName -eq $null -or $agName -eq "")
 {
     $agName = Read-Host -Prompt "Enter the AVAILABILITY GROUP name to check (leave empty to only copy all jobs and logins regardless of AG)"
 }
@@ -109,6 +109,7 @@ if ($agName -ne "")
     Copy-DbaLogin -Source $sourceSQL -Destination $targetSQL
     Sync-DbaLoginPermission -Source $sourceSQL -Destination $targetSQL
     Copy-DbaAgentJob -Source $sourceSQL -Destination $targetSQL -DisableOnDestination:$DisableJobsOnDestination
+    Copy-DbaLinkedServer -Source $sourceSQL -Destination $targetSQL
 }
 
 #endregion main
