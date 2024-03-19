@@ -193,7 +193,7 @@ SET @sql =
                    ELSE ''LOGIN'' END + 
                '' ''+QUOTENAME(Logins.name' + @Collation + ') END + 
                CASE WHEN Logins.type = (''S'') THEN '' WITH PASSWORD = '' + 
-                    CONVERT(varchar(256), LOGINPROPERTY(Logins.name, ''PasswordHash''),1 ) + '' HASHED' +
+                    ISNULL(CONVERT(varchar(256), LOGINPROPERTY(Logins.name, ''PasswordHash''),1 ), ''0xchangeme'') + '' HASHED' +
                          CASE WHEN @Version2005orLower = 0 THEN N','' +  
                     '' SID = '' + CONVERT(varchar(85), Logins.sid, 1) ' 
                     ELSE N''' +  ' END + '
