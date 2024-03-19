@@ -43,14 +43,14 @@ DECLARE
 
 	 @SourceTableName					SYSNAME		= 'dbo.OnlineIndexTest'
 	,@ChunkIntervalForSingleColumnPK	INT			= 1000
-	,@OperationDeltaColumn				SYSNAME		= 'Operation'	-- must be different from any existing table columns
-	,@PrecedenceDeltaColumn				SYSNAME		= 'Precedence'	-- must be different from any existing table columns
-	,@RowRankDeltaColumn				SYSNAME		= 'RowRank'		-- must be different from any existing table columns
-	,@DeltaTriggerNamePrefix			SYSNAME		= 'TR_DELTA_'	-- the name of the source table will be added to the trigger name prefix
+	,@OperationDeltaColumn				SYSNAME		= '___Operation'	-- must be different from any existing table columns
+	,@PrecedenceDeltaColumn				SYSNAME		= '___Precedence'	-- must be different from any existing table columns
+	,@RowRankDeltaColumn				SYSNAME		= '___RowRank'		-- must be different from any existing table columns
+	,@DeltaTriggerNamePrefix			SYSNAME		= '___TR_DELTA_'	-- the name of the source table will be added to the trigger name prefix
 	,@CopyUsingNoLock					BIT			= 0
-	,@NewTableNamePostfix				SYSNAME		= '_NEW'
-	,@DeltaTableNamePostfix				SYSNAME		= '_DELTA'
-	,@OldTableNamePostfix				SYSNAME		= '_OLD'
+	,@NewTableNamePostfix				SYSNAME		= '___NEW'
+	,@DeltaTableNamePostfix				SYSNAME		= '___DELTA'
+	,@OldTableNamePostfix				SYSNAME		= '___OLD'
 	,@CustomPKReplacementIndex			SYSNAME		= NULL -- If you specify a non-null value, then this index will replace the PK on the new table (clustered)
 
 /*********************************************************************************************
@@ -558,7 +558,7 @@ AS
 	(
 		SELECT *
 		FROM Src
-		WHERE ' + QUOTENAME(@RowRankDeltaColumn) + N' = 1 -- In case of update, give precendence to the inserted row
+		WHERE ' + QUOTENAME(@RowRankDeltaColumn) + N' = 1 -- In case of update, give precedence to the inserted row
 	) AS Src
 	ON
 		' + @PKjoin + N'
