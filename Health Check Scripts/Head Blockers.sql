@@ -4,7 +4,7 @@ Description:	Display information about head blockers in blocking chains
 Scope:			Instance
 Author:			Guy Glantser
 Created:		02/09/2020
-Last Updated:	06/01/2022
+Last Updated:	24/03/2024
 Notes:			Displays information about the head blocker at the task level.
 
 =========================================================================================================================*/
@@ -67,6 +67,7 @@ AS
 		BlockingChains.TaskAddress IS NULL AND BlockedTasks.blocking_task_address IS NULL
 	)
 ) ,
+
 	HeadBlockers
 (
 	HeadBlockerSessionId ,
@@ -103,6 +104,7 @@ AS
 	HAVING
 		MAX (ChainLevel) > 0
 )
+
 SELECT
 	HeadBlockerSessionId					= HeadBlockers.HeadBlockerSessionId ,
 	HeadBlockerTaskAddress					= HeadBlockers.HeadBlockerTaskAddress ,
@@ -186,9 +188,13 @@ OUTER APPLY
 OUTER APPLY
 	sys.dm_exec_text_query_plan (Requests.plan_handle , Requests.statement_start_offset , Requests.statement_end_offset) AS RequestStatementPlans
 LEFT OUTER JOIN
+	sys.dm_tran_session_transactions AS SessionTransactions
+ON
+	[Sessions].session_id = SessionTransactions.session_id
+LEFT OUTER JOIN
 	sys.dm_tran_active_transactions AS ActiveTransactions
 ON
-	Requests.transaction_id = ActiveTransactions.transaction_id
+	SessionTransactions.transaction_id = ActiveTransactions.transaction_id
 ORDER BY
 	TotalBlockedTasksWaitTime_Milliseconds	DESC ,
 	HeadBlockerSessionId					ASC ,
