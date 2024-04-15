@@ -44,7 +44,7 @@ jobs:
           password: ${{secrets.MAIL_PASSWORD}}
           to: ${{secrets.MAIL_RECIPIENTS}}
           from: ${{secrets.MAIL_FROM}}
-          subject: New files added to MadeiraToolbox
+          subject: New files added to ${{github.repository}}
           body: Commits with new file(s) were pushed into repository <a target="_blank" href="https://github.com/${{github.repository}}">${{github.repository}}</a> ! <br/>Author - <b>${{ github.event.pusher.name }}</b><br/>${{join(steps.added_files_list.outputs.*, '<br/>')}}<br/> <h4>Added files</h4>${{ steps.files.outputs.added }}<br/><h4>All affected files</h4>${{ steps.files.outputs.all }}
           # Optional content type (defaults to text/plain):
           content_type: text/html
