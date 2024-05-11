@@ -4,7 +4,7 @@ Description:	Display information about database files for all databases
 Scope:			Instance
 Author:			Guy Glantser
 Created:		10/09/2020
-Last Updated:		14/12/2022
+Last Updated:	11/05/2024
 Notes:			Use this information to plan a maintenance plan for managing the size of the databases in the instance
 
 =========================================================================================================================*/
@@ -16,41 +16,42 @@ SET NOCOUNT ON;
 CREATE TABLE
 	#DatabaseFiles
 (
-	DatabaseId				INT		NOT NULL ,
-	DatabaseName				SYSNAME		NOT NULL ,
-	FilegroupId				INT		NULL ,
-	FilegroupName				SYSNAME		NULL ,
-	IsAutoGrowAllFiles			BIT		NULL ,		-- Applies to: SQL Server (SQL Server 2016 (13.x) through current version)
-	FileId					INT		NOT NULL ,
-	FileType				NVARCHAR(60)	NOT NULL ,
-	FileLogicalName				SYSNAME		NOT NULL ,
-	FilePhysicalName			NVARCHAR(260)	NOT NULL ,
-	FileState				NVARCHAR(60)	NOT NULL ,
-	FileSize_MB				DECIMAL(19,2)	NOT NULL ,
-	AllocatedSpace_MB			DECIMAL(19,2)	NULL ,
-	UnallocatedSpace_MB			DECIMAL(19,2)	NULL ,
-	UnallocatedSpace_Percent		NVARCHAR(7)	NULL ,
-	AutoGrowthType				NVARCHAR(9)	NULL ,
-	AutoGrowthValue				DECIMAL(19,2)	NULL ,
-	FileMaxSize_MB				INT		NULL ,
-	VolumeName				NVARCHAR(512)	NULL ,
-	VolumeTotalSize_GB			DECIMAL(19,2)	NOT NULL ,
-	VolumeFreeSpace_GB			DECIMAL(19,2)	NOT NULL ,
-	VolumeFreeSpace_Percent			NVARCHAR(7)	NOT NULL ,
-	Warning					NVARCHAR(37)	NOT NULL ,
-	IsReadOnly				BIT		NOT NULL ,
-	NumberOfAutoGrowthEvents		INT		NULL ,
-	TimeSpan_Hours				INT		NULL ,
+	DatabaseId							INT				NOT NULL ,
+	DatabaseName						SYSNAME			NOT NULL ,
+	FilegroupId							INT				NULL ,
+	FilegroupName						SYSNAME			NULL ,
+	IsAutoGrowAllFiles					BIT				NULL ,		-- Applies to: SQL Server (SQL Server 2016 (13.x) through current version)
+	FileId								INT				NOT NULL ,
+	FileType							NVARCHAR(60)	NOT NULL ,
+	FileLogicalName						SYSNAME			NOT NULL ,
+	FilePhysicalName					NVARCHAR(260)	NOT NULL ,
+	FileState							NVARCHAR(60)	NOT NULL ,
+	FileSize_MB							DECIMAL(19,2)	NOT NULL ,
+	AllocatedSpace_MB					DECIMAL(19,2)	NULL ,
+	UnallocatedSpace_MB					DECIMAL(19,2)	NULL ,
+	UnallocatedSpace_Percent			NVARCHAR(7)		NULL ,
+	AutoGrowthType						NVARCHAR(9)		NULL ,
+	AutoGrowthValue						DECIMAL(19,2)	NULL ,
+	FileMaxSize_MB						INT				NULL ,
+	VolumeName							NVARCHAR(512)	NULL ,
+	VolumeTotalSize_GB					DECIMAL(19,2)	NOT NULL ,
+	VolumeFreeSpace_GB					DECIMAL(19,2)	NOT NULL ,
+	VolumeFreeSpace_Percent				NVARCHAR(7)		NOT NULL ,
+	Warning								NVARCHAR(37)	NOT NULL ,
+	IsReadOnly							BIT				NOT NULL ,
+	NumberOfAutoGrowthEvents			INT				NULL ,
+	TimeSpan_Hours						INT				NULL ,
+	LastAutoGrowthEvent					DATETIME2(0)	NULL ,
 	AverageNumberOfHoursBetweenEvents	DECIMAL(19,2)	NULL ,
-	AverageEventDuration_MS			DECIMAL(19,2)	NULL ,
-	AverageFileGrowthSize_MB		DECIMAL(19,2)	NULL
+	AverageEventDuration_MS				DECIMAL(19,2)	NULL ,
+	AverageFileGrowthSize_MB			DECIMAL(19,2)	NULL
 );
 GO
 
 
 DECLARE
 	@DatabaseName	AS SYSNAME ,
-	@Command	AS NVARCHAR(MAX) ,
+	@Command		AS NVARCHAR(MAX) ,
 	@spExecuteSql	AS NVARCHAR(512);
 
 SET @Command =
@@ -81,11 +82,11 @@ N'INSERT INTO #DatabaseFiles
 	IsReadOnly
 )
 SELECT
-	DatabaseId		= DB_ID () ,
-	DatabaseName		= DB_NAME () ,
-	FilegroupId		= Filegroups.data_space_id ,
-	FilegroupName		= Filegroups.[name] ,
-	IsAutoGrowAllFiles	= '
+	DatabaseId					= DB_ID () ,
+	DatabaseName				= DB_NAME () ,
+	FilegroupId					= Filegroups.data_space_id ,
+	FilegroupName				= Filegroups.[name] ,
+	IsAutoGrowAllFiles			= '
 			+
 			CASE WHEN (CONVERT(FLOAT, (@@microsoftversion / 0x1000000) & 0xff)) >= 13 THEN
 				N'Filegroups.is_autogrow_all_files'
@@ -93,16 +94,16 @@ SELECT
 				N'NULL'
 			END
 			+ N' ,	-- Applies to: SQL Server (SQL Server 2016 (13.x) through current version)
-	FileId				= DatabaseFiles.file_id ,
-	FileType			= DatabaseFiles.[type_desc] ,
-	FileLogicalName			= DatabaseFiles.[name] ,
-	FilePhysicalName		= DatabaseFiles.physical_name ,
-	FileState			= DatabaseFiles.state_desc ,
-	FileSize_MB			= CAST ((CAST (DatabaseFiles.size AS DECIMAL(19,2)) * 8.0 / 1024.0) AS DECIMAL(19,2)) ,
-	AllocatedSpace_MB		= CAST ((CAST (FILEPROPERTY (DatabaseFiles.[name] , ''SpaceUsed'') AS DECIMAL(19,2)) * 8.0 / 1024.0) AS DECIMAL(19,2)) ,
-	UnallocatedSpace_MB		= CAST ((CAST ((DatabaseFiles.size - FILEPROPERTY (DatabaseFiles.[name] , ''SpaceUsed'')) AS DECIMAL(19,2)) * 8.0 / 1024.0) AS DECIMAL(19,2)) ,
+	FileId						= DatabaseFiles.file_id ,
+	FileType					= DatabaseFiles.[type_desc] ,
+	FileLogicalName				= DatabaseFiles.[name] ,
+	FilePhysicalName			= DatabaseFiles.physical_name ,
+	FileState					= DatabaseFiles.state_desc ,
+	FileSize_MB					= CAST ((CAST (DatabaseFiles.size AS DECIMAL(19,2)) * 8.0 / 1024.0) AS DECIMAL(19,2)) ,
+	AllocatedSpace_MB			= CAST ((CAST (FILEPROPERTY (DatabaseFiles.[name] , ''SpaceUsed'') AS DECIMAL(19,2)) * 8.0 / 1024.0) AS DECIMAL(19,2)) ,
+	UnallocatedSpace_MB			= CAST ((CAST ((DatabaseFiles.size - FILEPROPERTY (DatabaseFiles.[name] , ''SpaceUsed'')) AS DECIMAL(19,2)) * 8.0 / 1024.0) AS DECIMAL(19,2)) ,
 	UnallocatedSpace_Percent	= FORMAT (CAST ((DatabaseFiles.size - FILEPROPERTY (DatabaseFiles.[name] , ''SpaceUsed'')) AS DECIMAL(19,2)) / CAST (DatabaseFiles.size AS DECIMAL(19,2)) , ''P'') ,
-	AutoGrowthType			=
+	AutoGrowthType				=
 		CASE DatabaseFiles.growth
 			WHEN 0
 				THEN NULL
@@ -114,7 +115,7 @@ SELECT
 						THEN N''Percent''
 				END
 		END ,
-	AutoGrowthValue						=
+	AutoGrowthValue				=
 		CASE DatabaseFiles.growth
 			WHEN 0
 				THEN NULL
@@ -126,7 +127,7 @@ SELECT
 						THEN CAST (DatabaseFiles.growth AS DECIMAL(19,2))
 				END
 		END ,
-	FileMaxSize_MB						=
+	FileMaxSize_MB				=
 		CASE DatabaseFiles.max_size
 			WHEN 0
 				THEN NULL
@@ -137,11 +138,11 @@ SELECT
 			ELSE
 				CAST (ROUND ((CAST (DatabaseFiles.max_size AS DECIMAL(19,2)) * 8.0 / 1024.0) , 0) AS INT)
 		END ,
-	VolumeName			= Volumes.volume_mount_point ,
-	VolumeTotalSize_GB		= CAST ((CAST (Volumes.total_bytes AS DECIMAL(19,2)) / 1024.0 / 1024.0 / 1024.0) AS DECIMAL(19,2)) ,
-	VolumeFreeSpace_GB		= CAST ((CAST (Volumes.available_bytes AS DECIMAL(19,2)) / 1024.0 / 1024.0 / 1024.0) AS DECIMAL(19,2)) ,
+	VolumeName					= Volumes.volume_mount_point ,
+	VolumeTotalSize_GB			= CAST ((CAST (Volumes.total_bytes AS DECIMAL(19,2)) / 1024.0 / 1024.0 / 1024.0) AS DECIMAL(19,2)) ,
+	VolumeFreeSpace_GB			= CAST ((CAST (Volumes.available_bytes AS DECIMAL(19,2)) / 1024.0 / 1024.0 / 1024.0) AS DECIMAL(19,2)) ,
 	VolumeFreeSpace_Percent		= FORMAT (CAST (Volumes.available_bytes AS DECIMAL(19,2)) / CAST (Volumes.total_bytes AS DECIMAL(19,2)) , ''P'') ,
-	Warning								=
+	Warning						=
 		CASE
 			WHEN
 				DatabaseFiles.growth != 0
@@ -241,6 +242,7 @@ WITH
 	FileLogicalName ,
 	NumberOfAutoGrowthEvents ,
 	TimeSpan_Hours ,
+	LastAutoGrowthEvent ,
 	AverageNumberOfHoursBetweenEvents ,
 	AverageEventDuration_MS ,
 	AverageFileGrowthSize_MB
@@ -248,13 +250,14 @@ WITH
 AS
 (
 SELECT
-	DatabaseName				= DatabaseName ,
-	FileLogicalName				= [FileName] ,
-	NumberOfAutoGrowthEvents		= COUNT (*) ,
-	TimeSpan_Hours				= DATEDIFF (HOUR , MIN (StartTime) , SYSDATETIME ()) ,
+	DatabaseName						= DatabaseName ,
+	FileLogicalName						= [FileName] ,
+	NumberOfAutoGrowthEvents			= COUNT (*) ,
+	TimeSpan_Hours						= DATEDIFF (HOUR , MIN (StartTime) , SYSDATETIME ()) ,
+	LastAutoGrowthEvent					= MAX (StartTime) ,
 	AverageNumberOfHoursBetweenEvents	= CAST (CAST (DATEDIFF (HOUR , MIN (StartTime) , SYSDATETIME ()) AS DECIMAL(19,2)) / COUNT (*) AS DECIMAL(19,2)) ,
-	AverageEventDuration_MS			= CAST (AVG (CAST (Duration / 1000.0 AS DECIMAL(19,2))) AS DECIMAL(19,2)) ,
-	AverageFileGrowthSize_MB		= CAST (AVG (CAST (IntegerData * 8.0 / 1024.0 AS DECIMAL(19,2))) AS DECIMAL(19,2))
+	AverageEventDuration_MS				= CAST (AVG (CAST (Duration / 1000.0 AS DECIMAL(19,2))) AS DECIMAL(19,2)) ,
+	AverageFileGrowthSize_MB			= CAST (AVG (CAST (IntegerData * 8.0 / 1024.0 AS DECIMAL(19,2))) AS DECIMAL(19,2))
 FROM
 	sys.fn_trace_gettable (@FirstTraceFilePath , DEFAULT)
 WHERE
@@ -266,11 +269,12 @@ GROUP BY
 UPDATE
 	DatabaseFiles
 SET
-	NumberOfAutoGrowthEvents		= DatabaseFileAutoGrowthStats.NumberOfAutoGrowthEvents ,
-	TimeSpan_Hours				= DatabaseFileAutoGrowthStats.TimeSpan_Hours ,
+	NumberOfAutoGrowthEvents			= DatabaseFileAutoGrowthStats.NumberOfAutoGrowthEvents ,
+	TimeSpan_Hours						= DatabaseFileAutoGrowthStats.TimeSpan_Hours ,
+	LastAutoGrowthEvent					= DatabaseFileAutoGrowthStats.LastAutoGrowthEvent ,
 	AverageNumberOfHoursBetweenEvents	= DatabaseFileAutoGrowthStats.AverageNumberOfHoursBetweenEvents ,
-	AverageEventDuration_MS			= DatabaseFileAutoGrowthStats.AverageEventDuration_MS ,
-	AverageFileGrowthSize_MB		= DatabaseFileAutoGrowthStats.AverageFileGrowthSize_MB
+	AverageEventDuration_MS				= DatabaseFileAutoGrowthStats.AverageEventDuration_MS ,
+	AverageFileGrowthSize_MB			= DatabaseFileAutoGrowthStats.AverageFileGrowthSize_MB
 FROM
 	#DatabaseFiles AS DatabaseFiles
 LEFT OUTER JOIN
@@ -308,11 +312,14 @@ SELECT
 	IsReadOnly ,
 	NumberOfAutoGrowthEvents ,
 	TimeSpan_Hours ,
+	LastAutoGrowthEvent
 	AverageNumberOfHoursBetweenEvents ,
 	AverageEventDuration_MS ,
 	AverageFileGrowthSize_MB
 FROM
 	#DatabaseFiles
+WHERE
+	VolumeName = N'C:\'
 ORDER BY
 	DatabaseId	ASC ,
 	FilegroupId	ASC ,
