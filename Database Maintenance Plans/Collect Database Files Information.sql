@@ -4,7 +4,7 @@ Description:	Display information about database files for all databases
 Scope:			Instance
 Author:			Guy Glantser
 Created:		10/09/2020
-Last Updated:	11/05/2024
+Last Updated:	29/05/2024
 Notes:			Use this information to plan a maintenance plan for managing the size of the databases in the instance
 
 =========================================================================================================================*/
@@ -312,7 +312,7 @@ SELECT
 	IsReadOnly ,
 	NumberOfAutoGrowthEvents ,
 	TimeSpan_Hours ,
-	LastAutoGrowthEvent
+	LastAutoGrowthEvent ,
 	AverageNumberOfHoursBetweenEvents ,
 	AverageEventDuration_MS ,
 	AverageFileGrowthSize_MB
