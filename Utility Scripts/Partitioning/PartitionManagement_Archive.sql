@@ -193,7 +193,7 @@ BEGIN
 			AND p.index_id <= 1 -- clustered or heap only
 			AND p.object_id = OBJECT_ID(QUOTENAME(@ArchiveTableSchema) + N'.' + QUOTENAME(@ArchiveTableName))
 			
-			IF @ArchiveTablePartitionFunctionId IS NOT NULL
+			IF @ArchiveTablePartitionFunctionName IS NOT NULL
 			BEGIN
 				RAISERROR(N'Historical table "%s.%s" is using partition function "%s". This is an informational message.'
 					,0,1,@ArchiveTableSchema,@ArchiveTableName,@ArchiveTablePartitionFunctionName) WITH NOWAIT;
