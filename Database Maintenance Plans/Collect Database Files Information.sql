@@ -4,7 +4,7 @@ Description:	Display information about database files for all databases
 Scope:			Instance
 Author:			Guy Glantser
 Created:		10/09/2020
-Last Updated:	29/05/2024
+Last Updated:	08/03/2025
 Notes:			Use this information to plan a maintenance plan for managing the size of the databases in the instance
 
 =========================================================================================================================*/
@@ -154,7 +154,7 @@ SELECT
 			OR
 				DatabaseFiles.is_percent_growth = 1
 			AND
-				CAST ((CAST (DatabaseFiles.size AS DECIMAL(19,2)) * 8.0 / 1024.0) AS DECIMAL(19,2)) * CAST (DatabaseFiles.growth AS DECIMAL(19,2)) > CAST ((CAST (Volumes.available_bytes AS DECIMAL(19,2)) / 1024.0 / 1024.0) AS DECIMAL(19,2))
+				CAST ((CAST (DatabaseFiles.size AS DECIMAL(19,2)) * 8.0 / 1024.0) AS DECIMAL(19,2)) * CAST (DatabaseFiles.growth AS DECIMAL(19,2)) / 100.0 > CAST ((CAST (Volumes.available_bytes AS DECIMAL(19,2)) / 1024.0 / 1024.0) AS DECIMAL(19,2))
 			)
 			THEN
 				N''Not Enough Space for Next Auto Growth''
